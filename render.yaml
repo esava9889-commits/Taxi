@@ -10,7 +10,7 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS
-        sync: false
+        value: "6828579427"
       - key: DB_PATH
         value: data/taxi.sqlite3
       - key: GOOGLE_MAPS_API_KEY
