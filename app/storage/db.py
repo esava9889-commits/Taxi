@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import aiosqlite
 
@@ -10,13 +10,22 @@ import aiosqlite
 @dataclass
 class Order:
     id: Optional[int]
-    user_id: int
+    user_id: int  # client Telegram user id
     name: str
     phone: str
     pickup_address: str
     destination_address: str
     comment: Optional[str]
     created_at: datetime
+    # Extended lifecycle fields
+    driver_id: Optional[int] = None
+    distance_m: Optional[int] = None
+    duration_s: Optional[int] = None
+    fare_amount: Optional[float] = None
+    commission: Optional[float] = None
+    status: str = "pending"  # pending|offered|accepted|in_progress|completed|cancelled
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
 
 
 async def init_db(db_path: str) -> None:
@@ -31,7 +40,15 @@ async def init_db(db_path: str) -> None:
                 pickup_address TEXT NOT NULL,
                 destination_address TEXT NOT NULL,
                 comment TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                driver_id INTEGER,
+                distance_m INTEGER,
+                duration_s INTEGER,
+                fare_amount REAL,
+                commission REAL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                started_at TEXT,
+                finished_at TEXT
             )
             """
         )
@@ -74,7 +91,11 @@ async def init_db(db_path: str) -> None:
                 license_photo_file_id TEXT,
                 status TEXT NOT NULL,  -- pending | approved | rejected
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                online INTEGER NOT NULL DEFAULT 0,
+                last_lat REAL,
+                last_lon REAL,
+                last_seen_at TEXT
             )
             """
         )
@@ -84,6 +105,8 @@ async def init_db(db_path: str) -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
         await db.commit()
+        # Try to add missing columns for incremental upgrades (SQLite only)
+        await _ensure_columns(db)
 
 
 async def insert_order(db_path: str, order: Order) -> int:
@@ -91,8 +114,9 @@ async def insert_order(db_path: str, order: Order) -> int:
         cursor = await db.execute(
             """
             INSERT INTO orders (
-                user_id, name, phone, pickup_address, destination_address, comment, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order.user_id,
@@ -102,6 +126,14 @@ async def insert_order(db_path: str, order: Order) -> int:
                 order.destination_address,
                 order.comment,
                 order.created_at.isoformat(),
+                order.driver_id,
+                order.distance_m,
+                order.duration_s,
+                order.fare_amount,
+                order.commission,
+                order.status,
+                (order.started_at.isoformat() if order.started_at else None),
+                (order.finished_at.isoformat() if order.finished_at else None),
             ),
         )
         await db.commit()
@@ -112,7 +144,8 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
             """
-            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
             FROM orders
             ORDER BY id DESC
             LIMIT ?
@@ -133,6 +166,14 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
                 destination_address=row[5],
                 comment=row[6],
                 created_at=datetime.fromisoformat(row[7]),
+                driver_id=row[8],
+                distance_m=row[9],
+                duration_s=row[10],
+                fare_amount=row[11],
+                commission=row[12],
+                status=row[13],
+                started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
+                finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
             )
         )
     return orders
@@ -207,6 +248,10 @@ class Driver:
     status: str  # pending | approved | rejected
     created_at: datetime
     updated_at: datetime
+    online: int = 0
+    last_lat: Optional[float] = None
+    last_lon: Optional[float] = None
+    last_seen_at: Optional[datetime] = None
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
@@ -248,7 +293,8 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
             """
-            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status, created_at, updated_at
+            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
+                   created_at, updated_at, online, last_lat, last_lon, last_seen_at
             FROM drivers
             WHERE status = 'pending'
             ORDER BY id ASC
@@ -272,6 +318,10 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
                 status=r[8],
                 created_at=datetime.fromisoformat(r[9]),
                 updated_at=datetime.fromisoformat(r[10]),
+                online=r[11],
+                last_lat=r[12],
+                last_lon=r[13],
+                last_seen_at=(datetime.fromisoformat(r[14]) if r[14] else None),
             )
         )
     return drivers
@@ -281,7 +331,8 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
             """
-            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status, created_at, updated_at
+            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
+                   created_at, updated_at, online, last_lat, last_lon, last_seen_at
             FROM drivers WHERE id = ?
             """,
             (driver_id,),
@@ -301,6 +352,10 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         status=row[8],
         created_at=datetime.fromisoformat(row[9]),
         updated_at=datetime.fromisoformat(row[10]),
+        online=row[11],
+        last_lat=row[12],
+        last_lon=row[13],
+        last_seen_at=(datetime.fromisoformat(row[14]) if row[14] else None),
     )
 
 
@@ -308,7 +363,8 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
             """
-            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status, created_at, updated_at
+            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
+                   created_at, updated_at, online, last_lat, last_lon, last_seen_at
             FROM drivers WHERE tg_user_id = ? ORDER BY id DESC LIMIT 1
             """,
             (tg_user_id,),
@@ -328,7 +384,191 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         status=row[8],
         created_at=datetime.fromisoformat(row[9]),
         updated_at=datetime.fromisoformat(row[10]),
+        online=row[11],
+        last_lat=row[12],
+        last_lon=row[13],
+        last_seen_at=(datetime.fromisoformat(row[14]) if row[14] else None),
     )
+
+
+async def set_driver_online(db_path: str, tg_user_id: int, online: bool) -> None:
+    now = datetime.now(timezone.utc)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "UPDATE drivers SET online = ?, last_seen_at = ? WHERE tg_user_id = ? AND status = 'approved'",
+            (1 if online else 0, now.isoformat(), tg_user_id),
+        )
+        await db.commit()
+
+
+async def update_driver_location(db_path: str, tg_user_id: int, lat: float, lon: float) -> None:
+    now = datetime.now(timezone.utc)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "UPDATE drivers SET last_lat = ?, last_lon = ?, last_seen_at = ? WHERE tg_user_id = ? AND status = 'approved'",
+            (lat, lon, now.isoformat(), tg_user_id),
+        )
+        await db.commit()
+
+
+async def offer_order_to_driver(db_path: str, order_id: int, driver_id: int) -> bool:
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE orders SET driver_id = ?, status = 'offered' WHERE id = ? AND status = 'pending'",
+            (driver_id, order_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def accept_order(db_path: str, order_id: int, driver_id: int) -> bool:
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE orders SET status = 'accepted' WHERE id = ? AND driver_id = ? AND status = 'offered'",
+            (order_id, driver_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def start_order(db_path: str, order_id: int, driver_id: int) -> bool:
+    now = datetime.now(timezone.utc)
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE orders SET status = 'in_progress', started_at = ? WHERE id = ? AND driver_id = ? AND status = 'accepted'",
+            (now.isoformat(), order_id, driver_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def complete_order(
+    db_path: str,
+    order_id: int,
+    driver_id: int,
+    fare_amount: float,
+    distance_m: int,
+    duration_s: int,
+    commission: float,
+) -> bool:
+    now = datetime.now(timezone.utc)
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            """
+            UPDATE orders
+            SET status = 'completed', finished_at = ?, fare_amount = ?, distance_m = ?, duration_s = ?, commission = ?
+            WHERE id = ? AND driver_id = ? AND status = 'in_progress'
+            """,
+            (now.isoformat(), fare_amount, distance_m, duration_s, commission, order_id, driver_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+            FROM orders WHERE id = ?
+            """,
+            (order_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    if not row:
+        return None
+    return Order(
+        id=row[0],
+        user_id=row[1],
+        name=row[2],
+        phone=row[3],
+        pickup_address=row[4],
+        destination_address=row[5],
+        comment=row[6],
+        created_at=datetime.fromisoformat(row[7]),
+        driver_id=row[8],
+        distance_m=row[9],
+        duration_s=row[10],
+        fare_amount=row[11],
+        commission=row[12],
+        status=row[13],
+        started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
+        finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+    )
+
+
+async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
+                   created_at, updated_at, online, last_lat, last_lon, last_seen_at
+            FROM drivers WHERE status = 'approved' AND online = 1
+            ORDER BY last_seen_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    drivers: List[Driver] = []
+    for r in rows:
+        drivers.append(
+            Driver(
+                id=r[0],
+                tg_user_id=r[1],
+                full_name=r[2],
+                phone=r[3],
+                car_make=r[4],
+                car_model=r[5],
+                car_plate=r[6],
+                license_photo_file_id=r[7],
+                status=r[8],
+                created_at=datetime.fromisoformat(r[9]),
+                updated_at=datetime.fromisoformat(r[10]),
+                online=r[11],
+                last_lat=r[12],
+                last_lon=r[13],
+                last_seen_at=(datetime.fromisoformat(r[14]) if r[14] else None),
+            )
+        )
+    return drivers
+
+
+async def _ensure_columns(db: aiosqlite.Connection) -> None:
+    async def has_column(table: str, column: str) -> bool:
+        async with db.execute(f"PRAGMA table_info({table})") as cur:
+            rows = await cur.fetchall()
+        return any(r[1] == column for r in rows)
+
+    # Best-effort add columns if missing
+    # Orders
+    if not await has_column('orders', 'driver_id'):
+        await db.execute("ALTER TABLE orders ADD COLUMN driver_id INTEGER")
+    if not await has_column('orders', 'distance_m'):
+        await db.execute("ALTER TABLE orders ADD COLUMN distance_m INTEGER")
+    if not await has_column('orders', 'duration_s'):
+        await db.execute("ALTER TABLE orders ADD COLUMN duration_s INTEGER")
+    if not await has_column('orders', 'fare_amount'):
+        await db.execute("ALTER TABLE orders ADD COLUMN fare_amount REAL")
+    if not await has_column('orders', 'commission'):
+        await db.execute("ALTER TABLE orders ADD COLUMN commission REAL")
+    if not await has_column('orders', 'status'):
+        await db.execute("ALTER TABLE orders ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'")
+    if not await has_column('orders', 'started_at'):
+        await db.execute("ALTER TABLE orders ADD COLUMN started_at TEXT")
+    if not await has_column('orders', 'finished_at'):
+        await db.execute("ALTER TABLE orders ADD COLUMN finished_at TEXT")
+
+    # Drivers
+    if not await has_column('drivers', 'online'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN online INTEGER NOT NULL DEFAULT 0")
+    if not await has_column('drivers', 'last_lat'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN last_lat REAL")
+    if not await has_column('drivers', 'last_lon'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN last_lon REAL")
+    if not await has_column('drivers', 'last_seen_at'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN last_seen_at TEXT")
 
 
 # --- Tariffs ---
