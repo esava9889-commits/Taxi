@@ -168,20 +168,103 @@ python -m app.main
 - `ratings` - Оцінки водіїв
 - `payments` - Платежі та комісії
 
-## 🌐 Деплой на Render
+## 🌐 Деплой
 
-1. Створіть репозиторій на GitHub
-2. Увійдіть в [Render](https://render.com)
-3. Натисніть "New +" → "Blueprint"
-4. Підключіть ваш репозиторій
-5. Render знайде `render.yaml` автоматично
-6. Додайте змінні середовища:
-   - `BOT_TOKEN`
-   - `ADMIN_IDS` (6828579427)
-   - `GOOGLE_MAPS_API_KEY`
-7. Розгорніть!
+### Варіант 1: Render.com (Рекомендовано)
 
-База даних буде зберігатися на диску `/opt/render/project/src/data`
+**Найпростіший спосіб:**
+
+1. Push код на GitHub
+2. Render.com → "New +" → "Blueprint"
+3. Підключіть репозиторій
+4. Додайте `BOT_TOKEN` та (опціонально) `GOOGLE_MAPS_API_KEY`
+5. Deploy!
+
+**📖 Детальна інструкція:** [DEPLOY.md](DEPLOY.md)
+
+**Вартість:** $7/місяць (Starter Plan)
+
+---
+
+### Варіант 2: Docker
+
+**Локально або на VPS:**
+
+```bash
+# Створіть .env файл
+cp .env.example .env
+nano .env  # Додайте BOT_TOKEN
+
+# Запуск через Docker Compose
+docker-compose up -d
+
+# Перегляд логів
+docker-compose logs -f
+
+# Зупинка
+docker-compose down
+```
+
+**Або через Docker:**
+
+```bash
+docker build -t telegram-taxi-bot .
+docker run -d --name taxi-bot --env-file .env -v $(pwd)/data:/app/data telegram-taxi-bot
+```
+
+---
+
+### Варіант 3: VPS (Ubuntu/Debian)
+
+```bash
+# Встановіть Python 3.11
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3-pip
+
+# Клонуйте репозиторій
+git clone <repo-url>
+cd telegram-taxi-bot
+
+# Створіть віртуальне середовище
+python3.11 -m venv venv
+source venv/bin/activate
+
+# Встановіть залежності
+pip install -r requirements.txt
+
+# Налаштуйте .env
+cp .env.example .env
+nano .env
+
+# Запустіть через systemd або screen
+python3 -m app.main
+```
+
+**Для постійної роботи створіть systemd service:**
+
+```ini
+# /etc/systemd/system/telegram-taxi-bot.service
+[Unit]
+Description=Telegram Taxi Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/telegram-taxi-bot
+Environment="PATH=/home/ubuntu/telegram-taxi-bot/venv/bin"
+ExecStart=/home/ubuntu/telegram-taxi-bot/venv/bin/python -m app.main
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable telegram-taxi-bot
+sudo systemctl start telegram-taxi-bot
+sudo systemctl status telegram-taxi-bot
+```
 
 ## 🛠️ Розробка
 

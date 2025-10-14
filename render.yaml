@@ -1,21 +1,56 @@
+# Render.com deployment configuration
+# Документація: https://render.com/docs/blueprint-spec
+
 services:
+  # Telegram Taxi Bot Worker Service
   - type: worker
-    name: taxi-bot
+    name: telegram-taxi-bot
     env: python
+    # План: free, starter ($7/mo), standard, pro
     plan: starter
+    # Автоматичний деплой при push в main
     autoDeploy: true
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.main
+    # Гілка для автодеплою
+    branch: main
+    # Регіон (oregon, frankfurt, singapore)
+    region: frankfurt
+    # Python версія
+    runtime: python-3.11
+    # Команда для встановлення залежностей
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    # Команда запуску бота
+    startCommand: python3 -m app.main
+    
+    # Змінні середовища
     envVars:
+      # ОБОВ'ЯЗКОВО: Токен бота від @BotFather
       - key: BOT_TOKEN
-        sync: false
+        sync: false  # Вводиться вручну в Render Dashboard
+      
+      # ID адміністратора (за замовчуванням)
       - key: ADMIN_IDS
         value: "6828579427"
+      
+      # Шлях до бази даних (відносно /opt/render/project/src)
       - key: DB_PATH
         value: data/taxi.sqlite3
+      
+      # ОПЦІОНАЛЬНО: Google Maps API Key
       - key: GOOGLE_MAPS_API_KEY
         sync: false
+      
+      # Python unbuffered output (для логів)
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      
+      # Часова зона (для нагадувань о 20:00)
+      - key: TZ
+        value: "Europe/Kiev"
+    
+    # Persistent disk для збереження бази даних
     disk:
-      name: data
+      name: taxi-bot-data
       mountPath: /opt/render/project/src/data
-      sizeGB: 1
+      sizeGB: 1  # 1 GB безкоштовно
