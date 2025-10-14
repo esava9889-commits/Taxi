@@ -18,10 +18,28 @@
 pip install --user -r requirements.txt
 ```
 
-## Запуск
+## Запуск локально
 
 ```bash
 python3 -m app.main
 ```
 
 Бот прибере вебхук і запустить polling. Використовуйте `/order` для оформлення замовлення. Адміни можуть переглянути останні замовлення командою `/orders`.
+
+## Деплой на Render
+
+1. Створіть репозиторій з цим кодом на GitHub.
+2. Увійдіть до Render і натисніть "New +" → "Blueprint".
+3. Вкажіть посилання на ваш репозиторій. Render знайде `render.yaml` автоматично.
+4. Під час створення сервісу:
+   - Тип: Worker
+   - План: Starter (або інший)
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `python -m app.main`
+   - Environment Variables: додайте `BOT_TOKEN` (обов'язково), `ADMIN_IDS` (за потреби)
+5. Диск:
+   - Render створить диск з `render.yaml` і змонтує його у `/opt/render/project/src/data`.
+   - `DB_PATH` вже вказаний як `data/taxi.sqlite3`, що відповідатиме змонтованому диску.
+6. Розгорніть. Після деплою Worker запустить бота і почне polling.
+
+Оновлення: кожен push у main (якщо `autoDeploy: true`) перезапустить Worker.
