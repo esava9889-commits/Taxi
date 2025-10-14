@@ -104,6 +104,42 @@ async def init_db(db_path: str) -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
+        
+        # Ratings table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ratings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                from_user_id INTEGER NOT NULL,
+                to_user_id INTEGER NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
+        
+        # Payments table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                commission REAL NOT NULL,
+                commission_paid INTEGER NOT NULL DEFAULT 0,
+                payment_method TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                commission_paid_at TEXT
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver ON payments(driver_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
+        
         await db.commit()
         # Try to add missing columns for incremental upgrades (SQLite only)
         await _ensure_columns(db)
@@ -533,6 +569,209 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
             )
         )
     return drivers
+
+
+# --- Ratings ---
+
+@dataclass
+class Rating:
+    id: Optional[int]
+    order_id: int
+    from_user_id: int
+    to_user_id: int
+    rating: int  # 1-5
+    comment: Optional[str]
+    created_at: datetime
+
+
+async def insert_rating(db_path: str, rating: Rating) -> int:
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO ratings (order_id, from_user_id, to_user_id, rating, comment, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (rating.order_id, rating.from_user_id, rating.to_user_id, rating.rating, rating.comment, rating.created_at.isoformat()),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_driver_average_rating(db_path: str, driver_user_id: int) -> Optional[float]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            "SELECT AVG(rating) FROM ratings WHERE to_user_id = ?",
+            (driver_user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return row[0] if row and row[0] else None
+
+
+# --- Payments & Commissions ---
+
+@dataclass
+class Payment:
+    id: Optional[int]
+    order_id: int
+    driver_id: int
+    amount: float
+    commission: float
+    commission_paid: bool
+    payment_method: str  # cash, card
+    created_at: datetime
+    commission_paid_at: Optional[datetime] = None
+
+
+async def insert_payment(db_path: str, payment: Payment) -> int:
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO payments (order_id, driver_id, amount, commission, commission_paid, payment_method, created_at, commission_paid_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (payment.order_id, payment.driver_id, payment.amount, payment.commission, 1 if payment.commission_paid else 0, payment.payment_method, payment.created_at.isoformat(), payment.commission_paid_at.isoformat() if payment.commission_paid_at else None),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def mark_commission_paid(db_path: str, driver_tg_id: int) -> None:
+    now = datetime.now(timezone.utc)
+    async with aiosqlite.connect(db_path) as db:
+        # Get driver's DB id
+        async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return
+        driver_db_id = row[0]
+        await db.execute(
+            "UPDATE payments SET commission_paid = 1, commission_paid_at = ? WHERE driver_id = ? AND commission_paid = 0",
+            (now.isoformat(), driver_db_id),
+        )
+        await db.commit()
+
+
+async def get_driver_earnings_today(db_path: str, driver_tg_id: int) -> Tuple[float, float]:
+    """Returns (total_earned, total_commission_owed) for today"""
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return (0.0, 0.0)
+        driver_db_id = row[0]
+        today = datetime.now(timezone.utc).date().isoformat()
+        async with db.execute(
+            """
+            SELECT SUM(amount), SUM(commission) FROM payments
+            WHERE driver_id = ? AND DATE(created_at) = ?
+            """,
+            (driver_db_id, today),
+        ) as cur:
+            row = await cur.fetchone()
+    total_earned = row[0] if row and row[0] else 0.0
+    total_commission = row[1] if row and row[1] else 0.0
+    return (total_earned, total_commission)
+
+
+async def get_driver_unpaid_commission(db_path: str, driver_tg_id: int) -> float:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return 0.0
+        driver_db_id = row[0]
+        async with db.execute(
+            "SELECT SUM(commission) FROM payments WHERE driver_id = ? AND commission_paid = 0",
+            (driver_db_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row and row[0] else 0.0
+
+
+# --- Order History ---
+
+async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) -> List[Order]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+            FROM orders
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    orders: List[Order] = []
+    for row in rows:
+        orders.append(
+            Order(
+                id=row[0],
+                user_id=row[1],
+                name=row[2],
+                phone=row[3],
+                pickup_address=row[4],
+                destination_address=row[5],
+                comment=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+                driver_id=row[8],
+                distance_m=row[9],
+                duration_s=row[10],
+                fare_amount=row[11],
+                commission=row[12],
+                status=row[13],
+                started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
+                finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+            )
+        )
+    return orders
+
+
+async def get_driver_order_history(db_path: str, driver_tg_id: int, limit: int = 10) -> List[Order]:
+    async with aiosqlite.connect(db_path) as db:
+        # Get driver DB id
+        async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ?", (driver_tg_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return []
+        driver_db_id = row[0]
+        async with db.execute(
+            """
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+            FROM orders
+            WHERE driver_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (driver_db_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    orders: List[Order] = []
+    for row in rows:
+        orders.append(
+            Order(
+                id=row[0],
+                user_id=row[1],
+                name=row[2],
+                phone=row[3],
+                pickup_address=row[4],
+                destination_address=row[5],
+                comment=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+                driver_id=row[8],
+                distance_m=row[9],
+                duration_s=row[10],
+                fare_amount=row[11],
+                commission=row[12],
+                status=row[13],
+                started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
+                finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+            )
+        )
+    return orders
 
 
 async def _ensure_columns(db: aiosqlite.Connection) -> None:

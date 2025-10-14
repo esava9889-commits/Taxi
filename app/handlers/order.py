@@ -240,6 +240,9 @@ def create_router(config: AppConfig) -> Router:
 
     @router.message(OrderStates.confirm, F.text == CONFIRM_TEXT)
     async def confirm_order(message: Message, state: FSMContext) -> None:
+        from app.utils.matching import find_nearest_driver, parse_geo_coordinates
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        
         data = await state.get_data()
         order = Order(
             id=None,
@@ -254,9 +257,82 @@ def create_router(config: AppConfig) -> Router:
         order_id = await insert_order(config.database_path, order)
         await state.clear()
         await message.answer(
-            f"Дякуємо! Ваше замовлення №{order_id} прийнято.",
+            f"✅ Дякуємо! Ваше замовлення №{order_id} прийнято.\n\n"
+            f"🔍 Шукаємо водія...",
             reply_markup=ReplyKeyboardRemove(),
         )
+        
+        # Try to find nearest driver
+        pickup_coords = parse_geo_coordinates(str(data.get("pickup")))
+        if pickup_coords:
+            pickup_lat, pickup_lon = pickup_coords
+            driver = await find_nearest_driver(config.database_path, pickup_lat, pickup_lon)
+            
+            if driver:
+                from app.storage.db import offer_order_to_driver
+                
+                # Offer order to driver
+                success = await offer_order_to_driver(config.database_path, order_id, driver.id)
+                
+                if success:
+                    # Notify driver
+                    try:
+                        dest_coords = parse_geo_coordinates(str(data.get("destination")))
+                        distance_info = ""
+                        
+                        if dest_coords and config.google_maps_api_key:
+                            from app.utils.maps import get_distance_and_duration
+                            result = await get_distance_and_duration(
+                                config.google_maps_api_key,
+                                pickup_lat, pickup_lon,
+                                dest_coords[0], dest_coords[1]
+                            )
+                            if result:
+                                distance_m, duration_s = result
+                                distance_info = f"\n📍 Відстань: {distance_m/1000:.1f} км\n⏱ Час: ~{duration_s//60} хв"
+                        
+                        kb = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [
+                                    InlineKeyboardButton(text="✅ Прийняти", callback_data=f"order:accept:{order_id}"),
+                                    InlineKeyboardButton(text="❌ Відхилити", callback_data=f"order:reject:{order_id}"),
+                                ]
+                            ]
+                        )
+                        
+                        await message.bot.send_message(
+                            driver.tg_user_id,
+                            f"🔔 <b>Нове замовлення #{order_id}</b>\n\n"
+                            f"👤 Клієнт: {order.name}\n"
+                            f"📱 Телефон: {order.phone}\n"
+                            f"📍 Звідки: {order.pickup_address}\n"
+                            f"📍 Куди: {order.destination_address}\n"
+                            f"{distance_info}\n"
+                            f"💬 Коментар: {order.comment or '—'}",
+                            reply_markup=kb
+                        )
+                        
+                        await message.answer(
+                            f"✅ Знайдено водія!\n"
+                            f"Очікуйте підтвердження..."
+                        )
+                    except Exception as e:
+                        await message.answer(
+                            f"⚠️ Не вдалося надіслати повідомлення водію.\n"
+                            f"Очікуйте, ми знайдемо іншого водія."
+                        )
+                else:
+                    await message.answer("⚠️ Всі водії зайняті. Очікуйте, будь ласка...")
+            else:
+                await message.answer(
+                    "⚠️ На жаль, зараз немає вільних водіїв.\n"
+                    "Спробуйте пізніше або зв'яжіться з підтримкою."
+                )
+        else:
+            await message.answer(
+                "⚠️ Для автоматичного пошуку водія надайте геолокацію.\n"
+                "Адміністратор обробить ваше замовлення вручну."
+            )
 
     @router.message(OrderStates.confirm)
     async def confirm_unknown(message: Message, state: FSMContext) -> None:
