@@ -2,18 +2,30 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (KeyboardButton, Message, ReplyKeyboardMarkup,
-                           ReplyKeyboardRemove)
+from aiogram.types import (
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 
 from app.config.config import AppConfig
-from app.storage.db import Order, insert_order, fetch_recent_orders
+from app.handlers.start import ORDER_TEXT  # reuse label for hot button
+from app.storage.db import (
+    Order,
+    insert_order,
+    fetch_recent_orders,
+    get_latest_tariff,
+)
+import math
+import aiohttp
 
 
 def create_router(config: AppConfig) -> Router:
@@ -53,16 +65,22 @@ def create_router(config: AppConfig) -> Router:
             one_time_keyboard=True,
         )
 
+    def location_or_cancel_keyboard(prompt: str) -> ReplyKeyboardMarkup:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Надіслати геолокацію", request_location=True)],
+                [KeyboardButton(text=CANCEL_TEXT)],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+            input_field_placeholder=prompt,
+        )
+
     def is_valid_phone(text: str) -> bool:
         return bool(re.fullmatch(r"[+]?[\d\s\-()]{7,18}", text.strip()))
 
-    @router.message(CommandStart())
-    async def on_start(message: Message, state: FSMContext) -> None:
-        await state.clear()
-        await message.answer(
-            "Вітаємо у таксі-боті! Натисніть /order, щоб оформити замовлення."
-        )
-
+    # Start order via command or hot button
+    @router.message(F.text == ORDER_TEXT)
     @router.message(Command("order"))
     async def start_order(message: Message, state: FSMContext) -> None:
         await state.set_state(OrderStates.name)
@@ -96,7 +114,8 @@ def create_router(config: AppConfig) -> Router:
         await state.update_data(phone=phone)
         await state.set_state(OrderStates.pickup)
         await message.answer(
-            "Адреса подачі авто?", reply_markup=cancel_keyboard()
+            "Адреса подачі авто? Ви можете надіслати геолокацію.",
+            reply_markup=location_or_cancel_keyboard("Надішліть адресу або геолокацію"),
         )
 
     @router.message(OrderStates.pickup)
@@ -108,7 +127,19 @@ def create_router(config: AppConfig) -> Router:
         await state.update_data(pickup=pickup)
         await state.set_state(OrderStates.destination)
         await message.answer(
-            "Куди їдемо? Вкажіть адресу призначення.", reply_markup=cancel_keyboard()
+            "Куди їдемо? Вкажіть адресу призначення або надішліть геолокацію.",
+            reply_markup=location_or_cancel_keyboard("Вкажіть адресу призначення або гео"),
+        )
+
+    @router.message(OrderStates.pickup, F.location)
+    async def ask_destination_from_location(message: Message, state: FSMContext) -> None:
+        loc = message.location
+        pickup = f"geo:{loc.latitude:.6f},{loc.longitude:.6f}"
+        await state.update_data(pickup=pickup)
+        await state.set_state(OrderStates.destination)
+        await message.answer(
+            "Куди їдемо? Вкажіть адресу призначення або надішліть геолокацію.",
+            reply_markup=location_or_cancel_keyboard("Вкажіть адресу призначення або гео"),
         )
 
     @router.message(OrderStates.destination)
@@ -117,6 +148,18 @@ def create_router(config: AppConfig) -> Router:
         if len(destination) < 3:
             await message.answer("Будь ласка, уточніть адресу призначення.")
             return
+        await state.update_data(destination=destination)
+        await state.set_state(OrderStates.comment)
+        await message.answer(
+            "Коментар до замовлення? (наприклад, під'їзд/поверх)\n"
+            "Можете натиснути 'Пропустити'.",
+            reply_markup=skip_or_cancel_keyboard(),
+        )
+
+    @router.message(OrderStates.destination, F.location)
+    async def ask_comment_from_location(message: Message, state: FSMContext) -> None:
+        loc = message.location
+        destination = f"geo:{loc.latitude:.6f},{loc.longitude:.6f}"
         await state.update_data(destination=destination)
         await state.set_state(OrderStates.comment)
         await message.answer(
@@ -146,6 +189,52 @@ def create_router(config: AppConfig) -> Router:
             f"Куди: {data.get('destination')}\n"
             f"Коментар: {data.get('comment') or '—'}\n"
         )
+
+        # Attempt to estimate distance/time/cost via Google Distance Matrix if possible
+        async def parse_geo(s: str) -> Optional[str]:
+            if not s:
+                return None
+            s = s.strip()
+            if s.startswith("geo:"):
+                return s[4:]
+            return None
+
+        origin_geo = await parse_geo(str(data.get("pickup")))
+        dest_geo = await parse_geo(str(data.get("destination")))
+        api_key = config.google_maps_api_key
+        if api_key and origin_geo and dest_geo:
+            try:
+                origins = origin_geo
+                destinations = dest_geo
+                url = (
+                    "https://maps.googleapis.com/maps/api/distancematrix/json"
+                    f"?origins={origins}&destinations={destinations}&key={api_key}&mode=driving"
+                )
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=8) as resp:
+                        dm = await resp.json()
+                rows = dm.get("rows", [])
+                if rows and rows[0].get("elements"):
+                    el = rows[0]["elements"][0]
+                    if el.get("status") == "OK":
+                        meters = el["distance"]["value"]
+                        seconds = el["duration"]["value"]
+                        km = meters / 1000.0
+                        minutes = math.ceil(seconds / 60)
+                        tariff = await get_latest_tariff(config.database_path)
+                        if tariff:
+                            amount = max(
+                                tariff.minimum,
+                                tariff.base_fare + km * tariff.per_km + minutes * tariff.per_minute,
+                            )
+                            text += (
+                                "\nОцінка маршруту:\n"
+                                f"Відстань: {km:.1f} км\n"
+                                f"Час: ~{minutes} хв\n"
+                                f"Вартість: ~{amount:.2f} грн\n"
+                            )
+            except Exception:
+                pass
         await state.set_state(OrderStates.confirm)
         await message.answer(text, reply_markup=confirm_keyboard())
 
@@ -160,7 +249,7 @@ def create_router(config: AppConfig) -> Router:
             pickup_address=str(data.get("pickup")),
             destination_address=str(data.get("destination")),
             comment=(None if data.get("comment") in (None, "") else str(data.get("comment"))),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         order_id = await insert_order(config.database_path, order)
         await state.clear()

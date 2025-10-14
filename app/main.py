@@ -8,7 +8,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.config.config import load_config
-from app.handlers.order import create_router
+from app.handlers.order import create_router as create_order_router
+from app.handlers.start import create_router as create_start_router
+from app.handlers.driver import create_router as create_driver_router
 from app.storage.db import init_db
 
 
@@ -21,7 +23,9 @@ async def main() -> None:
     bot = Bot(token=config.bot.token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
 
-    dp.include_router(create_router(config))
+    dp.include_router(create_start_router(config))
+    dp.include_router(create_order_router(config))
+    dp.include_router(create_driver_router(config))
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=None)
