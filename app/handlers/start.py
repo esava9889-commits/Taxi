@@ -334,6 +334,47 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=kb
         )
 
+    @router.callback_query(F.data == "open_driver_panel")
+    async def open_driver_panel(call: CallbackQuery) -> None:
+        """Обробник для відкриття панелі водія після підтвердження"""
+        if not call.from_user:
+            return
+        
+        await call.answer()
+        
+        from app.storage.db import get_driver_by_tg_user_id
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        
+        if not driver or driver.status != "approved":
+            await call.message.answer("❌ Ви не є підтвердженим водієм.")
+            return
+        
+        from app.storage.db import get_driver_earnings_today, get_driver_unpaid_commission
+        
+        earnings, commission_owed = await get_driver_earnings_today(config.database_path, call.from_user.id)
+        net_earnings = earnings - commission_owed
+        
+        online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        
+        text = (
+            f"🚗 <b>Панель водія</b>\n\n"
+            f"Статус: {online_status}\n"
+            f"ПІБ: {driver.full_name}\n"
+            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
+            f"🔢 Номер: {driver.car_plate}\n\n"
+            f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
+            f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
+            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
+            "ℹ️ Замовлення надходять у групу водіїв.\n"
+            "Прийміть замовлення першим, щоб його отримати!"
+        )
+        
+        await call.message.answer(
+            text,
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=True)
+        )
+
     @router.message(F.text == "❌ Скасувати")
     async def cancel(message: Message, state: FSMContext) -> None:
         if not message.from_user:

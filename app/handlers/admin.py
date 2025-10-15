@@ -342,11 +342,32 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Notify driver
                 try:
+                    from app.handlers.start import main_menu_keyboard
+                    
+                    kb = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🚗 Відкрити панель водія", callback_data="open_driver_panel")]
+                        ]
+                    )
+                    
                     await call.bot.send_message(
                         driver.tg_user_id,
                         "🎉 <b>Вітаємо!</b>\n\n"
                         "Вашу заявку схвалено! Ви тепер водій нашого сервісу.\n\n"
-                        "Використовуйте команду /driver для доступу до панелі водія."
+                        "✅ Тепер ви можете:\n"
+                        "• Приймати замовлення з групи водіїв\n"
+                        "• Відстежувати свій заробіток\n"
+                        "• Переглядати історію поїздок\n\n"
+                        "Натисніть кнопку нижче або напишіть боту /start",
+                        reply_markup=kb
+                    )
+                    
+                    # Також відправимо меню водія
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        "🚗 <b>Панель водія активована!</b>\n\n"
+                        "Оберіть дію з меню:",
+                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True)
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify driver {driver.tg_user_id}: {e}")
