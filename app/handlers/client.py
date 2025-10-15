@@ -53,10 +53,8 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(text, reply_markup=client_menu_keyboard())
 
-    @router.message(F.text == "🚖 Замовити таксі")
-    async def redirect_to_order(message: Message) -> None:
-        # This will be handled by order.py handler
-        await message.answer("Для замовлення таксі натисніть: /order")
+    # Обробник "🚖 Замовити таксі" видалено - його обробляє order.py
+    # Це виправляє конфлікт роутерів
 
     @router.message(F.text == "📜 Моя історія")
     async def show_client_history(message: Message) -> None:

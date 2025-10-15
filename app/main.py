@@ -52,14 +52,14 @@ async def main() -> None:
     bot = Bot(token=config.bot.token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Include all routers
+    # Include all routers (порядок важливий!)
     dp.include_router(create_start_router(config))
-    dp.include_router(create_client_router(config))
-    dp.include_router(create_order_router(config))
-    dp.include_router(create_driver_router(config))
+    dp.include_router(create_order_router(config))  # Order перед Client!
     dp.include_router(create_driver_panel_router(config))
+    dp.include_router(create_driver_router(config))
     dp.include_router(create_admin_router(config))
     dp.include_router(create_ratings_router(config))
+    dp.include_router(create_client_router(config))  # Client останній
 
     # Start scheduled tasks
     await start_scheduler(bot, config.database_path, config.payment_card)
