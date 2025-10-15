@@ -142,15 +142,21 @@ def create_router(config: AppConfig) -> Router:
         # Спроба геокодувати адресу в координати
         coords = None
         if config.google_maps_api_key:
+            logger.info(f"🔍 Геокодую адресу: {pickup}")
             coords = await geocode_address(config.google_maps_api_key, pickup)
             if coords:
                 lat, lon = coords
                 await state.update_data(pickup=pickup, pickup_lat=lat, pickup_lon=lon)
-                logger.info(f"Геокодовано адресу: {pickup} → {lat},{lon}")
+                logger.info(f"✅ Геокодовано адресу: {pickup} → {lat},{lon}")
             else:
-                logger.warning(f"Не вдалося геокодувати адресу: {pickup}")
+                logger.warning(f"❌ Не вдалося геокодувати адресу: {pickup}")
                 await state.update_data(pickup=pickup)
+                await message.answer(
+                    "⚠️ Не вдалося визначити координати адреси.\n"
+                    "Для точного розрахунку використовуйте геолокацію 📍"
+                )
         else:
+            logger.warning(f"⚠️ Google Maps API не налаштований, адреса не геокодується: {pickup}")
             await state.update_data(pickup=pickup)
         
         await state.set_state(OrderStates.destination)
@@ -193,15 +199,23 @@ def create_router(config: AppConfig) -> Router:
         # Спроба геокодувати адресу в координати
         coords = None
         if config.google_maps_api_key:
+            logger.info(f"🔍 Геокодую адресу: {destination}")
             coords = await geocode_address(config.google_maps_api_key, destination)
             if coords:
                 lat, lon = coords
                 await state.update_data(destination=destination, dest_lat=lat, dest_lon=lon)
-                logger.info(f"Геокодовано адресу: {destination} → {lat},{lon}")
+                logger.info(f"✅ Геокодовано адресу: {destination} → {lat},{lon}")
             else:
-                logger.warning(f"Не вдалося геокодувати адресу: {destination}")
+                logger.warning(f"❌ Не вдалося геокодувати адресу: {destination}")
                 await state.update_data(destination=destination)
+                # Попередити користувача
+                await message.answer(
+                    "⚠️ Не вдалося визначити координати адреси.\n"
+                    "Відстань буде розрахована приблизно.\n\n"
+                    "Для точного розрахунку використовуйте геолокацію 📍"
+                )
         else:
+            logger.warning(f"⚠️ Google Maps API не налаштований, адреса не геокодується: {destination}")
             await state.update_data(destination=destination)
         
         await state.set_state(OrderStates.comment)
@@ -257,6 +271,7 @@ def create_router(config: AppConfig) -> Router:
         # Якщо є координати - розрахувати відстань
         if pickup_lat and pickup_lon and dest_lat and dest_lon:
             if config.google_maps_api_key:
+                logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
                 result = await get_distance_and_duration(
                     config.google_maps_api_key,
                     pickup_lat, pickup_lon,
@@ -270,6 +285,7 @@ def create_router(config: AppConfig) -> Router:
                     km = distance_m / 1000.0
                     minutes = duration_s / 60.0
                     distance_text = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n\n"
+                    logger.info(f"✅ Розраховано відстань: {km:.1f} км, {int(minutes)} хв")
                     
                     # Розрахунок орієнтовної вартості
                     tariff = await get_latest_tariff(config.database_path)
@@ -279,6 +295,13 @@ def create_router(config: AppConfig) -> Router:
                             tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
                         )
                         fare_estimate = f"💰 Орієнтовна вартість: {estimated_fare:.0f} грн\n\n"
+                        logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн")
+                else:
+                    logger.warning(f"❌ Google Maps Distance Matrix API не повернув результат")
+            else:
+                logger.warning(f"⚠️ Google Maps API не налаштований, відстань не розраховується")
+        else:
+            logger.warning(f"⚠️ Немає всіх координат для розрахунку: pickup({pickup_lat},{pickup_lon}), dest({dest_lat},{dest_lon})")
         
         text = (
             "📋 <b>Перевірте дані замовлення:</b>\n\n"
