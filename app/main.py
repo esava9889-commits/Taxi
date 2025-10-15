@@ -71,8 +71,26 @@ async def main() -> None:
     
     logging.info("🚀 Bot started successfully!")
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot, allowed_updates=None)
+    # Видалити webhook і очистити pending updates
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("✅ Webhook видалено, pending updates очищено")
+    except Exception as e:
+        logging.warning(f"⚠️ Не вдалося видалити webhook: {e}")
+    
+    # Запустити polling з обробкою конфліктів
+    try:
+        await dp.start_polling(bot, allowed_updates=None)
+    except Exception as e:
+        if "Conflict" in str(e):
+            logging.error(
+                "🔴 КОНФЛІКТ: Інший інстанс бота вже запущений!\n"
+                "Зупиніть всі інші процеси бота:\n"
+                "  - Локальні запуски (на вашому комп'ютері)\n"
+                "  - Інші деплої на Render/Railway/інших платформах\n"
+                "Telegram дозволяє тільки ОДИН активний інстанс бота."
+            )
+        raise
 
 
 if __name__ == "__main__":
