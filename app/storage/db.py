@@ -470,10 +470,13 @@ async def offer_order_to_driver(db_path: str, order_id: int, driver_id: int) -> 
 
 
 async def accept_order(db_path: str, order_id: int, driver_id: int) -> bool:
+    """Accept order from group - set driver and status to accepted"""
     async with aiosqlite.connect(db_path) as db:
+        # Нова логіка: замовлення має status='pending' і driver_id=NULL
+        # Перший водій хто клікне - отримує замовлення
         cur = await db.execute(
-            "UPDATE orders SET status = 'accepted' WHERE id = ? AND driver_id = ? AND status = 'offered'",
-            (order_id, driver_id),
+            "UPDATE orders SET status = 'accepted', driver_id = ? WHERE id = ? AND status = 'pending' AND driver_id IS NULL",
+            (driver_id, order_id),
         )
         await db.commit()
         return cur.rowcount > 0
