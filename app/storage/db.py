@@ -102,8 +102,11 @@ async def init_db(db_path: str) -> None:
         # Helpful indices
         await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
         
         # Ratings table
         await db.execute(
@@ -139,6 +142,7 @@ async def init_db(db_path: str) -> None:
         )
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver ON payments(driver_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_unpaid ON payments(driver_id, commission_paid)")
         
         await db.commit()
         # Try to add missing columns for incremental upgrades (SQLite only)
@@ -465,6 +469,45 @@ async def accept_order(db_path: str, order_id: int, driver_id: int) -> bool:
         )
         await db.commit()
         return cur.rowcount > 0
+
+
+async def reject_order(db_path: str, order_id: int) -> bool:
+    """Reject order by driver - set status back to pending"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE orders SET status = 'pending', driver_id = NULL WHERE id = ? AND status = 'offered'",
+            (order_id,),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def add_rejected_driver(db_path: str, order_id: int, driver_db_id: int) -> None:
+    """Add driver to rejected list for this order (stored as JSON in a new table or field)"""
+    # For simplicity, we'll create a simple rejected_offers table
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS rejected_offers (order_id INTEGER, driver_id INTEGER, rejected_at TEXT)"
+        )
+        await db.execute(
+            "INSERT INTO rejected_offers (order_id, driver_id, rejected_at) VALUES (?, ?, ?)",
+            (order_id, driver_db_id, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+
+
+async def get_rejected_drivers_for_order(db_path: str, order_id: int) -> List[int]:
+    """Get list of driver IDs who rejected this order"""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS rejected_offers (order_id INTEGER, driver_id INTEGER, rejected_at TEXT)"
+        )
+        async with db.execute(
+            "SELECT driver_id FROM rejected_offers WHERE order_id = ?",
+            (order_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [row[0] for row in rows]
 
 
 async def start_order(db_path: str, order_id: int, driver_id: int) -> bool:

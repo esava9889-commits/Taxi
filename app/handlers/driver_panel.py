@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,6 +17,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+logger = logging.getLogger(__name__)
+
 from app.config.config import AppConfig
 from app.storage.db import (
     get_driver_by_tg_user_id,
@@ -23,6 +26,9 @@ from app.storage.db import (
     update_driver_location,
     get_order_by_id,
     accept_order,
+    reject_order,
+    add_rejected_driver,
+    get_rejected_drivers_for_order,
     start_order,
     complete_order,
     get_driver_earnings_today,
@@ -153,7 +159,7 @@ def create_router(config: AppConfig) -> Router:
             "💳 <b>Інформація про комісію</b>\n\n"
             f"⚠️ До сплати: {unpaid_commission:.2f} грн\n\n"
             f"📌 <b>Реквізити для переказу:</b>\n"
-            f"<code>4149 4999 0123 4567</code>\n\n"
+            f"<code>{config.payment_card}</code>\n\n"
             f"<i>Після переказу натисніть кнопку нижче</i>"
         )
         
@@ -276,10 +282,105 @@ def create_router(config: AppConfig) -> Router:
                 await call.answer("❌ Не вдалося прийняти замовлення", show_alert=True)
         
         elif action == "reject":
-            await call.answer("❌ Ви відхилили замовлення")
-            if call.message:
-                await call.message.edit_text("❌ Замовлення відхилено")
-            # TODO: offer to next driver
+            # Add current driver to rejected list
+            await add_rejected_driver(config.database_path, order_id, driver.id)
+            
+            # Reject order (set back to pending)
+            success = await reject_order(config.database_path, order_id)
+            
+            if success:
+                await call.answer("❌ Ви відхилили замовлення")
+                if call.message:
+                    await call.message.edit_text("❌ Замовлення відхилено")
+                
+                # Try to offer to next driver
+                try:
+                    from app.utils.matching import find_nearest_driver, parse_geo_coordinates
+                    
+                    pickup_coords = parse_geo_coordinates(order.pickup_address)
+                    if pickup_coords:
+                        pickup_lat, pickup_lon = pickup_coords
+                        
+                        # Get list of drivers who already rejected
+                        rejected_ids = await get_rejected_drivers_for_order(config.database_path, order_id)
+                        
+                        # Find next nearest driver (excluding rejected ones)
+                        from app.storage.db import fetch_online_drivers
+                        all_drivers = await fetch_online_drivers(config.database_path, limit=50)
+                        
+                        # Filter out rejected drivers and current driver
+                        available_drivers = [
+                            d for d in all_drivers 
+                            if d.id not in rejected_ids and d.id != driver.id 
+                            and d.last_lat is not None and d.last_lon is not None
+                        ]
+                        
+                        if available_drivers:
+                            # Find nearest
+                            from app.utils.matching import calculate_distance
+                            nearest = min(
+                                available_drivers,
+                                key=lambda d: calculate_distance(pickup_lat, pickup_lon, d.last_lat, d.last_lon)
+                            )
+                            
+                            # Offer to next driver
+                            from app.storage.db import offer_order_to_driver
+                            offer_success = await offer_order_to_driver(config.database_path, order_id, nearest.id)
+                            
+                            if offer_success:
+                                # Notify next driver
+                                dest_coords = parse_geo_coordinates(order.destination_address)
+                                distance_info = ""
+                                
+                                if dest_coords and config.google_maps_api_key:
+                                    from app.utils.maps import get_distance_and_duration
+                                    result = await get_distance_and_duration(
+                                        config.google_maps_api_key,
+                                        pickup_lat, pickup_lon,
+                                        dest_coords[0], dest_coords[1]
+                                    )
+                                    if result:
+                                        distance_m, duration_s = result
+                                        distance_info = f"\n📍 Відстань: {distance_m/1000:.1f} км\n⏱ Час: ~{duration_s//60} хв"
+                                
+                                kb = InlineKeyboardMarkup(
+                                    inline_keyboard=[
+                                        [
+                                            InlineKeyboardButton(text="✅ Прийняти", callback_data=f"order:accept:{order_id}"),
+                                            InlineKeyboardButton(text="❌ Відхилити", callback_data=f"order:reject:{order_id}"),
+                                        ]
+                                    ]
+                                )
+                                
+                                await call.bot.send_message(
+                                    nearest.tg_user_id,
+                                    f"🔔 <b>Нове замовлення #{order_id}</b>\n\n"
+                                    f"👤 Клієнт: {order.name}\n"
+                                    f"📱 Телефон: {order.phone}\n"
+                                    f"📍 Звідки: {order.pickup_address}\n"
+                                    f"📍 Куди: {order.destination_address}\n"
+                                    f"{distance_info}\n"
+                                    f"💬 Коментар: {order.comment or '—'}",
+                                    reply_markup=kb
+                                )
+                                logger.info(f"Order {order_id} offered to next driver {nearest.id}")
+                        else:
+                            # No more drivers available
+                            try:
+                                await call.bot.send_message(
+                                    order.user_id,
+                                    "⚠️ На жаль, всі водії зайняті.\n"
+                                    "Ваше замовлення в черзі, очікуйте будь ласка..."
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to notify client {order.user_id}: {e}")
+                            
+                            logger.warning(f"No more drivers available for order {order_id}")
+                
+                except Exception as e:
+                    logger.error(f"Error offering order to next driver: {e}")
+            else:
+                await call.answer("❌ Помилка при відхиленні", show_alert=True)
         
         elif action == "start":
             success = await start_order(config.database_path, order_id, driver.id)

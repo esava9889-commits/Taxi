@@ -41,7 +41,7 @@ async def main() -> None:
     dp.include_router(create_ratings_router(config))
 
     # Start scheduled tasks
-    await start_scheduler(bot, config.database_path)
+    await start_scheduler(bot, config.database_path, config.payment_card)
     
     logging.info("🚀 Bot started successfully!")
 

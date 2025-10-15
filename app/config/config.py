@@ -16,6 +16,7 @@ class AppConfig:
     bot: BotConfig
     database_path: str
     google_maps_api_key: Optional[str]
+    payment_card: Optional[str]
 
 
 def _parse_admin_ids(raw: str) -> List[int]:
@@ -47,17 +48,16 @@ def load_config() -> AppConfig:
     if not token:
         raise RuntimeError("BOT_TOKEN is not set. Create .env and set BOT_TOKEN.")
 
-    admin_ids_raw = os.getenv("ADMIN_IDS", "6828579427")
+    admin_ids_raw = os.getenv("ADMIN_IDS", "")
+    if not admin_ids_raw:
+        raise RuntimeError("ADMIN_IDS is not set. Add your Telegram ID to .env")
     admin_ids = _parse_admin_ids(admin_ids_raw)
-    
-    # Ensure the main admin is always included
-    if 6828579427 not in admin_ids:
-        admin_ids.append(6828579427)
 
     default_db = os.path.join(os.getcwd(), "data", "taxi.sqlite3")
     db_path = os.getenv("DB_PATH", default_db)
 
     google_maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY") or None
+    payment_card = os.getenv("PAYMENT_CARD_NUMBER") or "4149 4999 0123 4567"
 
     # Ensure the parent directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -66,4 +66,5 @@ def load_config() -> AppConfig:
         bot=BotConfig(token=token, admin_ids=admin_ids),
         database_path=db_path,
         google_maps_api_key=google_maps_api_key,
+        payment_card=payment_card,
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import List
 
@@ -16,6 +17,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
+
+logger = logging.getLogger(__name__)
 
 from app.config.config import AppConfig
 from app.storage.db import (
@@ -312,6 +315,83 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(text, reply_markup=admin_menu_keyboard())
 
+    # Обробник для модерації водіїв (approve/reject)
+    @router.callback_query(F.data.startswith("drv:"))
+    async def handle_driver_moderation(call: CallbackQuery) -> None:
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        parts = (call.data or "").split(":")
+        if len(parts) < 3:
+            await call.answer("❌ Невірний формат", show_alert=True)
+            return
+        
+        action = parts[1]
+        driver_id = int(parts[2])
+        
+        try:
+            driver = await get_driver_by_id(config.database_path, driver_id)
+            if not driver:
+                await call.answer("❌ Водія не знайдено", show_alert=True)
+                return
+            
+            if action == "approve":
+                await update_driver_status(config.database_path, driver_id, "approved")
+                await call.answer("✅ Водія підтверджено!", show_alert=True)
+                
+                # Notify driver
+                try:
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        "🎉 <b>Вітаємо!</b>\n\n"
+                        "Вашу заявку схвалено! Ви тепер водій нашого сервісу.\n\n"
+                        "Використовуйте команду /driver для доступу до панелі водія."
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify driver {driver.tg_user_id}: {e}")
+                
+                # Update message
+                if call.message:
+                    await call.message.edit_text(
+                        f"✅ <b>Заявку #{driver_id} СХВАЛЕНО</b>\n\n"
+                        f"👤 ПІБ: {driver.full_name}\n"
+                        f"📱 Телефон: {driver.phone}\n"
+                        f"🚗 Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})"
+                    )
+                
+                logger.info(f"Admin {call.from_user.id} approved driver {driver_id}")
+            
+            elif action == "reject":
+                await update_driver_status(config.database_path, driver_id, "rejected")
+                await call.answer("❌ Водія відхилено", show_alert=True)
+                
+                # Notify driver
+                try:
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        "😔 <b>Вашу заявку відхилено</b>\n\n"
+                        "На жаль, ваша заявка на водія не була схвалена.\n"
+                        "Зверніться до адміністратора для уточнення деталей."
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify driver {driver.tg_user_id}: {e}")
+                
+                # Update message
+                if call.message:
+                    await call.message.edit_text(
+                        f"❌ <b>Заявку #{driver_id} ВІДХИЛЕНО</b>\n\n"
+                        f"👤 ПІБ: {driver.full_name}\n"
+                        f"📱 Телефон: {driver.phone}\n"
+                        f"🚗 Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})"
+                    )
+                
+                logger.info(f"Admin {call.from_user.id} rejected driver {driver_id}")
+        
+        except Exception as e:
+            logger.error(f"Error in driver moderation: {e}")
+            await call.answer("❌ Помилка при обробці", show_alert=True)
+
     @router.message(F.text == "📢 Розсилка")
     async def start_broadcast(message: Message, state: FSMContext) -> None:
         if not message.from_user or not is_admin(message.from_user.id):
@@ -332,34 +412,42 @@ def create_router(config: AppConfig) -> Router:
         
         import aiosqlite
         
-        async with aiosqlite.connect(config.database_path) as db:
-            async with db.execute("SELECT DISTINCT user_id FROM users") as cur:
-                user_ids = [row[0] for row in await cur.fetchall()]
-            async with db.execute("SELECT DISTINCT tg_user_id FROM drivers WHERE status = 'approved'") as cur:
-                driver_ids = [row[0] for row in await cur.fetchall()]
-        
-        all_ids = set(user_ids + driver_ids)
-        success = 0
-        failed = 0
-        
-        status_msg = await message.answer(f"📤 Розсилка... 0/{len(all_ids)}")
-        
-        for idx, user_id in enumerate(all_ids, 1):
-            try:
-                await message.bot.send_message(user_id, f"📢 <b>Повідомлення від адміністрації:</b>\n\n{broadcast_text}")
-                success += 1
-            except Exception:
-                failed += 1
+        try:
+            async with aiosqlite.connect(config.database_path) as db:
+                async with db.execute("SELECT DISTINCT user_id FROM users") as cur:
+                    user_ids = [row[0] for row in await cur.fetchall()]
+                async with db.execute("SELECT DISTINCT tg_user_id FROM drivers WHERE status = 'approved'") as cur:
+                    driver_ids = [row[0] for row in await cur.fetchall()]
             
-            if idx % 10 == 0:
-                await status_msg.edit_text(f"📤 Розсилка... {idx}/{len(all_ids)}")
+            all_ids = set(user_ids + driver_ids)
+            success = 0
+            failed = 0
+            
+            status_msg = await message.answer(f"📤 Розсилка... 0/{len(all_ids)}")
+            
+            for idx, user_id in enumerate(all_ids, 1):
+                try:
+                    await message.bot.send_message(user_id, f"📢 <b>Повідомлення від адміністрації:</b>\n\n{broadcast_text}")
+                    success += 1
+                except Exception as e:
+                    logger.error(f"Failed to send broadcast to {user_id}: {e}")
+                    failed += 1
+                
+                if idx % 10 == 0:
+                    await status_msg.edit_text(f"📤 Розсилка... {idx}/{len(all_ids)}")
+            
+            await state.clear()
+            await status_msg.edit_text(
+                f"✅ Розсилка завершена!\n\n"
+                f"Успішно: {success}\n"
+                f"Помилки: {failed}"
+            )
+            await message.answer("Головне меню:", reply_markup=admin_menu_keyboard())
+            
+            logger.info(f"Admin {message.from_user.id} sent broadcast to {success} users")
         
-        await state.clear()
-        await status_msg.edit_text(
-            f"✅ Розсилка завершена!\n\n"
-            f"Успішно: {success}\n"
-            f"Помилки: {failed}"
-        )
-        await message.answer("Головне меню:", reply_markup=admin_menu_keyboard())
+        except Exception as e:
+            logger.error(f"Error in broadcast: {e}")
+            await message.answer("❌ Помилка при розсилці", reply_markup=admin_menu_keyboard())
 
     return router

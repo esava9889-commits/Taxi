@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from aiogram import Bot
 
 
-async def commission_reminder_task(bot: Bot, db_path: str) -> None:
+async def commission_reminder_task(bot: Bot, db_path: str, payment_card: str) -> None:
     """
     Background task that sends daily commission reminders at 20:00
     """
@@ -42,7 +42,7 @@ async def commission_reminder_task(bot: Bot, db_path: str) -> None:
                                 f"⏰ <b>Нагадування</b>\n\n"
                                 f"💰 У вас є несплачена комісія: {unpaid:.2f} грн\n\n"
                                 f"📌 <b>Перерахуйте комісію на банківський рахунок:</b>\n"
-                                f"<code>4149 4999 0123 4567</code>\n\n"
+                                f"<code>{payment_card}</code>\n\n"
                                 f"Після переказу використайте команду /driver → 💳 Комісія → '✅ Я сплатив комісію'"
                             )
                     except Exception:
@@ -58,7 +58,7 @@ async def commission_reminder_task(bot: Bot, db_path: str) -> None:
             await asyncio.sleep(60)
 
 
-async def start_scheduler(bot: Bot, db_path: str) -> None:
+async def start_scheduler(bot: Bot, db_path: str, payment_card: str = "4149 4999 0123 4567") -> None:
     """Start all scheduled tasks"""
     # Start commission reminder task
-    asyncio.create_task(commission_reminder_task(bot, db_path))
+    asyncio.create_task(commission_reminder_task(bot, db_path, payment_card))
