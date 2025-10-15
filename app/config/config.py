@@ -17,6 +17,17 @@ class AppConfig:
     database_path: str
     google_maps_api_key: Optional[str]
     payment_card: Optional[str]
+    driver_group_chat_id: Optional[int]
+    
+# Список доступних міст
+AVAILABLE_CITIES = [
+    "Кривий Ріг",
+    "Київ",
+    "Дніпро",
+    "Харків",
+    "Одеса",
+    "Львів",
+]
 
 
 def _parse_admin_ids(raw: str) -> List[int]:
@@ -58,6 +69,10 @@ def load_config() -> AppConfig:
 
     google_maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY") or None
     payment_card = os.getenv("PAYMENT_CARD_NUMBER") or "4149 4999 0123 4567"
+    
+    # Group chat ID for drivers (optional)
+    driver_group_raw = os.getenv("DRIVER_GROUP_CHAT_ID")
+    driver_group_chat_id = int(driver_group_raw) if driver_group_raw else None
 
     # Ensure the parent directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -67,4 +82,5 @@ def load_config() -> AppConfig:
         database_path=db_path,
         google_maps_api_key=google_maps_api_key,
         payment_card=payment_card,
+        driver_group_chat_id=driver_group_chat_id,
     )

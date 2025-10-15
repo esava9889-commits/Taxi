@@ -73,6 +73,7 @@ async def init_db(db_path: str) -> None:
                 full_name TEXT NOT NULL,
                 phone TEXT NOT NULL,
                 role TEXT NOT NULL,
+                city TEXT,
                 created_at TEXT NOT NULL
             )
             """
@@ -89,6 +90,7 @@ async def init_db(db_path: str) -> None:
                 car_model TEXT NOT NULL,
                 car_plate TEXT NOT NULL,
                 license_photo_file_id TEXT,
+                city TEXT,
                 status TEXT NOT NULL,  -- pending | approved | rejected
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -228,6 +230,7 @@ class User:
     phone: str
     role: str
     created_at: datetime
+    city: Optional[str] = None
 
 
 async def upsert_user(db_path: str, user: User) -> None:
@@ -237,18 +240,20 @@ async def upsert_user(db_path: str, user: User) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             """
-            INSERT INTO users (user_id, full_name, phone, role, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (user_id, full_name, phone, role, city, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
               full_name=excluded.full_name,
               phone=excluded.phone,
-              role=excluded.role
+              role=excluded.role,
+              city=excluded.city
             """,
             (
                 user.user_id,
                 user.full_name,
                 user.phone,
                 user.role,
+                user.city,
                 user.created_at.isoformat(),
             ),
         )
@@ -258,7 +263,7 @@ async def upsert_user(db_path: str, user: User) -> None:
 async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
-            "SELECT user_id, full_name, phone, role, created_at FROM users WHERE user_id = ?",
+            "SELECT user_id, full_name, phone, role, city, created_at FROM users WHERE user_id = ?",
             (user_id,),
         ) as cursor:
             row = await cursor.fetchone()
@@ -269,7 +274,8 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
         full_name=row[1],
         phone=row[2],
         role=row[3],
-        created_at=datetime.fromisoformat(row[4]),
+        created_at=datetime.fromisoformat(row[5]),
+        city=row[4],
     )
 
 
@@ -288,6 +294,7 @@ class Driver:
     status: str  # pending | approved | rejected
     created_at: datetime
     updated_at: datetime
+    city: Optional[str] = None
     online: int = 0
     last_lat: Optional[float] = None
     last_lon: Optional[float] = None
@@ -299,8 +306,8 @@ async def create_driver_application(db_path: str, driver: Driver) -> int:
         cursor = await db.execute(
             """
             INSERT INTO drivers (
-                tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, city, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 driver.tg_user_id,
@@ -310,6 +317,7 @@ async def create_driver_application(db_path: str, driver: Driver) -> int:
                 driver.car_model,
                 driver.car_plate,
                 driver.license_photo_file_id,
+                driver.city,
                 driver.status,
                 driver.created_at.isoformat(),
                 driver.updated_at.isoformat(),
@@ -851,6 +859,12 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE drivers ADD COLUMN last_lon REAL")
     if not await has_column('drivers', 'last_seen_at'):
         await db.execute("ALTER TABLE drivers ADD COLUMN last_seen_at TEXT")
+    if not await has_column('drivers', 'city'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN city TEXT")
+    
+    # Users
+    if not await has_column('users', 'city'):
+        await db.execute("ALTER TABLE users ADD COLUMN city TEXT")
 
 
 # --- Tariffs ---

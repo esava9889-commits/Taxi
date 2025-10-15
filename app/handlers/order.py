@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import asyncio
-import re
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
@@ -17,27 +17,24 @@ from aiogram.types import (
 )
 
 from app.config.config import AppConfig
-from app.handlers.start import ORDER_TEXT  # reuse label for hot button
 from app.storage.db import (
     Order,
     insert_order,
-    fetch_recent_orders,
-    get_latest_tariff,
+    get_user_by_id,
+    get_user_order_history,
 )
-import math
-import aiohttp
+
+logger = logging.getLogger(__name__)
 
 
 def create_router(config: AppConfig) -> Router:
     router = Router(name="order")
 
-    CANCEL_TEXT = "Скасувати"
-    SKIP_TEXT = "Пропустити"
-    CONFIRM_TEXT = "Підтвердити"
+    CANCEL_TEXT = "❌ Скасувати"
+    SKIP_TEXT = "⏩ Пропустити"
+    CONFIRM_TEXT = "✅ Підтвердити"
 
     class OrderStates(StatesGroup):
-        name = State()
-        phone = State()
         pickup = State()
         destination = State()
         comment = State()
@@ -48,314 +45,303 @@ def create_router(config: AppConfig) -> Router:
             keyboard=[[KeyboardButton(text=CANCEL_TEXT)]],
             resize_keyboard=True,
             one_time_keyboard=True,
-            input_field_placeholder="Ви можете скасувати замовлення",
         )
 
     def skip_or_cancel_keyboard() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=SKIP_TEXT)], [KeyboardButton(text=CANCEL_TEXT)]],
+            keyboard=[
+                [KeyboardButton(text=SKIP_TEXT)],
+                [KeyboardButton(text=CANCEL_TEXT)]
+            ],
             resize_keyboard=True,
             one_time_keyboard=True,
         )
 
     def confirm_keyboard() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=CONFIRM_TEXT)], [KeyboardButton(text=CANCEL_TEXT)]],
+            keyboard=[
+                [KeyboardButton(text=CONFIRM_TEXT)],
+                [KeyboardButton(text=CANCEL_TEXT)]
+            ],
             resize_keyboard=True,
             one_time_keyboard=True,
         )
 
-    def location_or_cancel_keyboard(prompt: str) -> ReplyKeyboardMarkup:
+    def location_keyboard(text: str) -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="Надіслати геолокацію", request_location=True)],
+                [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
                 [KeyboardButton(text=CANCEL_TEXT)],
             ],
             resize_keyboard=True,
             one_time_keyboard=True,
-            input_field_placeholder=prompt,
+            input_field_placeholder=text,
         )
 
-    def is_valid_phone(text: str) -> bool:
-        return bool(re.fullmatch(r"[+]?[\d\s\-()]{7,18}", text.strip()))
-
-    # Start order via command or hot button
-    @router.message(F.text == ORDER_TEXT)
-    @router.message(Command("order"))
+    @router.message(F.text == "🚖 Замовити таксі")
     async def start_order(message: Message, state: FSMContext) -> None:
-        await state.set_state(OrderStates.name)
-        await message.answer(
-            "Як до вас звертатися?", reply_markup=cancel_keyboard()
-        )
-
-    @router.message(F.text == CANCEL_TEXT)
-    async def cancel(message: Message, state: FSMContext) -> None:
-        await state.clear()
-        await message.answer("Замовлення скасовано.", reply_markup=ReplyKeyboardRemove())
-
-    @router.message(OrderStates.name)
-    async def ask_phone(message: Message, state: FSMContext) -> None:
-        full_name = message.text.strip()
-        if not full_name:
-            await message.answer("Будь ласка, введіть ім'я.")
+        if not message.from_user:
             return
-        await state.update_data(name=full_name)
-        await state.set_state(OrderStates.phone)
-        await message.answer(
-            "Ваш номер телефону?", reply_markup=cancel_keyboard()
-        )
-
-    @router.message(OrderStates.phone)
-    async def ask_pickup(message: Message, state: FSMContext) -> None:
-        phone = message.text.strip()
-        if not is_valid_phone(phone):
-            await message.answer("Введіть коректний номер, напр.: +380 67 123 45 67")
+        
+        # Перевірка реєстрації
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        if not user or not user.phone or not user.city:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📱 Завершити реєстрацію", callback_data="register:start")]
+                ]
+            )
+            await message.answer(
+                "❌ Спочатку завершіть реєстрацію!\n\n"
+                "Це потрібно щоб водій міг з вами зв'язатись.",
+                reply_markup=kb
+            )
             return
-        await state.update_data(phone=phone)
+        
+        # Зберігаємо дані користувача
+        await state.update_data(
+            user_id=message.from_user.id,
+            name=user.full_name,
+            phone=user.phone,
+            city=user.city,
+        )
+        
         await state.set_state(OrderStates.pickup)
         await message.answer(
-            "Адреса подачі авто? Ви можете надіслати геолокацію.",
-            reply_markup=location_or_cancel_keyboard("Надішліть адресу або геолокацію"),
-        )
-
-    @router.message(OrderStates.pickup)
-    async def ask_destination(message: Message, state: FSMContext) -> None:
-        pickup = message.text.strip()
-        if len(pickup) < 3:
-            await message.answer("Будь ласка, уточніть адресу подачі.")
-            return
-        await state.update_data(pickup=pickup)
-        await state.set_state(OrderStates.destination)
-        await message.answer(
-            "Куди їдемо? Вкажіть адресу призначення або надішліть геолокацію.",
-            reply_markup=location_or_cancel_keyboard("Вкажіть адресу призначення або гео"),
+            "📍 <b>Звідки подати таксі?</b>\n\n"
+            "Надішліть адресу або геолокацію",
+            reply_markup=location_keyboard("Вкажіть адресу подачі")
         )
 
     @router.message(OrderStates.pickup, F.location)
-    async def ask_destination_from_location(message: Message, state: FSMContext) -> None:
+    async def pickup_location(message: Message, state: FSMContext) -> None:
+        if not message.location:
+            return
+        
         loc = message.location
-        pickup = f"geo:{loc.latitude:.6f},{loc.longitude:.6f}"
+        pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+        await state.update_data(pickup=pickup, pickup_lat=loc.latitude, pickup_lon=loc.longitude)
+        
+        await state.set_state(OrderStates.destination)
+        await message.answer(
+            "✅ Місце подачі зафіксовано!\n\n"
+            "📍 <b>Куди їдемо?</b>\n\n"
+            "Надішліть адресу або геолокацію",
+            reply_markup=location_keyboard("Вкажіть куди їхати")
+        )
+
+    @router.message(OrderStates.pickup)
+    async def pickup_text(message: Message, state: FSMContext) -> None:
+        pickup = message.text.strip() if message.text else ""
+        if len(pickup) < 3:
+            await message.answer("❌ Адреса занадто коротка. Вкажіть точніше.")
+            return
+        
         await state.update_data(pickup=pickup)
         await state.set_state(OrderStates.destination)
         await message.answer(
-            "Куди їдемо? Вкажіть адресу призначення або надішліть геолокацію.",
-            reply_markup=location_or_cancel_keyboard("Вкажіть адресу призначення або гео"),
-        )
-
-    @router.message(OrderStates.destination)
-    async def ask_comment(message: Message, state: FSMContext) -> None:
-        destination = message.text.strip()
-        if len(destination) < 3:
-            await message.answer("Будь ласка, уточніть адресу призначення.")
-            return
-        await state.update_data(destination=destination)
-        await state.set_state(OrderStates.comment)
-        await message.answer(
-            "Коментар до замовлення? (наприклад, під'їзд/поверх)\n"
-            "Можете натиснути 'Пропустити'.",
-            reply_markup=skip_or_cancel_keyboard(),
+            "✅ Місце подачі зафіксовано!\n\n"
+            "📍 <b>Куди їдемо?</b>\n\n"
+            "Надішліть адресу або геолокацію",
+            reply_markup=location_keyboard("Вкажіть куди їхати")
         )
 
     @router.message(OrderStates.destination, F.location)
-    async def ask_comment_from_location(message: Message, state: FSMContext) -> None:
+    async def destination_location(message: Message, state: FSMContext) -> None:
+        if not message.location:
+            return
+        
         loc = message.location
-        destination = f"geo:{loc.latitude:.6f},{loc.longitude:.6f}"
+        destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+        await state.update_data(
+            destination=destination,
+            dest_lat=loc.latitude,
+            dest_lon=loc.longitude
+        )
+        
+        await state.set_state(OrderStates.comment)
+        await message.answer(
+            "✅ Пункт призначення зафіксовано!\n\n"
+            "💬 <b>Додайте коментар</b> (опціонально):\n\n"
+            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
+            "Або натисніть 'Пропустити'",
+            reply_markup=skip_or_cancel_keyboard()
+        )
+
+    @router.message(OrderStates.destination)
+    async def destination_text(message: Message, state: FSMContext) -> None:
+        destination = message.text.strip() if message.text else ""
+        if len(destination) < 3:
+            await message.answer("❌ Адреса занадто коротка. Вкажіть точніше.")
+            return
+        
         await state.update_data(destination=destination)
         await state.set_state(OrderStates.comment)
         await message.answer(
-            "Коментар до замовлення? (наприклад, під'їзд/поверх)\n"
-            "Можете натиснути 'Пропустити'.",
-            reply_markup=skip_or_cancel_keyboard(),
+            "✅ Пункт призначення зафіксовано!\n\n"
+            "💬 <b>Додайте коментар</b> (опціонально):\n\n"
+            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
+            "Або натисніть 'Пропустити'",
+            reply_markup=skip_or_cancel_keyboard()
         )
 
     @router.message(OrderStates.comment, F.text == SKIP_TEXT)
     async def skip_comment(message: Message, state: FSMContext) -> None:
         await state.update_data(comment=None)
-        await show_confirmation(message, state)
+        await show_confirmation(message, state, config)
 
     @router.message(OrderStates.comment)
-    async def take_comment(message: Message, state: FSMContext) -> None:
-        comment = message.text.strip()
+    async def save_comment(message: Message, state: FSMContext) -> None:
+        comment = message.text.strip() if message.text else None
         await state.update_data(comment=comment)
-        await show_confirmation(message, state)
+        await show_confirmation(message, state, config)
 
-    async def show_confirmation(message: Message, state: FSMContext) -> None:
+    async def show_confirmation(message: Message, state: FSMContext, config: AppConfig) -> None:
         data = await state.get_data()
+        
         text = (
-            "Будь ласка, підтвердіть замовлення:\n\n"
-            f"Ім'я: {data.get('name')}\n"
-            f"Телефон: {data.get('phone')}\n"
-            f"Звідки: {data.get('pickup')}\n"
-            f"Куди: {data.get('destination')}\n"
-            f"Коментар: {data.get('comment') or '—'}\n"
+            "📋 <b>Перевірте дані замовлення:</b>\n\n"
+            f"👤 Клієнт: {data.get('name')}\n"
+            f"📱 Телефон: {data.get('phone')}\n"
+            f"🏙 Місто: {data.get('city')}\n\n"
+            f"📍 Звідки: {data.get('pickup')}\n"
+            f"📍 Куди: {data.get('destination')}\n"
+            f"💬 Коментар: {data.get('comment') or '—'}\n\n"
+            "Все вірно?"
         )
-
-        # Attempt to estimate distance/time/cost via Google Distance Matrix if possible
-        async def parse_geo(s: str) -> Optional[str]:
-            if not s:
-                return None
-            s = s.strip()
-            if s.startswith("geo:"):
-                return s[4:]
-            return None
-
-        origin_geo = await parse_geo(str(data.get("pickup")))
-        dest_geo = await parse_geo(str(data.get("destination")))
-        api_key = config.google_maps_api_key
-        if api_key and origin_geo and dest_geo:
-            try:
-                origins = origin_geo
-                destinations = dest_geo
-                url = (
-                    "https://maps.googleapis.com/maps/api/distancematrix/json"
-                    f"?origins={origins}&destinations={destinations}&key={api_key}&mode=driving"
-                )
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=8) as resp:
-                        dm = await resp.json()
-                rows = dm.get("rows", [])
-                if rows and rows[0].get("elements"):
-                    el = rows[0]["elements"][0]
-                    if el.get("status") == "OK":
-                        meters = el["distance"]["value"]
-                        seconds = el["duration"]["value"]
-                        km = meters / 1000.0
-                        minutes = math.ceil(seconds / 60)
-                        tariff = await get_latest_tariff(config.database_path)
-                        if tariff:
-                            amount = max(
-                                tariff.minimum,
-                                tariff.base_fare + km * tariff.per_km + minutes * tariff.per_minute,
-                            )
-                            text += (
-                                "\nОцінка маршруту:\n"
-                                f"Відстань: {km:.1f} км\n"
-                                f"Час: ~{minutes} хв\n"
-                                f"Вартість: ~{amount:.2f} грн\n"
-                            )
-            except Exception:
-                pass
+        
         await state.set_state(OrderStates.confirm)
         await message.answer(text, reply_markup=confirm_keyboard())
 
     @router.message(OrderStates.confirm, F.text == CONFIRM_TEXT)
     async def confirm_order(message: Message, state: FSMContext) -> None:
-        from app.utils.matching import find_nearest_driver, parse_geo_coordinates
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        if not message.from_user:
+            return
         
         data = await state.get_data()
+        
+        # Створення замовлення
         order = Order(
             id=None,
-            user_id=message.from_user.id if message.from_user else 0,
+            user_id=message.from_user.id,
             name=str(data.get("name")),
             phone=str(data.get("phone")),
             pickup_address=str(data.get("pickup")),
             destination_address=str(data.get("destination")),
-            comment=(None if data.get("comment") in (None, "") else str(data.get("comment"))),
+            comment=data.get("comment"),
             created_at=datetime.now(timezone.utc),
         )
+        
         order_id = await insert_order(config.database_path, order)
         await state.clear()
-        await message.answer(
-            f"✅ Дякуємо! Ваше замовлення №{order_id} прийнято.\n\n"
-            f"🔍 Шукаємо водія...",
-            reply_markup=ReplyKeyboardRemove(),
-        )
         
-        # Try to find nearest driver
-        pickup_coords = parse_geo_coordinates(str(data.get("pickup")))
-        if pickup_coords:
-            pickup_lat, pickup_lon = pickup_coords
-            driver = await find_nearest_driver(config.database_path, pickup_lat, pickup_lon)
-            
-            if driver:
-                from app.storage.db import offer_order_to_driver
+        # Відправка замовлення у групу водіїв
+        if config.driver_group_chat_id:
+            try:
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="✅ Прийняти замовлення",
+                            callback_data=f"accept_order:{order_id}"
+                        )]
+                    ]
+                )
                 
-                # Offer order to driver
-                success = await offer_order_to_driver(config.database_path, order_id, driver.id)
+                group_message = (
+                    f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
+                    f"🏙 Місто: {data.get('city')}\n"
+                    f"👤 Клієнт: {data.get('name')}\n"
+                    f"📱 Телефон: <code>{data.get('phone')}</code>\n\n"
+                    f"📍 Звідки: {data.get('pickup')}\n"
+                    f"📍 Куди: {data.get('destination')}\n"
+                    f"💬 Коментар: {data.get('comment') or '—'}\n\n"
+                    f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}"
+                )
                 
-                if success:
-                    # Notify driver
-                    try:
-                        dest_coords = parse_geo_coordinates(str(data.get("destination")))
-                        distance_info = ""
-                        
-                        if dest_coords and config.google_maps_api_key:
-                            from app.utils.maps import get_distance_and_duration
-                            result = await get_distance_and_duration(
-                                config.google_maps_api_key,
-                                pickup_lat, pickup_lon,
-                                dest_coords[0], dest_coords[1]
-                            )
-                            if result:
-                                distance_m, duration_s = result
-                                distance_info = f"\n📍 Відстань: {distance_m/1000:.1f} км\n⏱ Час: ~{duration_s//60} хв"
-                        
-                        kb = InlineKeyboardMarkup(
-                            inline_keyboard=[
-                                [
-                                    InlineKeyboardButton(text="✅ Прийняти", callback_data=f"order:accept:{order_id}"),
-                                    InlineKeyboardButton(text="❌ Відхилити", callback_data=f"order:reject:{order_id}"),
-                                ]
-                            ]
-                        )
-                        
-                        await message.bot.send_message(
-                            driver.tg_user_id,
-                            f"🔔 <b>Нове замовлення #{order_id}</b>\n\n"
-                            f"👤 Клієнт: {order.name}\n"
-                            f"📱 Телефон: {order.phone}\n"
-                            f"📍 Звідки: {order.pickup_address}\n"
-                            f"📍 Куди: {order.destination_address}\n"
-                            f"{distance_info}\n"
-                            f"💬 Коментар: {order.comment or '—'}",
-                            reply_markup=kb
-                        )
-                        
-                        await message.answer(
-                            f"✅ Знайдено водія!\n"
-                            f"Очікуйте підтвердження..."
-                        )
-                    except Exception as e:
-                        await message.answer(
-                            f"⚠️ Не вдалося надіслати повідомлення водію.\n"
-                            f"Очікуйте, ми знайдемо іншого водія."
-                        )
-                else:
-                    await message.answer("⚠️ Всі водії зайняті. Очікуйте, будь ласка...")
-            else:
+                await message.bot.send_message(
+                    config.driver_group_chat_id,
+                    group_message,
+                    reply_markup=kb
+                )
+                
+                logger.info(f"Order {order_id} sent to driver group {config.driver_group_chat_id}")
+                
+                # Відповідь клієнту
+                from app.handlers.start import main_menu_keyboard
                 await message.answer(
-                    "⚠️ На жаль, зараз немає вільних водіїв.\n"
-                    "Спробуйте пізніше або зв'яжіться з підтримкою."
+                    f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
+                    "🔍 Шукаємо водія...\n\n"
+                    "Ваше замовлення надіслано водіям.\n"
+                    "Очікуйте підтвердження! ⏱",
+                    reply_markup=main_menu_keyboard(is_registered=True)
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to send order to group: {e}")
+                from app.handlers.start import main_menu_keyboard
+                await message.answer(
+                    f"⚠️ Замовлення #{order_id} створено, але виникла помилка при відправці водіям.\n"
+                    "Зверніться до адміністратора.",
+                    reply_markup=main_menu_keyboard(is_registered=True)
                 )
         else:
+            # Якщо група не налаштована
+            from app.handlers.start import main_menu_keyboard
             await message.answer(
-                "⚠️ Для автоматичного пошуку водія надайте геолокацію.\n"
-                "Адміністратор обробить ваше замовлення вручну."
+                f"✅ Замовлення #{order_id} створено!\n\n"
+                "⚠️ Група водіїв не налаштована.\n"
+                "Зверніться до адміністратора.",
+                reply_markup=main_menu_keyboard(is_registered=True)
             )
 
-    @router.message(OrderStates.confirm)
-    async def confirm_unknown(message: Message, state: FSMContext) -> None:
-        await message.answer("Будь ласка, натисніть 'Підтвердити' або 'Скасувати'.")
-
-    @router.message(Command("orders"))
-    async def list_recent_orders(message: Message) -> None:
-        if not message.from_user or message.from_user.id not in set(config.bot.admin_ids):
+    @router.message(F.text == "📜 Мої замовлення")
+    async def show_my_orders(message: Message) -> None:
+        if not message.from_user:
             return
-        orders = await fetch_recent_orders(config.database_path, limit=5)
+        
+        orders = await get_user_order_history(config.database_path, message.from_user.id, limit=10)
+        
         if not orders:
-            await message.answer("Замовлень поки немає.")
+            await message.answer("📜 У вас поки немає замовлень.")
             return
-        lines = []
+        
+        text = "📜 <b>Ваші останні замовлення:</b>\n\n"
+        
         for o in orders:
-            lines.append(
-                "\n".join([
-                    f"№{o.id} від {o.created_at.strftime('%Y-%m-%d %H:%M')}",
-                    f"Клієнт: {o.name} ({o.phone})",
-                    f"Маршрут: {o.pickup_address} → {o.destination_address}",
-                    f"Коментар: {o.comment or '—'}",
-                ])
+            status_emoji = {
+                "pending": "⏳ Очікує",
+                "offered": "📤 Запропоновано",
+                "accepted": "✅ Прийнято",
+                "in_progress": "🚗 В дорозі",
+                "completed": "✔️ Завершено",
+                "cancelled": "❌ Скасовано",
+            }.get(o.status, "❓")
+            
+            text += (
+                f"<b>#{o.id}</b> - {status_emoji}\n"
+                f"📍 {o.pickup_address[:30]}...\n"
+                f"   → {o.destination_address[:30]}...\n"
             )
-        await message.answer("\n\n".join(lines))
+            if o.fare_amount:
+                text += f"💰 {o.fare_amount:.0f} грн\n"
+            text += f"📅 {o.created_at.strftime('%d.%m %H:%M')}\n\n"
+        
+        await message.answer(text)
+
+    @router.message(F.text == CANCEL_TEXT)
+    async def cancel(message: Message, state: FSMContext) -> None:
+        if not message.from_user:
+            return
+        
+        await state.clear()
+        
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        is_registered = user is not None and user.phone and user.city
+        
+        from app.handlers.start import main_menu_keyboard
+        await message.answer(
+            "❌ Замовлення скасовано.",
+            reply_markup=main_menu_keyboard(is_registered=is_registered)
+        )
 
     return router
