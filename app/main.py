@@ -115,7 +115,10 @@ async def main() -> None:
         if shutdown_event.is_set():
             logging.info("🛑 Зупинка polling...")
             await dp.stop_polling()
-            await bot.session.close()
+            try:
+                await bot.session.close()
+            except Exception:
+                pass
             logging.info("✅ Graceful shutdown завершено")
         
     except Exception as e:
@@ -131,8 +134,10 @@ async def main() -> None:
         raise
     finally:
         # Cleanup
-        if not bot.session.closed:
+        try:
             await bot.session.close()
+        except Exception:
+            pass
         logging.info("👋 Бот зупинено")
 
 
