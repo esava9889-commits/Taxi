@@ -64,7 +64,15 @@ def load_config() -> AppConfig:
         raise RuntimeError("ADMIN_IDS is not set. Add your Telegram ID to .env")
     admin_ids = _parse_admin_ids(admin_ids_raw)
 
-    default_db = os.path.join(os.getcwd(), "data", "taxi.sqlite3")
+    # Database path - use /tmp for Render deployment (ephemeral but works)
+    # For production, use external database or Render disk
+    if os.getenv("RENDER"):
+        # On Render, use /tmp (ephemeral storage)
+        default_db = "/tmp/taxi.sqlite3"
+    else:
+        # Locally, use data/ folder
+        default_db = os.path.join(os.getcwd(), "data", "taxi.sqlite3")
+    
     db_path = os.getenv("DB_PATH", default_db)
 
     google_maps_api_key = os.getenv("GOOGLE_MAPS_API_KEY") or None
@@ -74,8 +82,10 @@ def load_config() -> AppConfig:
     driver_group_raw = os.getenv("DRIVER_GROUP_CHAT_ID")
     driver_group_chat_id = int(driver_group_raw) if driver_group_raw else None
 
-    # Ensure the parent directory exists
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    # Ensure the parent directory exists (if not /tmp)
+    db_dir = os.path.dirname(db_path)
+    if db_dir and db_dir != "/tmp":
+        os.makedirs(db_dir, exist_ok=True)
 
     return AppConfig(
         bot=BotConfig(token=token, admin_ids=admin_ids),
