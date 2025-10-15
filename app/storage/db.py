@@ -17,6 +17,11 @@ class Order:
     destination_address: str
     comment: Optional[str]
     created_at: datetime
+    # Координати для розрахунку відстані
+    pickup_lat: Optional[float] = None
+    pickup_lon: Optional[float] = None
+    dest_lat: Optional[float] = None
+    dest_lon: Optional[float] = None
     # Extended lifecycle fields
     driver_id: Optional[int] = None
     distance_m: Optional[int] = None
@@ -41,6 +46,10 @@ async def init_db(db_path: str) -> None:
                 destination_address TEXT NOT NULL,
                 comment TEXT,
                 created_at TEXT NOT NULL,
+                pickup_lat REAL,
+                pickup_lon REAL,
+                dest_lat REAL,
+                dest_lon REAL,
                 driver_id INTEGER,
                 distance_m INTEGER,
                 duration_s INTEGER,
@@ -157,8 +166,9 @@ async def insert_order(db_path: str, order: Order) -> int:
             """
             INSERT INTO orders (
                 user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                pickup_lat, pickup_lon, dest_lat, dest_lon,
                 driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order.user_id,
@@ -168,6 +178,10 @@ async def insert_order(db_path: str, order: Order) -> int:
                 order.destination_address,
                 order.comment,
                 order.created_at.isoformat(),
+                order.pickup_lat,
+                order.pickup_lon,
+                order.dest_lat,
+                order.dest_lon,
                 order.driver_id,
                 order.distance_m,
                 order.duration_s,
@@ -187,6 +201,7 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   pickup_lat, pickup_lon, dest_lat, dest_lon,
                    driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
             FROM orders
             ORDER BY id DESC
@@ -208,14 +223,18 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
                 destination_address=row[5],
                 comment=row[6],
                 created_at=datetime.fromisoformat(row[7]),
-                driver_id=row[8],
-                distance_m=row[9],
-                duration_s=row[10],
-                fare_amount=row[11],
-                commission=row[12],
-                status=row[13],
-                started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
-                finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+                pickup_lat=row[8],
+                pickup_lon=row[9],
+                dest_lat=row[10],
+                dest_lon=row[11],
+                driver_id=row[12],
+                distance_m=row[13],
+                duration_s=row[14],
+                fare_amount=row[15],
+                commission=row[16],
+                status=row[17],
+                started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
+                finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
             )
         )
     return orders
@@ -560,6 +579,7 @@ async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   pickup_lat, pickup_lon, dest_lat, dest_lon,
                    driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
             FROM orders WHERE id = ?
             """,
@@ -577,14 +597,18 @@ async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
         destination_address=row[5],
         comment=row[6],
         created_at=datetime.fromisoformat(row[7]),
-        driver_id=row[8],
-        distance_m=row[9],
-        duration_s=row[10],
-        fare_amount=row[11],
-        commission=row[12],
-        status=row[13],
-        started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
-        finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+        pickup_lat=row[8],
+        pickup_lon=row[9],
+        dest_lat=row[10],
+        dest_lon=row[11],
+        driver_id=row[12],
+        distance_m=row[13],
+        duration_s=row[14],
+        fare_amount=row[15],
+        commission=row[16],
+        status=row[17],
+        started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
+        finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
     )
 
 
@@ -749,6 +773,7 @@ async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) ->
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   pickup_lat, pickup_lon, dest_lat, dest_lon,
                    driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
             FROM orders
             WHERE user_id = ?
@@ -770,14 +795,18 @@ async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) ->
                 destination_address=row[5],
                 comment=row[6],
                 created_at=datetime.fromisoformat(row[7]),
-                driver_id=row[8],
-                distance_m=row[9],
-                duration_s=row[10],
-                fare_amount=row[11],
-                commission=row[12],
-                status=row[13],
-                started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
-                finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+                pickup_lat=row[8],
+                pickup_lon=row[9],
+                dest_lat=row[10],
+                dest_lon=row[11],
+                driver_id=row[12],
+                distance_m=row[13],
+                duration_s=row[14],
+                fare_amount=row[15],
+                commission=row[16],
+                status=row[17],
+                started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
+                finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
             )
         )
     return orders
@@ -794,6 +823,7 @@ async def get_driver_order_history(db_path: str, driver_tg_id: int, limit: int =
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   pickup_lat, pickup_lon, dest_lat, dest_lon,
                    driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
             FROM orders
             WHERE driver_id = ?
@@ -815,14 +845,18 @@ async def get_driver_order_history(db_path: str, driver_tg_id: int, limit: int =
                 destination_address=row[5],
                 comment=row[6],
                 created_at=datetime.fromisoformat(row[7]),
-                driver_id=row[8],
-                distance_m=row[9],
-                duration_s=row[10],
-                fare_amount=row[11],
-                commission=row[12],
-                status=row[13],
-                started_at=(datetime.fromisoformat(row[14]) if row[14] else None),
-                finished_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+                pickup_lat=row[8],
+                pickup_lon=row[9],
+                dest_lat=row[10],
+                dest_lon=row[11],
+                driver_id=row[12],
+                distance_m=row[13],
+                duration_s=row[14],
+                fare_amount=row[15],
+                commission=row[16],
+                status=row[17],
+                started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
+                finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
             )
         )
     return orders
@@ -836,6 +870,14 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
 
     # Best-effort add columns if missing
     # Orders
+    if not await has_column('orders', 'pickup_lat'):
+        await db.execute("ALTER TABLE orders ADD COLUMN pickup_lat REAL")
+    if not await has_column('orders', 'pickup_lon'):
+        await db.execute("ALTER TABLE orders ADD COLUMN pickup_lon REAL")
+    if not await has_column('orders', 'dest_lat'):
+        await db.execute("ALTER TABLE orders ADD COLUMN dest_lat REAL")
+    if not await has_column('orders', 'dest_lon'):
+        await db.execute("ALTER TABLE orders ADD COLUMN dest_lon REAL")
     if not await has_column('orders', 'driver_id'):
         await db.execute("ALTER TABLE orders ADD COLUMN driver_id INTEGER")
     if not await has_column('orders', 'distance_m'):

@@ -22,7 +22,9 @@ from app.storage.db import (
     insert_order,
     get_user_by_id,
     get_user_order_history,
+    get_latest_tariff,
 )
+from app.utils.maps import get_distance_and_duration, geocode_address
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +139,20 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ Адреса занадто коротка. Вкажіть точніше.")
             return
         
-        await state.update_data(pickup=pickup)
+        # Спроба геокодувати адресу в координати
+        coords = None
+        if config.google_maps_api_key:
+            coords = await geocode_address(config.google_maps_api_key, pickup)
+            if coords:
+                lat, lon = coords
+                await state.update_data(pickup=pickup, pickup_lat=lat, pickup_lon=lon)
+                logger.info(f"Геокодовано адресу: {pickup} → {lat},{lon}")
+            else:
+                logger.warning(f"Не вдалося геокодувати адресу: {pickup}")
+                await state.update_data(pickup=pickup)
+        else:
+            await state.update_data(pickup=pickup)
+        
         await state.set_state(OrderStates.destination)
         await message.answer(
             "✅ Місце подачі зафіксовано!\n\n"
@@ -175,7 +190,20 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ Адреса занадто коротка. Вкажіть точніше.")
             return
         
-        await state.update_data(destination=destination)
+        # Спроба геокодувати адресу в координати
+        coords = None
+        if config.google_maps_api_key:
+            coords = await geocode_address(config.google_maps_api_key, destination)
+            if coords:
+                lat, lon = coords
+                await state.update_data(destination=destination, dest_lat=lat, dest_lon=lon)
+                logger.info(f"Геокодовано адресу: {destination} → {lat},{lon}")
+            else:
+                logger.warning(f"Не вдалося геокодувати адресу: {destination}")
+                await state.update_data(destination=destination)
+        else:
+            await state.update_data(destination=destination)
+        
         await state.set_state(OrderStates.comment)
         await message.answer(
             "✅ Пункт призначення зафіксовано!\n\n"
@@ -199,6 +227,59 @@ def create_router(config: AppConfig) -> Router:
     async def show_confirmation(message: Message, state: FSMContext, config: AppConfig) -> None:
         data = await state.get_data()
         
+        # Розрахунок відстані і вартості
+        pickup_lat = data.get('pickup_lat')
+        pickup_lon = data.get('pickup_lon')
+        dest_lat = data.get('dest_lat')
+        dest_lon = data.get('dest_lon')
+        
+        distance_text = ""
+        fare_estimate = ""
+        
+        # Якщо немає координат але є текстові адреси - геокодувати
+        if (not pickup_lat or not dest_lat) and config.google_maps_api_key:
+            pickup_addr = data.get('pickup')
+            dest_addr = data.get('destination')
+            
+            if pickup_addr and dest_addr and '📍' not in str(pickup_addr):
+                # Геокодувати адреси
+                pickup_coords = await geocode_address(config.google_maps_api_key, str(pickup_addr))
+                dest_coords = await geocode_address(config.google_maps_api_key, str(dest_addr))
+                
+                if pickup_coords and dest_coords:
+                    pickup_lat, pickup_lon = pickup_coords
+                    dest_lat, dest_lon = dest_coords
+                    await state.update_data(
+                        pickup_lat=pickup_lat, pickup_lon=pickup_lon,
+                        dest_lat=dest_lat, dest_lon=dest_lon
+                    )
+        
+        # Якщо є координати - розрахувати відстань
+        if pickup_lat and pickup_lon and dest_lat and dest_lon:
+            if config.google_maps_api_key:
+                result = await get_distance_and_duration(
+                    config.google_maps_api_key,
+                    pickup_lat, pickup_lon,
+                    dest_lat, dest_lon
+                )
+                if result:
+                    distance_m, duration_s = result
+                    # Зберегти в state для пізнішого використання
+                    await state.update_data(distance_m=distance_m, duration_s=duration_s)
+                    
+                    km = distance_m / 1000.0
+                    minutes = duration_s / 60.0
+                    distance_text = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n\n"
+                    
+                    # Розрахунок орієнтовної вартості
+                    tariff = await get_latest_tariff(config.database_path)
+                    if tariff:
+                        estimated_fare = max(
+                            tariff.minimum,
+                            tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
+                        )
+                        fare_estimate = f"💰 Орієнтовна вартість: {estimated_fare:.0f} грн\n\n"
+        
         text = (
             "📋 <b>Перевірте дані замовлення:</b>\n\n"
             f"👤 Клієнт: {data.get('name')}\n"
@@ -207,6 +288,8 @@ def create_router(config: AppConfig) -> Router:
             f"📍 Звідки: {data.get('pickup')}\n"
             f"📍 Куди: {data.get('destination')}\n"
             f"💬 Коментар: {data.get('comment') or '—'}\n\n"
+            f"{distance_text}"
+            f"{fare_estimate}"
             "Все вірно?"
         )
         
@@ -220,7 +303,7 @@ def create_router(config: AppConfig) -> Router:
         
         data = await state.get_data()
         
-        # Створення замовлення
+        # Створення замовлення з координатами і відстанню
         order = Order(
             id=None,
             user_id=message.from_user.id,
@@ -230,6 +313,12 @@ def create_router(config: AppConfig) -> Router:
             destination_address=str(data.get("destination")),
             comment=data.get("comment"),
             created_at=datetime.now(timezone.utc),
+            pickup_lat=data.get("pickup_lat"),
+            pickup_lon=data.get("pickup_lon"),
+            dest_lat=data.get("dest_lat"),
+            dest_lon=data.get("dest_lon"),
+            distance_m=data.get("distance_m"),
+            duration_s=data.get("duration_s"),
         )
         
         order_id = await insert_order(config.database_path, order)
@@ -247,6 +336,22 @@ def create_router(config: AppConfig) -> Router:
                     ]
                 )
                 
+                # Додати інформацію про відстань якщо є
+                distance_info = ""
+                if data.get('distance_m'):
+                    km = data.get('distance_m') / 1000.0
+                    minutes = (data.get('duration_s') or 0) / 60.0
+                    distance_info = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n"
+                    
+                    # Розрахунок орієнтовної вартості
+                    tariff = await get_latest_tariff(config.database_path)
+                    if tariff:
+                        estimated_fare = max(
+                            tariff.minimum,
+                            tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
+                        )
+                        distance_info += f"💰 Орієнтовна вартість: ~{estimated_fare:.0f} грн\n"
+                
                 group_message = (
                     f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
                     f"🏙 Місто: {data.get('city')}\n"
@@ -254,6 +359,7 @@ def create_router(config: AppConfig) -> Router:
                     f"📱 Телефон: <code>{data.get('phone')}</code>\n\n"
                     f"📍 Звідки: {data.get('pickup')}\n"
                     f"📍 Куди: {data.get('destination')}\n"
+                    f"{distance_info}\n"
                     f"💬 Коментар: {data.get('comment') or '—'}\n\n"
                     f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}"
                 )

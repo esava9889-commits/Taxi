@@ -306,9 +306,21 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Тарифи не налаштовані", show_alert=True)
             return
         
-        # Базовий розрахунок (можна покращити з Google Maps)
-        distance_m = 5000  # 5 км за замовчуванням
-        duration_s = 600   # 10 хв за замовчуванням
+        # Використовуємо РЕАЛЬНУ відстань з БД
+        distance_m = order.distance_m if order.distance_m else 5000  # fallback
+        duration_s = order.duration_s if order.duration_s else 600   # fallback
+        
+        # Якщо немає відстані в БД, але є координати - розрахувати зараз
+        if not order.distance_m and order.pickup_lat and order.dest_lat and config.google_maps_api_key:
+            from app.utils.maps import get_distance_and_duration as calc_distance
+            result = await calc_distance(
+                config.google_maps_api_key,
+                order.pickup_lat, order.pickup_lon,
+                order.dest_lat, order.dest_lon
+            )
+            if result:
+                distance_m, duration_s = result
+                logger.info(f"📏 Розраховано відстань для замовлення #{order_id}: {distance_m/1000:.1f} км")
         
         km = distance_m / 1000.0
         minutes = duration_s / 60.0
@@ -320,6 +332,8 @@ def create_router(config: AppConfig) -> Router:
         
         commission_rate = 0.02  # 2%
         commission = fare * commission_rate
+        
+        logger.info(f"Order #{order_id}: Distance={km:.1f}km, Duration={minutes:.0f}min, Fare={fare:.2f}грн")
         
         success = await complete_order(
             config.database_path,
