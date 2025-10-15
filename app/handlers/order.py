@@ -365,6 +365,7 @@ def create_router(config: AppConfig) -> Router:
                     km = data.get('distance_m') / 1000.0
                     minutes = (data.get('duration_s') or 0) / 60.0
                     distance_info = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n"
+                    logger.info(f"📤 Відправка в групу: відстань {km:.1f} км")
                     
                     # Розрахунок орієнтовної вартості
                     tariff = await get_latest_tariff(config.database_path)
@@ -374,6 +375,9 @@ def create_router(config: AppConfig) -> Router:
                             tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
                         )
                         distance_info += f"💰 Орієнтовна вартість: ~{estimated_fare:.0f} грн\n"
+                        logger.info(f"💰 Відправка в групу: вартість ~{estimated_fare:.0f} грн")
+                else:
+                    logger.warning(f"⚠️ Відстань не розрахована, відправка в групу без distance_info")
                 
                 group_message = (
                     f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
