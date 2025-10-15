@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
+import sys
 
 from aiogram import Dispatcher, Bot
 from aiogram.client.default import DefaultBotProperties
@@ -46,6 +48,12 @@ async def main() -> None:
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
+    # Затримка при запуску щоб старий процес встиг завершитись
+    if os.getenv('RENDER'):
+        startup_delay = 3
+        logging.info(f"⏳ Затримка запуску {startup_delay}s для graceful shutdown старого процесу...")
+        await asyncio.sleep(startup_delay)
+
     config = load_config()
     await init_db(config.database_path)
 
@@ -78,9 +86,38 @@ async def main() -> None:
     except Exception as e:
         logging.warning(f"⚠️ Не вдалося видалити webhook: {e}")
     
+    # Обробник graceful shutdown
+    shutdown_event = asyncio.Event()
+    
+    def signal_handler(sig, frame):
+        logging.info(f"📥 Отримано сигнал {sig}, graceful shutdown...")
+        shutdown_event.set()
+    
+    # Реєстрація обробників сигналів
+    if sys.platform != 'win32':
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    
     # Запустити polling з обробкою конфліктів
     try:
-        await dp.start_polling(bot, allowed_updates=None)
+        logging.info("🔄 Запуск polling...")
+        
+        # Polling task
+        polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=None))
+        
+        # Чекаємо або завершення polling або shutdown
+        done, pending = await asyncio.wait(
+            [polling_task, asyncio.create_task(shutdown_event.wait())],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Якщо shutdown - зупиняємо polling
+        if shutdown_event.is_set():
+            logging.info("🛑 Зупинка polling...")
+            await dp.stop_polling()
+            await bot.session.close()
+            logging.info("✅ Graceful shutdown завершено")
+        
     except Exception as e:
         if "Conflict" in str(e):
             logging.error(
@@ -88,9 +125,15 @@ async def main() -> None:
                 "Зупиніть всі інші процеси бота:\n"
                 "  - Локальні запуски (на вашому комп'ютері)\n"
                 "  - Інші деплої на Render/Railway/інших платформах\n"
-                "Telegram дозволяє тільки ОДИН активний інстанс бота."
+                "Telegram дозволяє тільки ОДИН активний інстанс бота.\n\n"
+                "💡 Рішення: Render Dashboard → Settings → тип 'Background Worker' замість 'Web Service'"
             )
         raise
+    finally:
+        # Cleanup
+        if not bot.session.closed:
+            await bot.session.close()
+        logging.info("👋 Бот зупинено")
 
 
 if __name__ == "__main__":
