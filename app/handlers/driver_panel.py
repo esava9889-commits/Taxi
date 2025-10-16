@@ -27,6 +27,8 @@ from app.storage.db import (
     insert_payment,
     get_latest_tariff,
     update_driver_location,
+    set_driver_online_status,
+    get_online_drivers_count,
 )
 from app.utils.maps import generate_static_map_url, get_distance_and_duration
 
@@ -59,12 +61,16 @@ def create_router(config: AppConfig) -> Router:
         online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
         location_status = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
         
+        # Підрахунок онлайн водіїв
+        online_count = await get_online_drivers_count(config.database_path, driver.city)
+        
         text = (
             f"🚗 <b>Панель водія</b>\n\n"
             f"Статус: {online_status}\n"
             f"Локація: {location_status}\n"
             f"ПІБ: {driver.full_name}\n"
             f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"👥 Водіїв онлайн: {online_count}\n"
             f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
             f"🔢 Номер: {driver.car_plate}\n\n"
             f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
@@ -78,12 +84,29 @@ def create_router(config: AppConfig) -> Router:
         
         # Інлайн кнопки для статусу та статистики
         inline_buttons = []
-        if driver.online:
-            inline_buttons.append([InlineKeyboardButton(text="🔴 Піти в офлайн", callback_data="driver:status:offline")])
-        else:
-            inline_buttons.append([InlineKeyboardButton(text="🟢 Почати працювати", callback_data="driver:status:online")])
         
-        inline_buttons.append([InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")])
+        # Велика кнопка статусу
+        if driver.online:
+            inline_buttons.append([
+                InlineKeyboardButton(
+                    text="🔴 ПІТИ В ОФЛАЙН", 
+                    callback_data="driver:status:offline"
+                )
+            ])
+        else:
+            inline_buttons.append([
+                InlineKeyboardButton(
+                    text="🟢 ПОЧАТИ ПРАЦЮВАТИ", 
+                    callback_data="driver:status:online"
+                )
+            ])
+        
+        inline_buttons.append([
+            InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")
+        ])
+        inline_buttons.append([
+            InlineKeyboardButton(text="🔄 Оновити панель", callback_data="driver:refresh")
+        ])
         
         inline_kb = InlineKeyboardMarkup(inline_keyboard=inline_buttons)
         
@@ -646,13 +669,16 @@ def create_router(config: AppConfig) -> Router:
         
         await call.answer(f"✅ Ви онлайн! Водіїв онлайн у {driver.city}: {online_count}", show_alert=True)
         
-        # Оновити повідомлення
+        # Оновити повідомлення з новим статусом
+        updated_text = call.message.text.replace("🔴 Офлайн", "🟢 Онлайн")
+        
         await call.message.edit_text(
-            call.message.text.replace("🔴 Офлайн", "🟢 Онлайн"),
+            updated_text,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="🔴 Піти в офлайн", callback_data="driver:status:offline")],
-                    [InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")]
+                    [InlineKeyboardButton(text="🔴 ПІТИ В ОФЛАЙН", callback_data="driver:status:offline")],
+                    [InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")],
+                    [InlineKeyboardButton(text="🔄 Оновити панель", callback_data="driver:refresh")]
                 ]
             )
         )
@@ -672,16 +698,86 @@ def create_router(config: AppConfig) -> Router:
         
         await call.answer("🔴 Ви офлайн. Ви не отримуватимете нові замовлення.", show_alert=True)
         
-        # Оновити повідомлення
+        # Оновити повідомлення з новим статусом
+        updated_text = call.message.text.replace("🟢 Онлайн", "🔴 Офлайн")
+        
         await call.message.edit_text(
-            call.message.text.replace("🟢 Онлайн", "🔴 Офлайн"),
+            updated_text,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="🟢 Почати працювати", callback_data="driver:status:online")],
-                    [InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")]
+                    [InlineKeyboardButton(text="🟢 ПОЧАТИ ПРАЦЮВАТИ", callback_data="driver:status:online")],
+                    [InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")],
+                    [InlineKeyboardButton(text="🔄 Оновити панель", callback_data="driver:refresh")]
                 ]
             )
         )
+    
+    # Оновити панель
+    @router.callback_query(F.data == "driver:refresh")
+    async def refresh_panel(call: CallbackQuery) -> None:
+        """Оновити панель водія"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver or driver.status != "approved":
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        earnings, commission_owed = await get_driver_earnings_today(config.database_path, call.from_user.id)
+        net_earnings = earnings - commission_owed
+        
+        # Чайові
+        from app.storage.db import get_driver_tips_total
+        tips_total = await get_driver_tips_total(config.database_path, call.from_user.id)
+        
+        online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        location_status = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
+        
+        # Підрахунок онлайн водіїв
+        online_count = await get_online_drivers_count(config.database_path, driver.city)
+        
+        text = (
+            f"🚗 <b>Панель водія</b>\n\n"
+            f"Статус: {online_status}\n"
+            f"Локація: {location_status}\n"
+            f"ПІБ: {driver.full_name}\n"
+            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"👥 Водіїв онлайн: {online_count}\n"
+            f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
+            f"🔢 Номер: {driver.car_plate}\n\n"
+            f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
+            f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
+            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n"
+            f"💝 Чайові (всього): {tips_total:.2f} грн\n\n"
+            "ℹ️ Замовлення надходять у групу водіїв.\n"
+            "Прийміть замовлення першим, щоб його отримати!\n\n"
+            "💡 <i>Поділіться локацією щоб клієнти могли бачити де ви</i>"
+        )
+        
+        # Кнопки
+        inline_buttons = []
+        if driver.online:
+            inline_buttons.append([
+                InlineKeyboardButton(text="🔴 ПІТИ В ОФЛАЙН", callback_data="driver:status:offline")
+            ])
+        else:
+            inline_buttons.append([
+                InlineKeyboardButton(text="🟢 ПОЧАТИ ПРАЦЮВАТИ", callback_data="driver:status:online")
+            ])
+        
+        inline_buttons.append([
+            InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")
+        ])
+        inline_buttons.append([
+            InlineKeyboardButton(text="🔄 Оновити панель", callback_data="driver:refresh")
+        ])
+        
+        await call.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_buttons)
+        )
+        await call.answer("✅ Оновлено!")
     
     # Статистика за період
     @router.callback_query(F.data == "driver:stats:period")
