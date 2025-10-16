@@ -53,10 +53,12 @@ def create_router(config: AppConfig) -> Router:
         net_earnings = earnings - commission_owed
         
         online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        location_status = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
         
         text = (
             f"🚗 <b>Панель водія</b>\n\n"
             f"Статус: {online_status}\n"
+            f"Локація: {location_status}\n"
             f"ПІБ: {driver.full_name}\n"
             f"🏙 Місто: {driver.city or 'Не вказано'}\n"
             f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
@@ -65,10 +67,22 @@ def create_router(config: AppConfig) -> Router:
             f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
             f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
             "ℹ️ Замовлення надходять у групу водіїв.\n"
-            "Прийміть замовлення першим, щоб його отримати!"
+            "Прийміть замовлення першим, щоб його отримати!\n\n"
+            "💡 <i>Поділіться локацією щоб клієнти могли бачити де ви</i>"
         )
         
-        await message.answer(text)
+        # Кнопка для надсилання локації
+        from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Поділитися локацією", request_location=True)],
+                [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+                [KeyboardButton(text="📜 Історія поїздок")]
+            ],
+            resize_keyboard=True
+        )
+        
+        await message.answer(text, reply_markup=kb)
 
     @router.message(F.text == "📊 Мій заробіток")
     async def show_earnings(message: Message) -> None:
