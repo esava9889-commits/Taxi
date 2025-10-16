@@ -403,9 +403,12 @@ def create_router(config: AppConfig) -> Router:
             "Прийміть замовлення першим, щоб його отримати!"
         )
         
+        # Перевірка чи це адмін
+        is_admin = call.from_user.id in config.bot.admin_ids
+        
         await call.message.answer(
             text,
-            reply_markup=main_menu_keyboard(is_registered=True, is_driver=True)
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
         )
 
     @router.message(F.text == "❌ Скасувати")

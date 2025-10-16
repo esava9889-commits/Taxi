@@ -86,9 +86,10 @@ def create_router(config: AppConfig) -> Router:
     async def cancel(message: Message, state: FSMContext) -> None:
         await state.clear()
         from app.handlers.start import main_menu_keyboard
+        is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
         await message.answer(
             "❌ Реєстрацію скасовано.",
-            reply_markup=main_menu_keyboard(is_registered=False, is_driver=False)
+            reply_markup=main_menu_keyboard(is_registered=False, is_driver=False, is_admin=is_admin)
         )
 
     @router.message(DriverRegStates.name)
