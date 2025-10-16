@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 def create_router(config: AppConfig) -> Router:
     router = Router(name="saved_addresses")
+    logger = logging.getLogger(__name__)
 
     class SaveAddressStates(StatesGroup):
         name = State()
