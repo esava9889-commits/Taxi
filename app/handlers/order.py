@@ -477,11 +477,12 @@ def create_router(config: AppConfig) -> Router:
         
         user = await get_user_by_id(config.database_path, message.from_user.id)
         is_registered = user is not None and user.phone and user.city
+        is_admin = message.from_user.id in config.bot.admin_ids
         
         from app.handlers.start import main_menu_keyboard
         await message.answer(
             "❌ Замовлення скасовано.",
-            reply_markup=main_menu_keyboard(is_registered=is_registered)
+            reply_markup=main_menu_keyboard(is_registered=is_registered, is_admin=is_admin)
         )
 
     # Скасування замовлення клієнтом
