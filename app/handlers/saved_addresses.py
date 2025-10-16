@@ -164,6 +164,7 @@ def create_router(config: AppConfig) -> Router:
         address = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
         
         if config.google_maps_api_key:
+            logger.info(f"🔑 API ключ присутній, reverse geocoding: {loc.latitude}, {loc.longitude}")
             from app.utils.maps import reverse_geocode
             readable_address = await reverse_geocode(
                 config.google_maps_api_key,
@@ -173,6 +174,10 @@ def create_router(config: AppConfig) -> Router:
             if readable_address:
                 address = readable_address
                 logger.info(f"✅ Reverse geocoded: {address}")
+            else:
+                logger.warning(f"⚠️ Reverse geocoding не вдалось")
+        else:
+            logger.warning("⚠️ Google Maps API ключ відсутній для reverse geocoding")
         
         saved_addr = SavedAddress(
             id=None,
@@ -226,10 +231,16 @@ def create_router(config: AppConfig) -> Router:
         # Спроба геокодувати
         lat, lon = None, None
         if config.google_maps_api_key:
+            logger.info(f"🔑 API ключ присутній, геокодую: {address}")
             from app.utils.maps import geocode_address
             coords = await geocode_address(config.google_maps_api_key, address)
             if coords:
                 lat, lon = coords
+                logger.info(f"✅ Геокодування успішне: {lat}, {lon}")
+            else:
+                logger.warning(f"⚠️ Геокодування не вдалось для: {address}")
+        else:
+            logger.warning("⚠️ Google Maps API ключ відсутній")
         
         saved_addr = SavedAddress(
             id=None,
