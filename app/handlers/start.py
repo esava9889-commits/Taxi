@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -33,13 +33,22 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
     """Головне меню з кнопками"""
     # АДМІН ПАНЕЛЬ (найвищий пріоритет)
     if is_admin:
+        keyboard = [
+            [KeyboardButton(text="⚙️ Адмін-панель")],
+            [KeyboardButton(text="🚖 Замовити таксі")],
+            [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="👤 Мій профіль")],
+        ]
+        
+        # Якщо адмін також водій - додаємо панель водія
+        if is_driver:
+            keyboard.append([KeyboardButton(text="🚗 Панель водія")])
+        else:
+            keyboard.append([KeyboardButton(text="🚗 Стати водієм")])
+        
+        keyboard.append([KeyboardButton(text="ℹ️ Допомога")])
+        
         return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="⚙️ Адмін-панель")],
-                [KeyboardButton(text="🚖 Замовити таксі")],
-                [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="👤 Мій профіль")],
-                [KeyboardButton(text="🚗 Стати водієм"), KeyboardButton(text="ℹ️ Допомога")],
-            ],
+            keyboard=keyboard,
             resize_keyboard=True,
             one_time_keyboard=False,
             input_field_placeholder="Оберіть дію",
@@ -51,7 +60,7 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
                 [KeyboardButton(text="🚗 Панель водія")],
                 [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
                 [KeyboardButton(text="📜 Історія поїздок")],
-                [KeyboardButton(text="ℹ️ Допомога")],
+                [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
             ],
             resize_keyboard=True,
             one_time_keyboard=False,
@@ -702,6 +711,84 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
         )
 
+    # Команди для швидкого переходу
+    @router.message(Command("driver"))
+    @router.message(F.text == "🚗 Панель водія")
+    async def quick_driver_panel(message: Message) -> None:
+        """Швидкий перехід до панелі водія"""
+        if not message.from_user:
+            return
+        
+        from app.storage.db import get_driver_by_tg_user_id, get_driver_earnings_today
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        
+        if not driver:
+            await message.answer("❌ Ви не зареєстровані як водій.\n\nНатисніть 🚗 Стати водієм для реєстрації.")
+            return
+        
+        if driver.status != "approved":
+            await message.answer(
+                "⏳ Вашу заявку на роль водія ще не схвалено.\n\n"
+                "Очікуйте на підтвердження від адміністратора."
+            )
+            return
+        
+        earnings, commission_owed = await get_driver_earnings_today(config.database_path, message.from_user.id)
+        net_earnings = earnings - commission_owed
+        
+        online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        
+        text = (
+            f"🚗 <b>Панель водія</b>\n\n"
+            f"Статус: {online_status}\n"
+            f"ПІБ: {driver.full_name}\n"
+            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
+            f"🔢 Номер: {driver.car_plate}\n\n"
+            f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
+            f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
+            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
+            "ℹ️ Замовлення надходять у групу водіїв.\n"
+            "Прийміть замовлення першим, щоб його отримати!"
+        )
+        
+        # Перевірка чи адмін
+        is_admin = message.from_user.id in config.bot.admin_ids
+        
+        await message.answer(
+            text,
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
+        )
+    
+    @router.message(Command("client"))
+    @router.message(F.text == "👤 Кабінет клієнта")
+    async def quick_client_panel(message: Message) -> None:
+        """Швидкий перехід до кабінету клієнта"""
+        if not message.from_user:
+            return
+        
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        if not user or not user.phone or not user.city:
+            await message.answer("❌ Завершіть реєстрацію для доступу до кабінету клієнта.\n\nНатисніть 📱 Зареєструватись")
+            return
+        
+        # Перевірка чи адмін
+        is_admin = message.from_user.id in config.bot.admin_ids
+        
+        # Перевірка чи водій
+        from app.storage.db import get_driver_by_tg_user_id
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        is_driver = driver is not None and driver.status == "approved"
+        
+        await message.answer(
+            f"👤 <b>Кабінет клієнта</b>\n\n"
+            f"Вітаємо, {user.full_name}!\n\n"
+            f"📍 Місто: {user.city}\n"
+            f"📱 Телефон: {user.phone}\n\n"
+            "Оберіть дію з меню нижче:",
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+        )
+    
     @router.message(F.text == "❌ Скасувати")
     async def cancel(message: Message, state: FSMContext) -> None:
         if not message.from_user:
