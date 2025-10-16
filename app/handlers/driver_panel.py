@@ -142,11 +142,44 @@ def create_router(config: AppConfig) -> Router:
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
+                [InlineKeyboardButton(text="📱 Показати QR-код", callback_data=f"commission:qr:{unpaid_commission}")],
                 [InlineKeyboardButton(text="✅ Я сплатив комісію", callback_data="commission:paid")]
             ]
         )
         
         await message.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data.startswith("commission:qr:"))
+    async def show_qr_code(call: CallbackQuery) -> None:
+        """Показати QR-код для оплати"""
+        if not call.from_user:
+            return
+        
+        amount = float(call.data.split(":", 2)[2])
+        
+        # Генерувати QR-код
+        from app.utils.qr_generator import generate_payment_qr
+        from aiogram.types import BufferedInputFile
+        
+        qr_image = generate_payment_qr(
+            card_number=config.payment_card,
+            amount=amount,
+            comment=f"Комісія водія {call.from_user.id}"
+        )
+        
+        photo = BufferedInputFile(qr_image.read(), filename="payment_qr.png")
+        
+        await call.answer()
+        await call.bot.send_photo(
+            call.from_user.id,
+            photo=photo,
+            caption=(
+                f"📱 <b>QR-код для оплати</b>\n\n"
+                f"💰 Сума: {amount:.2f} грн\n"
+                f"💳 Картка: <code>{config.payment_card}</code>\n\n"
+                f"Відскануйте QR-код у вашому банківському додатку"
+            )
+        )
 
     @router.callback_query(F.data == "commission:paid")
     async def mark_commission_as_paid(call: CallbackQuery) -> None:

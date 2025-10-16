@@ -42,7 +42,8 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
         keyboard = [
             [KeyboardButton(text="⚙️ Адмін-панель")],
             [KeyboardButton(text="🚖 Замовити таксі")],
-            [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="👤 Мій профіль")],
+            [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
+            [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🆘 SOS")],
         ]
         
         # Якщо адмін також водій - додаємо панель водія
@@ -77,7 +78,8 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
         return ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="🚖 Замовити таксі")],
-                [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="👤 Мій профіль")],
+                [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
+                [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🆘 SOS")],
                 [KeyboardButton(text="🚗 Стати водієм"), KeyboardButton(text="ℹ️ Допомога")],
             ],
             resize_keyboard=True,

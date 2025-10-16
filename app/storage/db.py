@@ -8,6 +8,18 @@ import aiosqlite
 
 
 @dataclass
+class SavedAddress:
+    id: Optional[int]
+    user_id: int
+    name: str
+    emoji: str
+    address: str
+    lat: Optional[float]
+    lon: Optional[float]
+    created_at: datetime
+
+
+@dataclass
 class Order:
     id: Optional[int]
     user_id: int  # client Telegram user id
@@ -33,6 +45,8 @@ class Order:
     finished_at: Optional[datetime] = None
     # ID повідомлення в групі водіїв
     group_message_id: Optional[int] = None
+    # Причина скасування
+    cancel_reason: Optional[str] = None
 
 
 async def init_db(db_path: str) -> None:
@@ -102,6 +116,7 @@ async def init_db(db_path: str) -> None:
                 phone TEXT NOT NULL,
                 role TEXT NOT NULL,
                 city TEXT,
+                language TEXT NOT NULL DEFAULT 'uk',
                 created_at TEXT NOT NULL
             )
             """
@@ -520,6 +535,7 @@ class User:
     role: str
     created_at: datetime
     city: Optional[str] = None
+    language: str = "uk"  # uk, ru, en
 
 
 async def upsert_user(db_path: str, user: User) -> None:
@@ -529,13 +545,14 @@ async def upsert_user(db_path: str, user: User) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             """
-            INSERT INTO users (user_id, full_name, phone, role, city, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (user_id, full_name, phone, role, city, language, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
               full_name=excluded.full_name,
               phone=excluded.phone,
               role=excluded.role,
-              city=excluded.city
+              city=excluded.city,
+              language=excluded.language
             """,
             (
                 user.user_id,
@@ -543,6 +560,7 @@ async def upsert_user(db_path: str, user: User) -> None:
                 user.phone,
                 user.role,
                 user.city,
+                user.language,
                 user.created_at.isoformat(),
             ),
         )
@@ -552,7 +570,7 @@ async def upsert_user(db_path: str, user: User) -> None:
 async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
-            "SELECT user_id, full_name, phone, role, city, created_at FROM users WHERE user_id = ?",
+            "SELECT user_id, full_name, phone, role, city, language, created_at FROM users WHERE user_id = ?",
             (user_id,),
         ) as cursor:
             row = await cursor.fetchone()
@@ -563,8 +581,9 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
         full_name=row[1],
         phone=row[2],
         role=row[3],
-        created_at=datetime.fromisoformat(row[5]),
+        created_at=datetime.fromisoformat(row[6]),
         city=row[4],
+        language=row[5] if row[5] else "uk",
     )
 
 
@@ -1188,6 +1207,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
     # Users
     if not await has_column('users', 'city'):
         await db.execute("ALTER TABLE users ADD COLUMN city TEXT")
+    if not await has_column('users', 'language'):
+        await db.execute("ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'uk'")
 
 
 # --- Tariffs ---

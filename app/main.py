@@ -19,6 +19,11 @@ from app.handlers.admin import create_router as create_admin_router
 from app.handlers.driver_panel import create_router as create_driver_panel_router
 from app.handlers.client import create_router as create_client_router
 from app.handlers.ratings import create_router as create_ratings_router
+from app.handlers.saved_addresses import create_router as create_saved_addresses_router
+from app.handlers.cancel_reasons import create_router as create_cancel_reasons_router
+from app.handlers.chat import create_router as create_chat_router
+from app.handlers.promocodes import create_router as create_promocodes_router
+from app.handlers.sos import create_router as create_sos_router
 from app.storage.db import init_db
 from app.utils.scheduler import start_scheduler
 
@@ -67,6 +72,11 @@ async def main() -> None:
     dp.include_router(create_driver_router(config))
     dp.include_router(create_admin_router(config))
     dp.include_router(create_ratings_router(config))
+    dp.include_router(create_saved_addresses_router(config))  # Збережені адреси
+    dp.include_router(create_cancel_reasons_router(config))  # Причини скасування
+    dp.include_router(create_chat_router(config))  # Чат
+    dp.include_router(create_promocodes_router(config))  # Промокоди
+    dp.include_router(create_sos_router(config))  # SOS
     dp.include_router(create_client_router(config))  # Client останній
 
     # Start scheduled tasks
