@@ -37,6 +37,22 @@ class Order:
 
 async def init_db(db_path: str) -> None:
     async with aiosqlite.connect(db_path) as db:
+        # Збережені адреси
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS saved_addresses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                emoji TEXT NOT NULL DEFAULT '📍',
+                address TEXT NOT NULL,
+                lat REAL,
+                lon REAL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS orders (
@@ -121,6 +137,7 @@ async def init_db(db_path: str) -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_saved_addresses_user ON saved_addresses(user_id)")
         
         # Ratings table
         await db.execute(
@@ -220,6 +237,186 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
         )
         await db.commit()
         return cur.rowcount > 0
+
+
+# ==================== Збережені адреси ====================
+
+async def save_address(db_path: str, address: SavedAddress) -> int:
+    """Зберегти адресу користувача"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            """
+            INSERT INTO saved_addresses (user_id, name, emoji, address, lat, lon, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                address.user_id,
+                address.name,
+                address.emoji,
+                address.address,
+                address.lat,
+                address.lon,
+                address.created_at.isoformat(),
+            ),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_user_saved_addresses(db_path: str, user_id: int) -> List[SavedAddress]:
+    """Отримати всі збережені адреси користувача"""
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, user_id, name, emoji, address, lat, lon, created_at
+            FROM saved_addresses
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 10
+            """,
+            (user_id,)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [
+                SavedAddress(
+                    id=row[0],
+                    user_id=row[1],
+                    name=row[2],
+                    emoji=row[3],
+                    address=row[4],
+                    lat=row[5],
+                    lon=row[6],
+                    created_at=datetime.fromisoformat(row[7]),
+                )
+                for row in rows
+            ]
+
+
+async def get_saved_address_by_id(db_path: str, address_id: int, user_id: int) -> Optional[SavedAddress]:
+    """Отримати збережену адресу за ID"""
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, user_id, name, emoji, address, lat, lon, created_at
+            FROM saved_addresses
+            WHERE id = ? AND user_id = ?
+            """,
+            (address_id, user_id)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            
+            return SavedAddress(
+                id=row[0],
+                user_id=row[1],
+                name=row[2],
+                emoji=row[3],
+                address=row[4],
+                lat=row[5],
+                lon=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+            )
+
+
+async def delete_saved_address(db_path: str, address_id: int, user_id: int) -> bool:
+    """Видалити збережену адресу"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM saved_addresses WHERE id = ? AND user_id = ?",
+            (address_id, user_id)
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def update_saved_address(db_path: str, address_id: int, user_id: int, name: str, emoji: str) -> bool:
+    """Оновити назву та емодзі збереженої адреси"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE saved_addresses SET name = ?, emoji = ? WHERE id = ? AND user_id = ?",
+            (name, emoji, address_id, user_id)
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+# ==================== Онлайн/Офлайн статус ====================
+
+async def set_driver_online_status(db_path: str, driver_id: int, online: bool) -> bool:
+    """Змінити онлайн статус водія"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE drivers SET online = ?, last_seen_at = ? WHERE id = ?",
+            (1 if online else 0, datetime.now(timezone.utc).isoformat(), driver_id)
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def get_online_drivers_count(db_path: str, city: Optional[str] = None) -> int:
+    """Підрахунок онлайн водіїв"""
+    async with aiosqlite.connect(db_path) as db:
+        if city:
+            async with db.execute(
+                "SELECT COUNT(*) FROM drivers WHERE online = 1 AND status = 'approved' AND city = ?",
+                (city,)
+            ) as cur:
+                return (await cur.fetchone())[0]
+        else:
+            async with db.execute(
+                "SELECT COUNT(*) FROM drivers WHERE online = 1 AND status = 'approved'"
+            ) as cur:
+                return (await cur.fetchone())[0]
+
+
+async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[Driver]:
+    """Отримати список онлайн водіїв"""
+    async with aiosqlite.connect(db_path) as db:
+        if city:
+            query = """
+                SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
+                       license_photo_file_id, city, status, created_at, updated_at, online,
+                       last_lat, last_lon, last_seen_at
+                FROM drivers
+                WHERE online = 1 AND status = 'approved' AND city = ?
+                ORDER BY last_seen_at DESC
+            """
+            params = (city,)
+        else:
+            query = """
+                SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
+                       license_photo_file_id, city, status, created_at, updated_at, online,
+                       last_lat, last_lon, last_seen_at
+                FROM drivers
+                WHERE online = 1 AND status = 'approved'
+                ORDER BY last_seen_at DESC
+            """
+            params = ()
+        
+        async with db.execute(query, params) as cur:
+            rows = await cur.fetchall()
+            return [
+                Driver(
+                    id=row[0],
+                    tg_user_id=row[1],
+                    full_name=row[2],
+                    phone=row[3],
+                    car_make=row[4],
+                    car_model=row[5],
+                    car_plate=row[6],
+                    license_photo_file_id=row[7],
+                    city=row[8],
+                    status=row[9],
+                    created_at=datetime.fromisoformat(row[10]),
+                    updated_at=datetime.fromisoformat(row[11]),
+                    online=bool(row[12]),
+                    last_lat=row[13],
+                    last_lon=row[14],
+                    last_seen_at=datetime.fromisoformat(row[15]) if row[15] else None,
+                )
+                for row in rows
+            ]
 
 
 async def get_user_active_order(db_path: str, user_id: int) -> Optional[Order]:

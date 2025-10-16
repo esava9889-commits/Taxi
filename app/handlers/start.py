@@ -384,6 +384,7 @@ def create_router(config: AppConfig) -> Router:
                 buttons.append([InlineKeyboardButton(text="🔍 Статус замовлення", callback_data=f"order:status:{active_order.id}")])
         
         # Загальні кнопки
+        buttons.append([InlineKeyboardButton(text="📍 Збережені адреси", callback_data="profile:saved_addresses")])
         buttons.append([InlineKeyboardButton(text="📜 Історія замовлень", callback_data="profile:history")])
         buttons.append([
             InlineKeyboardButton(text="✏️ Змінити місто", callback_data="profile:edit:city"),
@@ -630,6 +631,125 @@ def create_router(config: AppConfig) -> Router:
             f"📱 {driver.phone}\n\n"
             f"Ви можете зателефонувати водієві за цим номером."
         )
+    
+    @router.callback_query(F.data == "profile:saved_addresses")
+    async def show_saved_addresses(call: CallbackQuery) -> None:
+        """Показати збережені адреси"""
+        if not call.from_user:
+            return
+        
+        from app.storage.db import get_user_saved_addresses
+        addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        if not addresses:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")]
+                ]
+            )
+            await call.answer()
+            await call.message.answer(
+                "📍 <b>Збережені адреси</b>\n\n"
+                "У вас поки немає збережених адрес.\n"
+                "Додайте часто використовувані місця для швидкого замовлення!",
+                reply_markup=kb
+            )
+            return
+        
+        buttons = []
+        for addr in addresses:
+            buttons.append([InlineKeyboardButton(
+                text=f"{addr.emoji} {addr.name}",
+                callback_data=f"address:view:{addr.id}"
+            )])
+        
+        buttons.append([InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await call.answer()
+        await call.message.answer(
+            f"📍 <b>Збережені адреси ({len(addresses)}/10)</b>\n\n"
+            "Оберіть адресу для перегляду або додайте нову:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data.startswith("address:view:"))
+    async def view_saved_address(call: CallbackQuery) -> None:
+        """Переглянути збережену адресу"""
+        if not call.from_user:
+            return
+        
+        address_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import get_saved_address_by_id
+        address = await get_saved_address_by_id(config.database_path, address_id, call.from_user.id)
+        
+        if not address:
+            await call.answer("❌ Адресу не знайдено", show_alert=True)
+            return
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📍 Використати звідки", callback_data=f"address:use:pickup:{address_id}"),
+                    InlineKeyboardButton(text="📍 Використати куди", callback_data=f"address:use:dest:{address_id}")
+                ],
+                [InlineKeyboardButton(text="✏️ Редагувати", callback_data=f"address:edit:{address_id}")],
+                [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"address:delete_confirm:{address_id}")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="profile:saved_addresses")]
+            ]
+        )
+        
+        await call.answer()
+        await call.message.answer(
+            f"{address.emoji} <b>{address.name}</b>\n\n"
+            f"📍 Адреса: {address.address}\n"
+            f"📅 Додано: {address.created_at.strftime('%d.%m.%Y')}",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data.startswith("address:delete_confirm:"))
+    async def confirm_delete_address(call: CallbackQuery) -> None:
+        """Підтвердження видалення адреси"""
+        if not call.from_user:
+            return
+        
+        address_id = int(call.data.split(":")[-1])
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Так, видалити", callback_data=f"address:delete_yes:{address_id}"),
+                    InlineKeyboardButton(text="❌ Скасувати", callback_data=f"address:view:{address_id}")
+                ]
+            ]
+        )
+        
+        await call.answer()
+        await call.message.answer(
+            "❓ <b>Видалити адресу?</b>\n\n"
+            "Ви впевнені, що хочете видалити цю адресу?",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data.startswith("address:delete_yes:"))
+    async def delete_address_confirmed(call: CallbackQuery) -> None:
+        """Видалення адреси підтверджено"""
+        if not call.from_user:
+            return
+        
+        address_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import delete_saved_address
+        success = await delete_saved_address(config.database_path, address_id, call.from_user.id)
+        
+        if success:
+            await call.answer("✅ Адресу видалено", show_alert=True)
+            # Показати список адрес знову
+            await show_saved_addresses(call)
+        else:
+            await call.answer("❌ Помилка видалення", show_alert=True)
     
     @router.callback_query(F.data == "profile:history")
     async def show_profile_history(call: CallbackQuery) -> None:

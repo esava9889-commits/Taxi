@@ -71,6 +71,17 @@ def create_router(config: AppConfig) -> Router:
             "💡 <i>Поділіться локацією щоб клієнти могли бачити де ви</i>"
         )
         
+        # Інлайн кнопки для статусу та статистики
+        inline_buttons = []
+        if driver.online:
+            inline_buttons.append([InlineKeyboardButton(text="🔴 Піти в офлайн", callback_data="driver:status:offline")])
+        else:
+            inline_buttons.append([InlineKeyboardButton(text="🟢 Почати працювати", callback_data="driver:status:online")])
+        
+        inline_buttons.append([InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")])
+        
+        inline_kb = InlineKeyboardMarkup(inline_keyboard=inline_buttons)
+        
         # Кнопка для надсилання локації
         from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
         kb = ReplyKeyboardMarkup(
@@ -82,7 +93,8 @@ def create_router(config: AppConfig) -> Router:
             resize_keyboard=True
         )
         
-        await message.answer(text, reply_markup=kb)
+        await message.answer(text, reply_markup=inline_kb)
+        await message.answer("Оберіть дію:", reply_markup=kb)
 
     @router.message(F.text == "📊 Мій заробіток")
     async def show_earnings(message: Message) -> None:
@@ -571,4 +583,164 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer("✅ Локацію оновлено! Клієнти можуть бачити де ви.")
 
+    # Онлайн/Офлайн статус
+    @router.callback_query(F.data == "driver:status:online")
+    async def set_online(call: CallbackQuery) -> None:
+        """Увімкнути онлайн статус"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        await set_driver_online_status(config.database_path, driver.id, True)
+        
+        online_count = await get_online_drivers_count(config.database_path, driver.city)
+        
+        await call.answer(f"✅ Ви онлайн! Водіїв онлайн у {driver.city}: {online_count}", show_alert=True)
+        
+        # Оновити повідомлення
+        await call.message.edit_text(
+            call.message.text.replace("🔴 Офлайн", "🟢 Онлайн"),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🔴 Піти в офлайн", callback_data="driver:status:offline")],
+                    [InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")]
+                ]
+            )
+        )
+    
+    @router.callback_query(F.data == "driver:status:offline")
+    async def set_offline(call: CallbackQuery) -> None:
+        """Вимкнути онлайн статус"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        await set_driver_online_status(config.database_path, driver.id, False)
+        
+        await call.answer("🔴 Ви офлайн. Ви не отримуватимете нові замовлення.", show_alert=True)
+        
+        # Оновити повідомлення
+        await call.message.edit_text(
+            call.message.text.replace("🟢 Онлайн", "🔴 Офлайн"),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🟢 Почати працювати", callback_data="driver:status:online")],
+                    [InlineKeyboardButton(text="📊 Статистика за період", callback_data="driver:stats:period")]
+                ]
+            )
+        )
+    
+    # Статистика за період
+    @router.callback_query(F.data == "driver:stats:period")
+    async def show_period_stats(call: CallbackQuery) -> None:
+        """Показати вибір періоду для статистики"""
+        if not call.from_user:
+            return
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📅 Сьогодні", callback_data="driver:stats:today"),
+                    InlineKeyboardButton(text="📅 Тиждень", callback_data="driver:stats:week")
+                ],
+                [
+                    InlineKeyboardButton(text="📅 Місяць", callback_data="driver:stats:month"),
+                    InlineKeyboardButton(text="📅 Весь час", callback_data="driver:stats:all")
+                ]
+            ]
+        )
+        
+        await call.answer()
+        await call.message.answer("📊 <b>Виберіть період:</b>", reply_markup=kb)
+    
+    @router.callback_query(F.data.startswith("driver:stats:"))
+    async def show_stats_for_period(call: CallbackQuery) -> None:
+        """Показати статистику за обраний період"""
+        if not call.from_user:
+            return
+        
+        period = call.data.split(":")[-1]
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Розрахунок дат періоду
+        from datetime import datetime, timedelta
+        now = datetime.now(timezone.utc)
+        
+        if period == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_name = "Сьогодні"
+        elif period == "week":
+            start_date = now - timedelta(days=7)
+            period_name = "Тиждень"
+        elif period == "month":
+            start_date = now - timedelta(days=30)
+            period_name = "Місяць"
+        else:  # all
+            start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
+            period_name = "Весь час"
+        
+        # Отримати замовлення за період
+        orders = await get_driver_order_history(config.database_path, call.from_user.id, limit=1000)
+        
+        # Фільтрувати за періодом
+        period_orders = [o for o in orders if o.created_at >= start_date and o.status == 'completed']
+        
+        if not period_orders:
+            await call.answer()
+            await call.message.answer(
+                f"📊 <b>Статистика: {period_name}</b>\n\n"
+                "📭 Немає завершених поїздок за цей період"
+            )
+            return
+        
+        # Розрахунки
+        total_earnings = sum(o.fare_amount or 0 for o in period_orders)
+        total_commission = sum(o.commission or 0 for o in period_orders)
+        net_earnings = total_earnings - total_commission
+        total_distance = sum(o.distance_m or 0 for o in period_orders) / 1000  # км
+        avg_fare = total_earnings / len(period_orders) if period_orders else 0
+        
+        # Підрахунок по днях
+        from collections import defaultdict
+        daily_earnings = defaultdict(float)
+        for order in period_orders:
+            day = order.created_at.strftime('%d.%m')
+            daily_earnings[day] += order.fare_amount or 0
+        
+        # Графік (ASCII)
+        graph = ""
+        if daily_earnings:
+            max_earning = max(daily_earnings.values())
+            for day, earning in sorted(daily_earnings.items())[-7:]:  # Останні 7 днів
+                bar_length = int((earning / max_earning) * 20) if max_earning > 0 else 0
+                graph += f"{day}: {'█' * bar_length} {earning:.0f} грн\n"
+        
+        text = (
+            f"📊 <b>Статистика: {period_name}</b>\n\n"
+            f"💰 Заробіток: {total_earnings:.2f} грн\n"
+            f"💸 Комісія: {total_commission:.2f} грн\n"
+            f"💵 Чистий: {net_earnings:.2f} грн\n\n"
+            f"📊 Поїздок: {len(period_orders)}\n"
+            f"💵 Середній чек: {avg_fare:.2f} грн\n"
+            f"📏 Пробіг: {total_distance:.1f} км\n\n"
+        )
+        
+        if graph:
+            text += f"📈 <b>Графік заробітку:</b>\n<code>{graph}</code>"
+        
+        await call.answer()
+        await call.message.answer(text)
+    
     return router
