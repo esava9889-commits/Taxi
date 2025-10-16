@@ -49,6 +49,8 @@ class Order:
     cancel_reason: Optional[str] = None
     # Клас авто
     car_class: str = "economy"  # economy | standard | comfort | business
+    # Чайові
+    tip_amount: Optional[float] = None
 
 
 async def init_db(db_path: str) -> None:
@@ -1376,6 +1378,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE orders ADD COLUMN group_message_id INTEGER")
     if not await has_column('orders', 'car_class'):
         await db.execute("ALTER TABLE orders ADD COLUMN car_class TEXT NOT NULL DEFAULT 'economy'")
+    if not await has_column('orders', 'tip_amount'):
+        await db.execute("ALTER TABLE orders ADD COLUMN tip_amount REAL")
 
     # Drivers
     if not await has_column('drivers', 'online'):

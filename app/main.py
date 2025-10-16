@@ -28,6 +28,8 @@ from app.handlers.live_tracking import create_router as create_live_tracking_rou
 from app.handlers.tips import create_router as create_tips_router
 from app.handlers.referral import create_router as create_referral_router
 from app.handlers.client_rating import create_router as create_client_rating_router
+from app.handlers.voice_input import create_router as create_voice_input_router
+from app.handlers.driver_analytics import create_router as create_driver_analytics_router
 from app.storage.db import init_db
 from app.utils.scheduler import start_scheduler
 
@@ -85,6 +87,8 @@ async def main() -> None:
     dp.include_router(create_tips_router(config))  # Чайові
     dp.include_router(create_referral_router(config))  # Реферальна програма
     dp.include_router(create_client_rating_router(config))  # Рейтинг клієнтів
+    dp.include_router(create_voice_input_router(config))  # Голосовий ввід
+    dp.include_router(create_driver_analytics_router(config))  # Аналітика водія
     dp.include_router(create_client_router(config))  # Client останній
 
     # Start scheduled tasks

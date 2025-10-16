@@ -78,6 +78,7 @@ def create_router(config: AppConfig) -> Router:
         return ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+                [KeyboardButton(text="🎤 Голосом")],
                 [KeyboardButton(text=CANCEL_TEXT)],
             ],
             resize_keyboard=True,
@@ -173,6 +174,18 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=location_keyboard("Вкажіть куди їхати")
         )
 
+    @router.message(OrderStates.pickup, F.text == "🎤 Голосом")
+    async def pickup_voice_instruction(message: Message, state: FSMContext) -> None:
+        """Інструкція для голосового вводу"""
+        await message.answer(
+            "🎤 <b>Голосовий ввід адреси</b>\n\n"
+            "Натисніть 🎤 в Telegram та чітко скажіть адресу:\n\n"
+            "Приклад:\n"
+            "🗣️ \"вулиця Хрещатик будинок п'ятнадцять\"\n"
+            "🗣️ \"проспект Перемоги сто двадцять три\"\n\n"
+            "⚠️ <i>Функція в бета-версії. Якщо не спрацює - введіть текстом.</i>"
+        )
+    
     @router.message(OrderStates.pickup)
     async def pickup_text(message: Message, state: FSMContext) -> None:
         pickup = message.text.strip() if message.text else ""
