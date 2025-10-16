@@ -468,7 +468,7 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Отримати онлайн водіїв для пріоритизації
                 from app.storage.db import get_online_drivers
-from app.handlers.driver_priority import get_top_drivers
+                from app.handlers.driver_priority import get_top_drivers
                 
                 online_drivers = await get_online_drivers(config.database_path, data.get('city'))
                 top_drivers = await get_top_drivers(config.database_path, online_drivers, limit=5)
