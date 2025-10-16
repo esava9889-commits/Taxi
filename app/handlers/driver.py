@@ -45,6 +45,7 @@ class DriverRegStates(StatesGroup):
     car_make = State()
     car_model = State()
     car_plate = State()
+    car_class = State()
     license_photo = State()
     confirm = State()
 
@@ -169,10 +170,50 @@ def create_router(config: AppConfig) -> Router:
     async def take_car_plate(message: Message, state: FSMContext) -> None:
         car_plate = message.text.strip().upper()
         await state.update_data(car_plate=car_plate)
-        await state.set_state(DriverRegStates.license_photo)
+        await state.set_state(DriverRegStates.car_class)
+        
+        # Вибір класу авто
+        from app.handlers.car_classes import CAR_CLASSES
+        
+        buttons = []
+        for class_code, class_info in CAR_CLASSES.items():
+            mult_percent = int((class_info['multiplier']-1)*100)
+            mult_text = f"+{mult_percent}%" if mult_percent > 0 else "базовий"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{class_info['name_uk']} ({mult_text})",
+                    callback_data=f"driver_car_class:{class_code}"
+                )
+            ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
         await message.answer(
+            "🚗 <b>Крок 7/8: Клас автомобіля</b>\n\n"
+            "Оберіть клас вашого авто:\n"
+            "• 🚗 Економ - базовий тариф\n"
+            "• 🚙 Стандарт - +30% до тарифу\n"
+            "• 🚘 Комфорт - +60% до тарифу\n"
+            "• 🏆 Бізнес - +100% до тарифу\n\n"
+            "Це вплине на вартість поїздок та ваш заробіток.",
+            reply_markup=kb
+        )
+
+    @router.callback_query(F.data.startswith("driver_car_class:"))
+    async def save_driver_car_class(call: CallbackQuery, state: FSMContext) -> None:
+        car_class = call.data.split(":", 1)[1]
+        await state.update_data(car_class=car_class)
+        await state.set_state(DriverRegStates.license_photo)
+        
+        from app.handlers.car_classes import get_car_class_name
+        class_name = get_car_class_name(car_class)
+        
+        await call.answer()
+        await call.message.answer(
+            f"✅ Клас авто: {class_name}\n\n"
+            "📸 <b>Крок 8/8: Фото посвідчення</b>\n\n"
             "Надішліть фото посвідчення водія (можна пропустити командою /skip)",
-            reply_markup=cancel_keyboard(),
+            reply_markup=cancel_keyboard()
         )
 
     @router.message(Command("skip"), DriverRegStates.license_photo)
@@ -188,6 +229,10 @@ def create_router(config: AppConfig) -> Router:
 
     async def finalize_application(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
+        
+        from app.handlers.car_classes import get_car_class_name
+        car_class = data.get("car_class", "economy")
+        
         driver = Driver(
             id=None,
             tg_user_id=message.from_user.id if message.from_user else 0,
@@ -196,6 +241,7 @@ def create_router(config: AppConfig) -> Router:
             car_make=str(data.get("car_make")),
             car_model=str(data.get("car_model")),
             car_plate=str(data.get("car_plate")),
+            car_class=car_class,
             license_photo_file_id=(data.get("license_photo_file_id") or None),
             status="pending",
             created_at=datetime.now(timezone.utc),

@@ -47,6 +47,8 @@ class Order:
     group_message_id: Optional[int] = None
     # Причина скасування
     cancel_reason: Optional[str] = None
+    # Клас авто
+    car_class: str = "economy"  # economy | standard | comfort | business
 
 
 async def init_db(db_path: str) -> None:
@@ -140,7 +142,8 @@ async def init_db(db_path: str) -> None:
                 online INTEGER NOT NULL DEFAULT 0,
                 last_lat REAL,
                 last_lon REAL,
-                last_seen_at TEXT
+                last_seen_at TEXT,
+                car_class TEXT NOT NULL DEFAULT 'economy'
             )
             """
         )
@@ -607,6 +610,7 @@ class Driver:
     last_lat: Optional[float] = None
     last_lon: Optional[float] = None
     last_seen_at: Optional[datetime] = None
+    car_class: str = "economy"  # economy | standard | comfort | business
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
@@ -1191,6 +1195,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE orders ADD COLUMN finished_at TEXT")
     if not await has_column('orders', 'group_message_id'):
         await db.execute("ALTER TABLE orders ADD COLUMN group_message_id INTEGER")
+    if not await has_column('orders', 'car_class'):
+        await db.execute("ALTER TABLE orders ADD COLUMN car_class TEXT NOT NULL DEFAULT 'economy'")
 
     # Drivers
     if not await has_column('drivers', 'online'):
@@ -1203,6 +1209,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE drivers ADD COLUMN last_seen_at TEXT")
     if not await has_column('drivers', 'city'):
         await db.execute("ALTER TABLE drivers ADD COLUMN city TEXT")
+    if not await has_column('drivers', 'car_class'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN car_class TEXT NOT NULL DEFAULT 'economy'")
     
     # Users
     if not await has_column('users', 'city'):

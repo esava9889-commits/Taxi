@@ -41,6 +41,7 @@ def create_router(config: AppConfig) -> Router:
     CONFIRM_TEXT = "✅ Підтвердити"
 
     class OrderStates(StatesGroup):
+        car_class = State()
         pickup = State()
         destination = State()
         comment = State()
@@ -112,8 +113,44 @@ def create_router(config: AppConfig) -> Router:
             city=user.city,
         )
         
-        await state.set_state(OrderStates.pickup)
+        # Вибір класу авто
+        from app.handlers.car_classes import CAR_CLASSES
+        
+        buttons = []
+        for class_code, class_info in CAR_CLASSES.items():
+            mult_percent = int((class_info['multiplier']-1)*100)
+            mult_text = f" (+{mult_percent}%)" if mult_percent > 0 else ""
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{class_info['name_uk']}{mult_text}",
+                    callback_data=f"order_car_class:{class_code}"
+                )
+            ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await state.set_state(OrderStates.car_class)
         await message.answer(
+            "🚗 <b>Оберіть клас авто:</b>\n\n"
+            "• 🚗 Економ - базовий тариф\n"
+            "• 🚙 Стандарт - +30%\n"
+            "• 🚘 Комфорт - +60%\n"
+            "• 🏆 Бізнес - +100%",
+            reply_markup=kb
+        )
+
+    @router.callback_query(F.data.startswith("order_car_class:"))
+    async def save_order_car_class(call: CallbackQuery, state: FSMContext) -> None:
+        car_class = call.data.split(":", 1)[1]
+        await state.update_data(car_class=car_class)
+        await state.set_state(OrderStates.pickup)
+        
+        from app.handlers.car_classes import get_car_class_name
+        class_name = get_car_class_name(car_class)
+        
+        await call.answer()
+        await call.message.answer(
+            f"✅ Клас авто: {class_name}\n\n"
             "📍 <b>Звідки подати таксі?</b>\n\n"
             "Надішліть адресу або геолокацію",
             reply_markup=location_keyboard("Вкажіть адресу подачі")
@@ -291,15 +328,22 @@ def create_router(config: AppConfig) -> Router:
                     distance_text = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n\n"
                     logger.info(f"✅ Розраховано відстань: {km:.1f} км, {int(minutes)} хв")
                     
-                    # Розрахунок орієнтовної вартості
+                    # Розрахунок орієнтовної вартості з урахуванням класу
                     tariff = await get_latest_tariff(config.database_path)
                     if tariff:
-                        estimated_fare = max(
+                        base_fare = max(
                             tariff.minimum,
                             tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
                         )
-                        fare_estimate = f"💰 Орієнтовна вартість: {estimated_fare:.0f} грн\n\n"
-                        logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн")
+                        
+                        # Застосувати множник класу авто
+                        from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
+                        car_class = data.get('car_class', 'economy')
+                        estimated_fare = calculate_fare_with_class(base_fare, car_class)
+                        class_name = get_car_class_name(car_class)
+                        
+                        fare_estimate = f"💰 Орієнтовна вартість ({class_name}): {estimated_fare:.0f} грн\n\n"
+                        logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн (клас: {car_class})")
                 else:
                     logger.warning(f"❌ Google Maps Distance Matrix API не повернув результат")
             else:
@@ -307,11 +351,15 @@ def create_router(config: AppConfig) -> Router:
         else:
             logger.warning(f"⚠️ Немає всіх координат для розрахунку: pickup({pickup_lat},{pickup_lon}), dest({dest_lat},{dest_lon})")
         
+        from app.handlers.car_classes import get_car_class_name
+        car_class_name = get_car_class_name(data.get('car_class', 'economy'))
+        
         text = (
             "📋 <b>Перевірте дані замовлення:</b>\n\n"
             f"👤 Клієнт: {data.get('name')}\n"
             f"📱 Телефон: {data.get('phone')}\n"
-            f"🏙 Місто: {data.get('city')}\n\n"
+            f"🏙 Місто: {data.get('city')}\n"
+            f"🚗 Клас: {car_class_name}\n\n"
             f"📍 Звідки: {data.get('pickup')}\n"
             f"📍 Куди: {data.get('destination')}\n"
             f"💬 Коментар: {data.get('comment') or '—'}\n\n"
@@ -330,7 +378,7 @@ def create_router(config: AppConfig) -> Router:
         
         data = await state.get_data()
         
-        # Створення замовлення з координатами і відстанню
+        # Створення замовлення з координатами, відстанню та класом авто
         order = Order(
             id=None,
             user_id=message.from_user.id,
@@ -346,6 +394,7 @@ def create_router(config: AppConfig) -> Router:
             dest_lon=data.get("dest_lon"),
             distance_m=data.get("distance_m"),
             duration_s=data.get("duration_s"),
+            car_class=data.get("car_class", "economy"),
         )
         
         order_id = await insert_order(config.database_path, order)
