@@ -297,13 +297,16 @@ def create_router(config: AppConfig) -> Router:
         await upsert_user(config.database_path, user)
         await state.clear()
         
+        # Перевірка чи це адмін
+        is_admin = message.from_user.id in config.bot.admin_ids
+        
         await message.answer(
             f"✅ <b>Реєстрація завершена!</b>\n\n"
             f"👤 {user.full_name}\n"
             f"📍 {city}\n"
             f"📱 {phone}\n\n"
             "Тепер ви можете замовити таксі! 🚖",
-            reply_markup=main_menu_keyboard(is_registered=True)
+            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
         )
         logger.info(f"User {message.from_user.id} registered in {city}")
 
