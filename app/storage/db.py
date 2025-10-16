@@ -228,7 +228,7 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
                    pickup_lat, pickup_lon, dest_lat, dest_lon,
-                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id
             FROM orders
             ORDER BY id DESC
             LIMIT ?
@@ -261,6 +261,7 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
                 status=row[17],
                 started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
                 finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
+                group_message_id=row[20],
             )
         )
     return orders
@@ -608,7 +609,7 @@ async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
                    pickup_lat, pickup_lon, dest_lat, dest_lon,
-                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id
             FROM orders WHERE id = ?
             """,
             (order_id,),
@@ -637,6 +638,7 @@ async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
         status=row[17],
         started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
         finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
+        group_message_id=row[20],
     )
 
 
@@ -803,7 +805,7 @@ async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) ->
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
                    pickup_lat, pickup_lon, dest_lat, dest_lon,
-                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id
             FROM orders
             WHERE user_id = ?
             ORDER BY id DESC
@@ -836,6 +838,7 @@ async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) ->
                 status=row[17],
                 started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
                 finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
+                group_message_id=row[20],
             )
         )
     return orders
@@ -853,7 +856,7 @@ async def get_driver_order_history(db_path: str, driver_tg_id: int, limit: int =
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
                    pickup_lat, pickup_lon, dest_lat, dest_lon,
-                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id
             FROM orders
             WHERE driver_id = ?
             ORDER BY id DESC
@@ -886,6 +889,7 @@ async def get_driver_order_history(db_path: str, driver_tg_id: int, limit: int =
                 status=row[17],
                 started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
                 finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
+                group_message_id=row[20],
             )
         )
     return orders
