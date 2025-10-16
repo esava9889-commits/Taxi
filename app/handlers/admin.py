@@ -364,11 +364,14 @@ def create_router(config: AppConfig) -> Router:
                     )
                     
                     # Також відправимо меню водія
+                    # Перевірка чи водій також адмін
+                    is_driver_admin = driver.tg_user_id in config.bot.admin_ids
+                    
                     await call.bot.send_message(
                         driver.tg_user_id,
                         "🚗 <b>Панель водія активована!</b>\n\n"
                         "Оберіть дію з меню:",
-                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True)
+                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin)
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify driver {driver.tg_user_id}: {e}")

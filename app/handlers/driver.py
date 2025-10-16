@@ -241,13 +241,14 @@ def create_router(config: AppConfig) -> Router:
                 pass
 
         from app.handlers.start import main_menu_keyboard
+        is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
         await message.answer(
             f"✅ <b>Заявку успішно подано!</b>\n\n"
             f"📋 Номер заявки: #{driver_id}\n"
             f"🏙 Місто: {data.get('city', 'Не вказано')}\n\n"
             "Очікуйте підтвердження від адміністратора.\n"
             "Ми повідомимо вас, коли заявку розглянуть.",
-            reply_markup=main_menu_keyboard(is_registered=False, is_driver=False)
+            reply_markup=main_menu_keyboard(is_registered=False, is_driver=False, is_admin=is_admin)
         )
 
     # Admin moderation callbacks
