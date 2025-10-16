@@ -202,8 +202,16 @@ def create_router(config: AppConfig) -> Router:
         if success:
             await call.answer("✅ Ви прийняли замовлення!", show_alert=True)
             
-            # Повідомити клієнта
+            # Повідомити клієнта з кнопкою відстеження
             try:
+                tracking_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="📍 Де водій?", callback_data=f"track_driver:{order_id}"),
+                            InlineKeyboardButton(text="📞 Зателефонувати", url=f"tel:{driver.phone}")
+                        ]
+                    ]
+                )
                 await call.bot.send_message(
                     order.user_id,
                     f"🚗 <b>Водій знайдено!</b>\n\n"
@@ -211,7 +219,8 @@ def create_router(config: AppConfig) -> Router:
                     f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
                     f"🔢 Номер: {driver.car_plate}\n"
                     f"📱 Телефон: <code>{driver.phone}</code>\n\n"
-                    f"Водій їде до вас!"
+                    f"Водій їде до вас!",
+                    reply_markup=tracking_kb
                 )
             except Exception as e:
                 logger.error(f"Failed to notify client {order.user_id}: {e}")
