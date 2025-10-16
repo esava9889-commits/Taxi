@@ -52,6 +52,10 @@ def create_router(config: AppConfig) -> Router:
         earnings, commission_owed = await get_driver_earnings_today(config.database_path, message.from_user.id)
         net_earnings = earnings - commission_owed
         
+        # Чайові
+        from app.storage.db import get_driver_tips_total
+        tips_total = await get_driver_tips_total(config.database_path, message.from_user.id)
+        
         online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
         location_status = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
         
@@ -65,7 +69,8 @@ def create_router(config: AppConfig) -> Router:
             f"🔢 Номер: {driver.car_plate}\n\n"
             f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
             f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
-            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
+            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n"
+            f"💝 Чайові (всього): {tips_total:.2f} грн\n\n"
             "ℹ️ Замовлення надходять у групу водіїв.\n"
             "Прийміть замовлення першим, щоб його отримати!\n\n"
             "💡 <i>Поділіться локацією щоб клієнти могли бачити де ви</i>"
