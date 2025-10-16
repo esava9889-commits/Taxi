@@ -459,6 +459,25 @@ def create_router(config: AppConfig) -> Router:
                 int(minutes)
             )
             
+            # Запропонувати оцінити клієнта
+            kb_rate_client = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⭐️ Оцінити клієнта", callback_data=f"rate:client:{order_id}")]
+                ]
+            )
+            
+            try:
+                await call.bot.send_message(
+                    call.from_user.id,
+                    f"✅ <b>Поїздку завершено!</b>\n\n"
+                    f"💰 Ви заробили: {fare:.2f} грн\n"
+                    f"💸 Комісія: {commission:.2f} грн\n\n"
+                    "Оцініть клієнта:",
+                    reply_markup=kb_rate_client
+                )
+            except Exception as e:
+                logger.error(f"Failed to ask driver to rate client: {e}")
+            
             # Оновити повідомлення в групі
             if call.message:
                 await call.message.edit_text(

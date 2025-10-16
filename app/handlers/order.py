@@ -339,11 +339,32 @@ def create_router(config: AppConfig) -> Router:
                         # Застосувати множник класу авто
                         from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
                         car_class = data.get('car_class', 'economy')
-                        estimated_fare = calculate_fare_with_class(base_fare, car_class)
-                        class_name = get_car_class_name(car_class)
+                        class_fare = calculate_fare_with_class(base_fare, car_class)
                         
-                        fare_estimate = f"💰 Орієнтовна вартість ({class_name}): {estimated_fare:.0f} грн\n\n"
-                        logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн (клас: {car_class})")
+                        # Динамічне ціноутворення
+                        from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
+                        from app.storage.db import get_online_drivers_count
+                        
+                        city = data.get('city', 'Київ')
+                        online_count = await get_online_drivers_count(config.database_path, city)
+                        
+                        estimated_fare, surge_reason, surge_mult = await calculate_dynamic_price(
+                            class_fare, city, online_count, 5  # 5 pending orders (приблизно)
+                        )
+                        
+                        class_name = get_car_class_name(car_class)
+                        surge_emoji = get_surge_emoji(surge_mult)
+                        
+                        if surge_mult != 1.0:
+                            surge_percent = int((surge_mult - 1) * 100)
+                            surge_text = f" {surge_emoji} +{surge_percent}%" if surge_percent > 0 else f" {surge_emoji} {surge_percent}%"
+                            fare_estimate = f"💰 Орієнтовна вартість ({class_name}{surge_text}): {estimated_fare:.0f} грн\n"
+                            if surge_reason:
+                                fare_estimate += f"<i>{surge_reason}</i>\n\n"
+                        else:
+                            fare_estimate = f"💰 Орієнтовна вартість ({class_name}): {estimated_fare:.0f} грн\n\n"
+                        
+                        logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн (клас: {car_class}, surge: {surge_mult})")
                 else:
                     logger.warning(f"❌ Google Maps Distance Matrix API не повернув результат")
             else:

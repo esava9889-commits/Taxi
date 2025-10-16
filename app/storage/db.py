@@ -173,6 +173,51 @@ async def init_db(db_path: str) -> None:
         )
         await db.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
         
+        # Client ratings (водії оцінюють клієнтів)
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS client_ratings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                client_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
+                rating INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_client_ratings ON client_ratings(client_id)")
+        
+        # Tips (чайові)
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL UNIQUE,
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        
+        # Referral program (реферальна програма)
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER NOT NULL,
+                referred_id INTEGER NOT NULL,
+                referral_code TEXT NOT NULL,
+                bonus_amount REAL NOT NULL DEFAULT 50,
+                referrer_bonus REAL NOT NULL DEFAULT 30,
+                used INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(referral_code)")
+        
         # Payments table
         await db.execute(
             """
@@ -959,6 +1004,16 @@ class Rating:
     created_at: datetime
 
 
+@dataclass
+class ClientRating:
+    id: Optional[int]
+    order_id: int
+    client_id: int
+    driver_id: int
+    rating: int  # 1-5
+    created_at: datetime
+
+
 async def insert_rating(db_path: str, rating: Rating) -> int:
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
@@ -980,6 +1035,130 @@ async def get_driver_average_rating(db_path: str, driver_user_id: int) -> Option
         ) as cursor:
             row = await cursor.fetchone()
     return row[0] if row and row[0] else None
+
+
+# --- Client Ratings ---
+
+async def insert_client_rating(db_path: str, rating: ClientRating) -> int:
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO client_ratings (order_id, client_id, driver_id, rating, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (rating.order_id, rating.client_id, rating.driver_id, rating.rating, rating.created_at.isoformat()),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_client_average_rating(db_path: str, client_id: int) -> Optional[float]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            "SELECT AVG(rating) FROM client_ratings WHERE client_id = ?",
+            (client_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    return row[0] if row and row[0] else None
+
+
+# --- Tips ---
+
+async def add_tip_to_order(db_path: str, order_id: int, amount: float) -> bool:
+    async with aiosqlite.connect(db_path) as db:
+        try:
+            await db.execute(
+                "INSERT INTO tips (order_id, amount, created_at) VALUES (?, ?, ?)",
+                (order_id, amount, datetime.now(timezone.utc).isoformat())
+            )
+            await db.commit()
+            return True
+        except:
+            return False
+
+
+async def get_driver_tips_total(db_path: str, driver_tg_id: int) -> float:
+    """Отримати загальну суму чайових водія"""
+    async with aiosqlite.connect(db_path) as db:
+        # Get driver DB id
+        async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ?", (driver_tg_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return 0.0
+        driver_db_id = row[0]
+        
+        async with db.execute(
+            """
+            SELECT SUM(t.amount) FROM tips t
+            JOIN orders o ON t.order_id = o.id
+            WHERE o.driver_id = ?
+            """,
+            (driver_db_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row and row[0] else 0.0
+
+
+# --- Referral Program ---
+
+async def create_referral_code(db_path: str, user_id: int, code: str) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT INTO referrals (referrer_id, referred_id, referral_code, created_at) VALUES (?, 0, ?, ?)",
+            (user_id, code, datetime.now(timezone.utc).isoformat())
+        )
+        await db.commit()
+
+
+async def get_referral_code(db_path: str, user_id: int) -> Optional[str]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            "SELECT referral_code FROM referrals WHERE referrer_id = ? AND referred_id = 0 LIMIT 1",
+            (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else None
+
+
+async def apply_referral_code(db_path: str, new_user_id: int, code: str) -> bool:
+    async with aiosqlite.connect(db_path) as db:
+        # Знайти власника коду
+        async with db.execute(
+            "SELECT referrer_id FROM referrals WHERE referral_code = ? AND referred_id = 0",
+            (code,)
+        ) as cur:
+            row = await cur.fetchone()
+        
+        if not row:
+            return False
+        
+        referrer_id = row[0]
+        
+        # Створити запис про реферала
+        await db.execute(
+            """
+            INSERT INTO referrals (referrer_id, referred_id, referral_code, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (referrer_id, new_user_id, code, datetime.now(timezone.utc).isoformat())
+        )
+        await db.commit()
+        return True
+
+
+async def get_user_referral_stats(db_path: str, user_id: int) -> dict:
+    async with aiosqlite.connect(db_path) as db:
+        # Кількість запрошених
+        async with db.execute(
+            "SELECT COUNT(*), SUM(referrer_bonus) FROM referrals WHERE referrer_id = ? AND referred_id != 0",
+            (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    
+    return {
+        'referred_count': row[0] if row else 0,
+        'total_bonus': row[1] if row and row[1] else 0
+    }
 
 
 # --- Payments & Commissions ---

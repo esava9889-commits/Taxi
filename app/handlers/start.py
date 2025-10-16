@@ -79,8 +79,9 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
             keyboard=[
                 [KeyboardButton(text="🚖 Замовити таксі")],
                 [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
-                [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🆘 SOS")],
-                [KeyboardButton(text="🚗 Стати водієм"), KeyboardButton(text="ℹ️ Допомога")],
+                [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🎁 Реферальна програма")],
+                [KeyboardButton(text="🆘 SOS"), KeyboardButton(text="ℹ️ Допомога")],
+                [KeyboardButton(text="🚗 Стати водієм")],
             ],
             resize_keyboard=True,
             one_time_keyboard=False,

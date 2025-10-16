@@ -25,6 +25,9 @@ from app.handlers.chat import create_router as create_chat_router
 from app.handlers.promocodes import create_router as create_promocodes_router
 from app.handlers.sos import create_router as create_sos_router
 from app.handlers.live_tracking import create_router as create_live_tracking_router
+from app.handlers.tips import create_router as create_tips_router
+from app.handlers.referral import create_router as create_referral_router
+from app.handlers.client_rating import create_router as create_client_rating_router
 from app.storage.db import init_db
 from app.utils.scheduler import start_scheduler
 
@@ -79,6 +82,9 @@ async def main() -> None:
     dp.include_router(create_promocodes_router(config))  # Промокоди
     dp.include_router(create_sos_router(config))  # SOS
     dp.include_router(create_live_tracking_router(config))  # Живе відстеження
+    dp.include_router(create_tips_router(config))  # Чайові
+    dp.include_router(create_referral_router(config))  # Реферальна програма
+    dp.include_router(create_client_rating_router(config))  # Рейтинг клієнтів
     dp.include_router(create_client_router(config))  # Client останній
 
     # Start scheduled tasks

@@ -111,7 +111,8 @@ async def notify_client_trip_completed(
                 InlineKeyboardButton(text="⭐️ 3", callback_data=f"rate:driver:{driver_tg_id}:3:{order_id}"),
                 InlineKeyboardButton(text="⭐️ 2", callback_data=f"rate:driver:{driver_tg_id}:2:{order_id}"),
                 InlineKeyboardButton(text="⭐️ 1", callback_data=f"rate:driver:{driver_tg_id}:1:{order_id}"),
-            ]
+            ],
+            [InlineKeyboardButton(text="💝 Залишити чайові", callback_data=f"tip:show:{order_id}")]
         ]
     )
     
