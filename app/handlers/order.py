@@ -8,6 +8,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
+    CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -23,6 +24,9 @@ from app.storage.db import (
     get_user_by_id,
     get_user_order_history,
     get_latest_tariff,
+    update_order_group_message,
+    cancel_order_by_client,
+    get_order_by_id,
 )
 from app.utils.maps import get_distance_and_duration, geocode_address
 
@@ -477,4 +481,51 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=main_menu_keyboard(is_registered=is_registered)
         )
 
+    # Скасування замовлення клієнтом
+    @router.callback_query(F.data.startswith("cancel_order:"))
+    async def cancel_order_handler(call: CallbackQuery) -> None:
+        if not call.from_user or not call.message:
+            return
+        
+        order_id = int(call.data.split(":", 1)[1])
+        
+        # Перевірка що замовлення належить клієнту
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        if order.status != "pending":
+            await call.answer("❌ Замовлення вже прийнято водієм, скасувати неможливо", show_alert=True)
+            return
+        
+        # Скасувати замовлення
+        success = await cancel_order_by_client(config.database_path, order_id, call.from_user.id)
+        
+        if success:
+            await call.answer("✅ Замовлення скасовано")
+            
+            # Оновити повідомлення клієнта
+            await call.message.edit_text(
+                "❌ <b>Замовлення скасовано</b>\n\n"
+                "Ви скасували замовлення."
+            )
+            
+            # Повідомити в групу водіїв
+            if config.driver_group_chat_id and order.group_message_id:
+                try:
+                    await call.bot.edit_message_text(
+                        "❌ <b>ЗАМОВЛЕННЯ СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                        f"Замовлення #{order_id} скасовано клієнтом.",
+                        chat_id=config.driver_group_chat_id,
+                        message_id=order.group_message_id
+                    )
+                    logger.info(f"Order #{order_id} cancellation sent to group")
+                except Exception as e:
+                    logger.error(f"Failed to update group message about cancellation: {e}")
+            
+            logger.info(f"Order #{order_id} cancelled by client {call.from_user.id}")
+        else:
+            await call.answer("❌ Не вдалося скасувати замовлення", show_alert=True)
+    
     return router

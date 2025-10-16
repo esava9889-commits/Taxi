@@ -31,6 +31,8 @@ class Order:
     status: str = "pending"  # pending|offered|accepted|in_progress|completed|cancelled
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    # ID повідомлення в групі водіїв
+    group_message_id: Optional[int] = None
 
 
 async def init_db(db_path: str) -> None:
@@ -57,7 +59,8 @@ async def init_db(db_path: str) -> None:
                 commission REAL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 started_at TEXT,
-                finished_at TEXT
+                finished_at TEXT,
+                group_message_id INTEGER
             )
             """
         )
@@ -167,8 +170,8 @@ async def insert_order(db_path: str, order: Order) -> int:
             INSERT INTO orders (
                 user_id, name, phone, pickup_address, destination_address, comment, created_at,
                 pickup_lat, pickup_lon, dest_lat, dest_lon,
-                driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 order.user_id,
@@ -190,10 +193,33 @@ async def insert_order(db_path: str, order: Order) -> int:
                 order.status,
                 (order.started_at.isoformat() if order.started_at else None),
                 (order.finished_at.isoformat() if order.finished_at else None),
+                order.group_message_id,
             ),
         )
         await db.commit()
         return cursor.lastrowid
+
+
+async def update_order_group_message(db_path: str, order_id: int, message_id: int) -> bool:
+    """Оновити ID повідомлення в групі водіїв"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE orders SET group_message_id = ? WHERE id = ?",
+            (message_id, order_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> bool:
+    """Скасувати замовлення клієнтом (тільки якщо pending)"""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE orders SET status = 'cancelled', finished_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'",
+            (datetime.now(timezone.utc).isoformat(), order_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
 
 
 async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
@@ -897,6 +923,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE orders ADD COLUMN started_at TEXT")
     if not await has_column('orders', 'finished_at'):
         await db.execute("ALTER TABLE orders ADD COLUMN finished_at TEXT")
+    if not await has_column('orders', 'group_message_id'):
+        await db.execute("ALTER TABLE orders ADD COLUMN group_message_id INTEGER")
 
     # Drivers
     if not await has_column('drivers', 'online'):
