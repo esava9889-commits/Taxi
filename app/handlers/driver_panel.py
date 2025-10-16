@@ -265,28 +265,30 @@ def create_router(config: AppConfig) -> Router:
         if success:
             await call.answer("✅ Ви прийняли замовлення!", show_alert=True)
             
-            # Повідомити клієнта з кнопкою відстеження
-            try:
-                tracking_kb = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(text="📍 Де водій?", callback_data=f"track_driver:{order_id}"),
-                            InlineKeyboardButton(text="📞 Зателефонувати", url=f"tel:{driver.phone}")
-                        ]
-                    ]
+            # Розрахувати ETA
+            eta_minutes = None
+            if driver.last_lat and driver.last_lon and order.pickup_lat and order.pickup_lon and config.google_maps_api_key:
+                result = await get_distance_and_duration(
+                    config.google_maps_api_key,
+                    driver.last_lat, driver.last_lon,
+                    order.pickup_lat, order.pickup_lon
                 )
-                await call.bot.send_message(
-                    order.user_id,
-                    f"🚗 <b>Водій знайдено!</b>\n\n"
-                    f"👤 ПІБ: {driver.full_name}\n"
-                    f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
-                    f"🔢 Номер: {driver.car_plate}\n"
-                    f"📱 Телефон: <code>{driver.phone}</code>\n\n"
-                    f"Водій їде до вас!",
-                    reply_markup=tracking_kb
-                )
-            except Exception as e:
-                logger.error(f"Failed to notify client {order.user_id}: {e}")
+                if result:
+                    _, duration_s = result
+                    eta_minutes = int(duration_s / 60.0)
+            
+            # Повідомити клієнта (використовуємо нову систему сповіщень)
+            from app.handlers.notifications import notify_client_driver_accepted
+            await notify_client_driver_accepted(
+                call.bot,
+                order.user_id,
+                order_id,
+                driver.full_name,
+                f"{driver.car_make} {driver.car_model}",
+                driver.car_plate,
+                driver.phone,
+                eta_minutes
+            )
             
             # Замінити повідомлення в групі на "вже виконується"
             if call.message:
@@ -345,21 +347,21 @@ def create_router(config: AppConfig) -> Router:
         if success:
             await call.answer("🚗 Поїздку розпочато!")
             
-            # Повідомити клієнта
-            try:
-                await call.bot.send_message(
-                    order.user_id,
-                    "🚗 <b>Поїздку розпочато!</b>\n\n"
-                    "Водій вже в дорозі. Приємної подорожі!"
-                )
-            except Exception as e:
-                logger.error(f"Failed to notify client: {e}")
+            # Повідомити клієнта (використовуємо нову систему)
+            from app.handlers.notifications import notify_client_trip_started
+            await notify_client_trip_started(
+                call.bot,
+                order.user_id,
+                order_id,
+                order.destination_address
+            )
             
             # Оновити кнопки
             if call.message:
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
-                        [InlineKeyboardButton(text="✅ Завершити поїздку", callback_data=f"complete_trip:{order_id}")]
+                        [InlineKeyboardButton(text="📍 Я на місці", callback_data=f"driver_arrived:{order_id}")],
+                [InlineKeyboardButton(text="✅ Завершити поїздку", callback_data=f"complete_trip:{order_id}")]
                     ]
                 )
                 await call.message.edit_reply_markup(reply_markup=kb)
@@ -445,32 +447,17 @@ def create_router(config: AppConfig) -> Router:
             
             await call.answer(f"✅ Поїздку завершено! Вартість: {fare:.2f} грн", show_alert=True)
             
-            # Повідомити клієнта
-            try:
-                kb = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(text="⭐️ 5", callback_data=f"rate:driver:{driver.tg_user_id}:5:{order_id}"),
-                            InlineKeyboardButton(text="⭐️ 4", callback_data=f"rate:driver:{driver.tg_user_id}:4:{order_id}"),
-                        ],
-                        [
-                            InlineKeyboardButton(text="⭐️ 3", callback_data=f"rate:driver:{driver.tg_user_id}:3:{order_id}"),
-                            InlineKeyboardButton(text="⭐️ 2", callback_data=f"rate:driver:{driver.tg_user_id}:2:{order_id}"),
-                            InlineKeyboardButton(text="⭐️ 1", callback_data=f"rate:driver:{driver.tg_user_id}:1:{order_id}"),
-                        ]
-                    ]
-                )
-                await call.bot.send_message(
-                    order.user_id,
-                    f"✅ <b>Поїздку завершено!</b>\n\n"
-                    f"💰 Вартість: {fare:.2f} грн\n"
-                    f"📍 Відстань: {km:.1f} км\n"
-                    f"⏱ Час: {int(minutes)} хв\n\n"
-                    f"Будь ласка, оцініть водія:",
-                    reply_markup=kb
-                )
-            except Exception as e:
-                logger.error(f"Failed to notify client: {e}")
+            # Повідомити клієнта (використовуємо нову систему)
+            from app.handlers.notifications import notify_client_trip_completed
+            await notify_client_trip_completed(
+                call.bot,
+                order.user_id,
+                order_id,
+                driver.tg_user_id,
+                fare,
+                km,
+                int(minutes)
+            )
             
             # Оновити повідомлення в групі
             if call.message:

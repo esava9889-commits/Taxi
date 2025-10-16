@@ -24,6 +24,7 @@ from app.handlers.cancel_reasons import create_router as create_cancel_reasons_r
 from app.handlers.chat import create_router as create_chat_router
 from app.handlers.promocodes import create_router as create_promocodes_router
 from app.handlers.sos import create_router as create_sos_router
+from app.handlers.live_tracking import create_router as create_live_tracking_router
 from app.storage.db import init_db
 from app.utils.scheduler import start_scheduler
 
@@ -77,6 +78,7 @@ async def main() -> None:
     dp.include_router(create_chat_router(config))  # Чат
     dp.include_router(create_promocodes_router(config))  # Промокоди
     dp.include_router(create_sos_router(config))  # SOS
+    dp.include_router(create_live_tracking_router(config))  # Живе відстеження
     dp.include_router(create_client_router(config))  # Client останній
 
     # Start scheduled tasks

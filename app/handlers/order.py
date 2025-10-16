@@ -432,16 +432,42 @@ def create_router(config: AppConfig) -> Router:
                 else:
                     logger.warning(f"⚠️ Відстань не розрахована, відправка в групу без distance_info")
                 
+                # Отримати онлайн водіїв для пріоритизації
+                from app.storage.db import get_online_drivers
+from app.handlers.driver_priority import get_top_drivers
+                
+                online_drivers = await get_online_drivers(config.database_path, data.get('city'))
+                top_drivers = await get_top_drivers(config.database_path, online_drivers, limit=5)
+                
+                # Якщо є топ водії - надіслати їм особисто перші
+                for driver in top_drivers[:3]:  # Топ 3 отримують особисто
+                    from app.handlers.notifications import notify_driver_new_order
+                    await notify_driver_new_order(
+                        message.bot,
+                        driver.tg_user_id,
+                        order_id,
+                        data.get('name'),
+                        data.get('pickup'),
+                        data.get('destination'),
+                        (data.get('distance_m') / 1000.0) if data.get('distance_m') else None,
+                        estimated_fare if 'estimated_fare' in locals() else None
+                    )
+                
+                from app.handlers.car_classes import get_car_class_name
+                car_class_name = get_car_class_name(data.get('car_class', 'economy'))
+                
                 group_message = (
                     f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
                     f"🏙 Місто: {data.get('city')}\n"
+                    f"🚗 Клас: {car_class_name}\n"
                     f"👤 Клієнт: {data.get('name')}\n"
                     f"📱 Телефон: <code>{data.get('phone')}</code>\n\n"
                     f"📍 Звідки: {data.get('pickup')}\n"
                     f"📍 Куди: {data.get('destination')}\n"
                     f"{distance_info}\n"
                     f"💬 Коментар: {data.get('comment') or '—'}\n\n"
-                    f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}"
+                    f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}\n\n"
+                    f"🏆 <i>Топ-водії вже отримали сповіщення</i>"
                 )
                 
                 await message.bot.send_message(
