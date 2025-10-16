@@ -14,6 +14,7 @@ from aiogram.types import (
 from app.config.config import AppConfig
 from app.storage.db import (
     get_driver_by_tg_user_id,
+    get_driver_by_id,
     get_order_by_id,
     accept_order,
     start_order,
@@ -25,7 +26,9 @@ from app.storage.db import (
     Payment,
     insert_payment,
     get_latest_tariff,
+    update_driver_location,
 )
+from app.utils.maps import generate_static_map_url, get_distance_and_duration
 
 logger = logging.getLogger(__name__)
 
@@ -407,5 +410,139 @@ def create_router(config: AppConfig) -> Router:
                 )
         else:
             await call.answer("❌ Помилка", show_alert=True)
+
+    # Обробник кнопки "Де водій?"
+    @router.callback_query(F.data.startswith("track_driver:"))
+    async def track_driver_location(call: CallbackQuery) -> None:
+        if not call.from_user or not call.message:
+            return
+        
+        order_id = int(call.data.split(":", 1)[1])
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order or not order.driver_id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        # Отримати водія (driver_id це DB id, не tg_user_id)
+        driver = await get_driver_by_id(config.database_path, order.driver_id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Перевірка що це замовлення належить клієнту
+        if order.user_id != call.from_user.id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        # Якщо водій має координати
+        if driver.last_lat and driver.last_lon and order.pickup_lat and order.pickup_lon:
+            # Розрахувати відстань до клієнта
+            distance_text = ""
+            if config.google_maps_api_key:
+                result = await get_distance_and_duration(
+                    config.google_maps_api_key,
+                    driver.last_lat, driver.last_lon,
+                    order.pickup_lat, order.pickup_lon
+                )
+                if result:
+                    distance_m, duration_s = result
+                    km = distance_m / 1000.0
+                    minutes = duration_s / 60.0
+                    distance_text = f"\n\n📏 Відстань: {km:.1f} км\n⏱️ Прибуде через: ~{int(minutes)} хв"
+            
+            # Згенерувати карту
+            if config.google_maps_api_key:
+                map_url = generate_static_map_url(
+                    config.google_maps_api_key,
+                    driver.last_lat, driver.last_lon,
+                    order.pickup_lat, order.pickup_lon,
+                    width=600, height=400
+                )
+                
+                # Посилання на Google Maps
+                gmaps_link = f"https://www.google.com/maps/dir/?api=1&origin={driver.last_lat},{driver.last_lon}&destination={order.pickup_lat},{order.pickup_lon}&travelmode=driving"
+                
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🗺️ Відкрити в Google Maps", url=gmaps_link)],
+                        [InlineKeyboardButton(text="🔄 Оновити локацію", callback_data=f"track_driver:{order_id}")]
+                    ]
+                )
+                
+                # Надіслати карту
+                try:
+                    await call.bot.send_photo(
+                        call.from_user.id,
+                        photo=map_url,
+                        caption=f"📍 <b>Локація водія</b>\n\n"
+                                f"🚗 {driver.full_name}\n"
+                                f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})"
+                                f"{distance_text}\n\n"
+                                f"<i>Оновлено: {datetime.now().strftime('%H:%M:%S')}</i>",
+                        reply_markup=kb
+                    )
+                    await call.answer("📍 Карта надіслана!")
+                except Exception as e:
+                    logger.error(f"Failed to send map: {e}")
+                    # Fallback: просто посилання
+                    await call.bot.send_message(
+                        call.from_user.id,
+                        f"📍 <b>Локація водія</b>\n\n"
+                        f"🚗 {driver.full_name}{distance_text}\n\n"
+                        f"🗺️ <a href='{gmaps_link}'>Відкрити в Google Maps</a>",
+                        reply_markup=kb
+                    )
+                    await call.answer("📍 Локація надіслана!")
+            else:
+                await call.answer("⚠️ Google Maps API не налаштований", show_alert=True)
+        else:
+            await call.answer(
+                "⚠️ Водій ще не надав свою локацію.\n"
+                "Спробуйте пізніше або зателефонуйте водію.",
+                show_alert=True
+            )
+    
+    # Кнопка для водія щоб поділитися локацією
+    @router.message(F.text == "📍 Поділитися локацією")
+    async def share_location_button(message: Message) -> None:
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            return
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📍 Надіслати геолокацію", request_location=True)]
+            ]
+        )
+        await message.answer(
+            "📍 <b>Поділитися локацією</b>\n\n"
+            "Надішліть свою поточну геолокацію, щоб клієнти могли бачити де ви.\n\n"
+            "Натисніть кнопку нижче:",
+            reply_markup=kb
+        )
+    
+    # Обробка геолокації від водія
+    @router.message(F.location)
+    async def driver_location_update(message: Message) -> None:
+        if not message.from_user or not message.location:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            return
+        
+        # Оновити локацію водія в БД
+        await update_driver_location(
+            config.database_path,
+            message.from_user.id,
+            message.location.latitude,
+            message.location.longitude
+        )
+        
+        await message.answer("✅ Локацію оновлено! Клієнти можуть бачити де ви.")
 
     return router
