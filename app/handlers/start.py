@@ -351,22 +351,313 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ Профіль не знайдено. Зареєструйтесь спочатку.")
             return
         
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="✏️ Змінити місто", callback_data="profile:edit:city")],
-                [InlineKeyboardButton(text="📱 Змінити телефон", callback_data="profile:edit:phone")],
-            ]
-        )
+        # Перевірка активного замовлення
+        from app.storage.db import get_user_active_order
+        active_order = await get_user_active_order(config.database_path, message.from_user.id)
         
-        await message.answer(
+        # Формування кнопок
+        buttons = []
+        
+        if active_order:
+            # Якщо є активне замовлення
+            if active_order.status == "pending":
+                # Замовлення ще не прийняте - можна скасувати
+                buttons.append([
+                    InlineKeyboardButton(text="🔍 Статус замовлення", callback_data=f"order:status:{active_order.id}"),
+                    InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data=f"order:cancel_confirm:{active_order.id}")
+                ])
+            elif active_order.status in ("accepted", "in_progress"):
+                # Замовлення прийняте або виконується - можна відстежити водія
+                buttons.append([
+                    InlineKeyboardButton(text="🚗 Відстежити водія", callback_data=f"order:track:{active_order.id}"),
+                    InlineKeyboardButton(text="📞 Зв'язатись з водієм", callback_data=f"order:contact:{active_order.id}")
+                ])
+                buttons.append([InlineKeyboardButton(text="🔍 Статус замовлення", callback_data=f"order:status:{active_order.id}")])
+        
+        # Загальні кнопки
+        buttons.append([InlineKeyboardButton(text="📜 Історія замовлень", callback_data="profile:history")])
+        buttons.append([
+            InlineKeyboardButton(text="✏️ Змінити місто", callback_data="profile:edit:city"),
+            InlineKeyboardButton(text="📱 Змінити телефон", callback_data="profile:edit:phone")
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        # Текст профілю
+        profile_text = (
             f"👤 <b>Ваш профіль</b>\n\n"
             f"Ім'я: {user.full_name}\n"
             f"📍 Місто: {user.city or 'Не вказано'}\n"
             f"📱 Телефон: {user.phone or 'Не вказано'}\n"
-            f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}",
+            f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}"
+        )
+        
+        if active_order:
+            status_emoji = {
+                "pending": "⏳",
+                "accepted": "✅",
+                "in_progress": "🚗"
+            }.get(active_order.status, "❓")
+            
+            status_text = {
+                "pending": "Очікує водія",
+                "accepted": "Водія призначено",
+                "in_progress": "В дорозі"
+            }.get(active_order.status, "Невідомо")
+            
+            profile_text += f"\n\n{status_emoji} <b>Активне замовлення #{active_order.id}</b>\n"
+            profile_text += f"Статус: {status_text}\n"
+            profile_text += f"📍 Звідки: {active_order.pickup_address}\n"
+            profile_text += f"📍 Куди: {active_order.destination_address}"
+        
+        await message.answer(profile_text, reply_markup=kb)
+
+    # Обробники кнопок профілю
+    @router.callback_query(F.data.startswith("order:status:"))
+    async def show_order_status(call: CallbackQuery) -> None:
+        """Показати статус замовлення"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import get_order_by_id, get_driver_by_id
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        status_emoji = {
+            "pending": "⏳",
+            "accepted": "✅",
+            "in_progress": "🚗",
+            "completed": "✅",
+            "cancelled": "❌"
+        }.get(order.status, "❓")
+        
+        status_text = {
+            "pending": "Очікує водія",
+            "accepted": "Водія призначено",
+            "in_progress": "В дорозі",
+            "completed": "Завершено",
+            "cancelled": "Скасовано"
+        }.get(order.status, "Невідомо")
+        
+        text = (
+            f"{status_emoji} <b>Замовлення #{order.id}</b>\n\n"
+            f"Статус: <b>{status_text}</b>\n"
+            f"📍 Звідки: {order.pickup_address}\n"
+            f"📍 Куди: {order.destination_address}\n"
+            f"📅 Створено: {order.created_at.strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        if order.distance_m:
+            text += f"\n📏 Відстань: {order.distance_m / 1000:.1f} км"
+        
+        if order.fare_amount:
+            text += f"\n💰 Вартість: {order.fare_amount:.2f} грн"
+        
+        if order.driver_id:
+            driver = await get_driver_by_id(config.database_path, order.driver_id)
+            if driver:
+                text += f"\n\n🚗 <b>Водій:</b>\n"
+                text += f"👤 {driver.full_name}\n"
+                text += f"🚙 {driver.car_make} {driver.car_model}\n"
+                text += f"🔢 {driver.car_plate}\n"
+                text += f"📱 {driver.phone}"
+        
+        if order.comment:
+            text += f"\n\n💬 Коментар: {order.comment}"
+        
+        await call.answer()
+        await call.message.answer(text)
+    
+    @router.callback_query(F.data.startswith("order:cancel_confirm:"))
+    async def confirm_order_cancellation(call: CallbackQuery) -> None:
+        """Підтвердження скасування замовлення"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[-1])
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Так, скасувати", callback_data=f"order:cancel_yes:{order_id}"),
+                    InlineKeyboardButton(text="❌ Ні, залишити", callback_data="order:cancel_no")
+                ]
+            ]
+        )
+        
+        await call.answer()
+        await call.message.answer(
+            "❓ <b>Скасувати замовлення?</b>\n\n"
+            "Ви впевнені, що хочете скасувати це замовлення?",
             reply_markup=kb
         )
-
+    
+    @router.callback_query(F.data.startswith("order:cancel_yes:"))
+    async def cancel_order_confirmed(call: CallbackQuery) -> None:
+        """Скасування замовлення підтверджено"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import cancel_order_by_client, get_order_by_id
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if order.status != "pending":
+            await call.answer("❌ Замовлення вже не можна скасувати", show_alert=True)
+            return
+        
+        success = await cancel_order_by_client(config.database_path, order_id, call.from_user.id)
+        
+        if success:
+            await call.answer("✅ Замовлення скасовано", show_alert=True)
+            await call.message.answer("✅ <b>Замовлення скасовано</b>\n\nВи можете створити нове замовлення будь-коли.")
+            
+            # Повідомити в групу водіїв
+            if order.group_message_id and config.driver_group_chat_id:
+                try:
+                    await call.bot.edit_message_text(
+                        chat_id=config.driver_group_chat_id,
+                        message_id=order.group_message_id,
+                        text=f"❌ <b>ЗАМОВЛЕННЯ #{order.id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                             f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to update group message: {e}")
+        else:
+            await call.answer("❌ Не вдалося скасувати замовлення", show_alert=True)
+    
+    @router.callback_query(F.data == "order:cancel_no")
+    async def cancel_order_declined(call: CallbackQuery) -> None:
+        """Скасування відхилено"""
+        await call.answer("✅ Замовлення залишається активним")
+        await call.message.delete()
+    
+    @router.callback_query(F.data.startswith("order:track:"))
+    async def track_driver(call: CallbackQuery) -> None:
+        """Відстежити водія"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import get_order_by_id, get_driver_by_id
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if not order.driver_id:
+            await call.answer("❌ Водія ще не призначено", show_alert=True)
+            return
+        
+        driver = await get_driver_by_id(config.database_path, order.driver_id)
+        
+        if not driver:
+            await call.answer("❌ Інформація про водія недоступна", show_alert=True)
+            return
+        
+        text = (
+            f"🚗 <b>Ваш водій:</b>\n\n"
+            f"👤 {driver.full_name}\n"
+            f"🚙 {driver.car_make} {driver.car_model}\n"
+            f"🔢 Номер: {driver.car_plate}\n"
+            f"📱 Телефон: {driver.phone}\n\n"
+            f"📍 <b>Маршрут:</b>\n"
+            f"Звідки: {order.pickup_address}\n"
+            f"Куди: {order.destination_address}"
+        )
+        
+        if order.distance_m:
+            text += f"\n\n📏 Відстань: {order.distance_m / 1000:.1f} км"
+        
+        if order.status == "in_progress":
+            text += "\n\n🚗 <b>Статус: В дорозі</b>"
+        elif order.status == "accepted":
+            text += "\n\n✅ <b>Статус: Водій їде до вас</b>"
+        
+        await call.answer()
+        await call.message.answer(text)
+    
+    @router.callback_query(F.data.startswith("order:contact:"))
+    async def contact_driver(call: CallbackQuery) -> None:
+        """Зв'язатись з водієм"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import get_order_by_id, get_driver_by_id
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if not order.driver_id:
+            await call.answer("❌ Водія ще не призначено", show_alert=True)
+            return
+        
+        driver = await get_driver_by_id(config.database_path, order.driver_id)
+        
+        if not driver:
+            await call.answer("❌ Інформація про водія недоступна", show_alert=True)
+            return
+        
+        await call.answer()
+        await call.message.answer(
+            f"📞 <b>Контакт водія:</b>\n\n"
+            f"👤 {driver.full_name}\n"
+            f"📱 {driver.phone}\n\n"
+            f"Ви можете зателефонувати водієві за цим номером."
+        )
+    
+    @router.callback_query(F.data == "profile:history")
+    async def show_profile_history(call: CallbackQuery) -> None:
+        """Показати історію замовлень"""
+        if not call.from_user:
+            return
+        
+        from app.storage.db import get_user_order_history
+        orders = await get_user_order_history(config.database_path, call.from_user.id, limit=10)
+        
+        if not orders:
+            await call.answer("📜 У вас поки немає замовлень", show_alert=True)
+            return
+        
+        text = "📜 <b>Історія замовлень</b>\n\n"
+        
+        for order in orders:
+            status_emoji = {
+                "pending": "⏳",
+                "accepted": "✅",
+                "in_progress": "🚗",
+                "completed": "✅",
+                "cancelled": "❌"
+            }.get(order.status, "❓")
+            
+            text += f"{status_emoji} <b>Замовлення #{order.id}</b>\n"
+            text += f"📍 {order.pickup_address} → {order.destination_address}\n"
+            text += f"📅 {order.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+            
+            if order.fare_amount:
+                text += f"💰 {order.fare_amount:.2f} грн\n"
+            
+            text += "\n"
+        
+        await call.answer()
+        await call.message.answer(text)
+    
     @router.callback_query(F.data == "open_driver_panel")
     async def open_driver_panel(call: CallbackQuery) -> None:
         """Обробник для відкриття панелі водія після підтвердження"""

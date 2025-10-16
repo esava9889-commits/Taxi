@@ -363,14 +363,19 @@ def create_router(config: AppConfig) -> Router:
                         reply_markup=kb
                     )
                     
-                    # Також відправимо меню водія
+                    # Відправимо панель водія з ReplyKeyboardMarkup
                     # Перевірка чи водій також адмін
                     is_driver_admin = driver.tg_user_id in config.bot.admin_ids
                     
+                    from app.handlers.start import main_menu_keyboard
                     await call.bot.send_message(
                         driver.tg_user_id,
                         "🚗 <b>Панель водія активована!</b>\n\n"
-                        "Оберіть дію з меню:",
+                        "Тепер ви можете:\n"
+                        "• Отримувати замовлення в групі водіїв\n"
+                        "• Переглядати свій заробіток\n"
+                        "• Відстежувати статистику\n\n"
+                        "Оберіть дію з меню нижче:",
                         reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin)
                     )
                 except Exception as e:

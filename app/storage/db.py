@@ -222,6 +222,52 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
         return cur.rowcount > 0
 
 
+async def get_user_active_order(db_path: str, user_id: int) -> Optional[Order]:
+    """
+    Отримати активне замовлення користувача (pending, accepted або in_progress)
+    """
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status,
+                   started_at, finished_at, pickup_lat, pickup_lon, dest_lat, dest_lon, group_message_id
+            FROM orders
+            WHERE user_id = ? AND status IN ('pending', 'accepted', 'in_progress')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            
+            return Order(
+                id=row[0],
+                user_id=row[1],
+                name=row[2],
+                phone=row[3],
+                pickup_address=row[4],
+                destination_address=row[5],
+                comment=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+                driver_id=row[8],
+                distance_m=row[9],
+                duration_s=row[10],
+                fare_amount=row[11],
+                commission=row[12],
+                status=row[13],
+                started_at=datetime.fromisoformat(row[14]) if row[14] else None,
+                finished_at=datetime.fromisoformat(row[15]) if row[15] else None,
+                pickup_lat=row[16],
+                pickup_lon=row[17],
+                dest_lat=row[18],
+                dest_lon=row[19],
+                group_message_id=row[20],
+            )
+
+
 async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
