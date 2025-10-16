@@ -242,27 +242,39 @@ def create_router(config: AppConfig) -> Router:
             except Exception as e:
                 logger.error(f"Failed to notify client {order.user_id}: {e}")
             
-            # Оновити повідомлення в групі
+            # Замінити повідомлення в групі на "вже виконується"
             if call.message:
                 try:
-                    kb = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [InlineKeyboardButton(text="🚗 Почати поїздку", callback_data=f"start_trip:{order_id}")],
-                            [InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel_trip:{order_id}")]
-                        ]
-                    )
                     await call.message.edit_text(
-                        f"{call.message.text}\n\n"
-                        f"✅ <b>Прийнято водієм:</b> {driver.full_name}\n"
-                        f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})",
-                        reply_markup=kb
+                        f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ВЖЕ ВИКОНУЄТЬСЯ</b>\n\n"
+                        f"👤 Водій: {driver.full_name}\n"
+                        f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
+                        f"📱 {driver.phone}",
+                        reply_markup=InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [InlineKeyboardButton(text="🚗 Почати поїздку", callback_data=f"start_trip:{order_id}")],
+                                [InlineKeyboardButton(text="❌ Скасувати", callback_data=f"cancel_trip:{order_id}")]
+                            ]
+                        )
                     )
+                    logger.info(f"Group message updated: order {order_id} is now being executed")
                 except Exception as e:
                     logger.error(f"Failed to edit group message: {e}")
             
             logger.info(f"Driver {driver.id} accepted order {order_id}")
         else:
             await call.answer("❌ Не вдалося прийняти замовлення. Можливо його вже прийняли.", show_alert=True)
+            
+            # Якщо не вдалося прийняти - показати що вже зайнято
+            if call.message:
+                try:
+                    await call.message.edit_text(
+                        "⚠️ <b>ЗАМОВЛЕННЯ ВЖЕ ВИКОНУЄТЬСЯ ІНШИМ ВОДІЄМ</b>\n\n"
+                        "Це замовлення вже прийняте іншим водієм.",
+                        reply_markup=None
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to update group message: {e}")
 
     # Початок поїздки
     @router.callback_query(F.data.startswith("start_trip:"))
