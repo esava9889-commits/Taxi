@@ -139,6 +139,53 @@ async def geocode_address(api_key: str, address: str) -> Optional[Tuple[float, f
         return None
 
 
+async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]:
+    """
+    Convert coordinates to address using Google Reverse Geocoding API
+    Returns address string or None
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={api_key}&language=uk"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as resp:
+                if resp.status != 200:
+                    logger.error(f"Reverse Geocoding API HTTP error: {resp.status}")
+                    return None
+                data = await resp.json()
+        
+        status = data.get("status")
+        
+        if status == "REQUEST_DENIED":
+            error_message = data.get("error_message", "Unknown error")
+            logger.error(f"❌ Reverse Geocoding API REQUEST_DENIED: {error_message}")
+            logger.error(f"Перевірте що Geocoding API увімкнений в Google Cloud Console")
+            return None
+        
+        if status != "OK":
+            logger.warning(f"⚠️ Reverse Geocoding API status: {status}")
+            return None
+        
+        results = data.get("results", [])
+        if not results:
+            logger.warning(f"⚠️ Reverse Geocoding: порожні результати")
+            return None
+        
+        # Взяти першу (найточнішу) адресу
+        formatted_address = results[0].get("formatted_address")
+        
+        if formatted_address:
+            return formatted_address
+        
+        return None
+    except Exception as e:
+        logger.error(f"❌ Reverse Geocoding API exception: {type(e).__name__}: {str(e)}")
+        return None
+
+
 def generate_static_map_url(
     api_key: str,
     origin_lat: float,

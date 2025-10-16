@@ -158,7 +158,20 @@ def create_router(config: AppConfig) -> Router:
         
         data = await state.get_data()
         loc = message.location
+        
+        # Reverse geocoding - отримати адресу з координат
         address = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+        
+        if config.google_maps_api_key:
+            from app.utils.maps import reverse_geocode
+            readable_address = await reverse_geocode(
+                config.google_maps_api_key,
+                loc.latitude,
+                loc.longitude
+            )
+            if readable_address:
+                address = readable_address
+                logger.info(f"✅ Reverse geocoded: {address}")
         
         saved_addr = SavedAddress(
             id=None,
