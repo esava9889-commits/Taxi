@@ -76,6 +76,7 @@ def create_router(config: AppConfig) -> Router:
         return user_id in set(config.bot.admin_ids)
 
     @router.message(Command("admin"))
+    @router.message(F.text == "⚙️ Адмін-панель")
     async def admin_panel(message: Message) -> None:
         if not message.from_user or not is_admin(message.from_user.id):
             await message.answer("❌ У вас немає доступу до адмін-панелі.")

@@ -29,8 +29,22 @@ class ClientRegStates(StatesGroup):
     city = State()
 
 
-def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False) -> ReplyKeyboardMarkup:
+def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Головне меню з кнопками"""
+    # АДМІН ПАНЕЛЬ (найвищий пріоритет)
+    if is_admin:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="⚙️ Адмін-панель")],
+                [KeyboardButton(text="🚖 Замовити таксі")],
+                [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="👤 Мій профіль")],
+                [KeyboardButton(text="🚗 Стати водієм"), KeyboardButton(text="ℹ️ Допомога")],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Оберіть дію",
+        )
+    
     if is_driver:
         return ReplyKeyboardMarkup(
             keyboard=[
@@ -111,6 +125,9 @@ def create_router(config: AppConfig) -> Router:
         
         user = await get_user_by_id(config.database_path, message.from_user.id)
         
+        # Перевірка чи це АДМІН (найвищий пріоритет)
+        is_admin = message.from_user.id in config.bot.admin_ids
+        
         # Перевірка чи це водій
         from app.storage.db import get_driver_by_tg_user_id
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
@@ -118,12 +135,16 @@ def create_router(config: AppConfig) -> Router:
         
         if user and user.phone and user.city:
             # Повна реєстрація
+            greeting = "З поверненням, "
+            if is_admin:
+                greeting = "З поверненням, Адміністратор "
+            
             await message.answer(
-                f"З поверненням, {user.full_name}! 👋\n\n"
+                f"{greeting}{user.full_name}! 👋\n\n"
                 f"📍 Місто: {user.city}\n"
                 f"📱 Телефон: {user.phone}\n\n"
                 "Оберіть дію з меню нижче:",
-                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver)
+                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
             )
         elif user:
             # Неповна реєстрація - пропонуємо завершити
@@ -180,12 +201,18 @@ def create_router(config: AppConfig) -> Router:
         
         user = await get_user_by_id(config.database_path, user_id)
         if user and user.phone and user.city:
+            # Перевірка чи це адмін
+            is_admin = user_id in config.bot.admin_ids
+            from app.storage.db import get_driver_by_tg_user_id
+            driver = await get_driver_by_tg_user_id(config.database_path, user_id)
+            is_driver = driver is not None and driver.status == "approved"
+            
             text = f"✅ Ви вже зареєстровані!\n\n📍 Місто: {user.city}\n📱 Телефон: {user.phone}"
             if isinstance(event, CallbackQuery):
                 await event.answer("Ви вже зареєстровані!")
-                await event.message.answer(text, reply_markup=main_menu_keyboard(is_registered=True))
+                await event.message.answer(text, reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin))
             else:
-                await event.answer(text, reply_markup=main_menu_keyboard(is_registered=True))
+                await event.answer(text, reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin))
             return
         
         if isinstance(event, CallbackQuery):
@@ -388,9 +415,12 @@ def create_router(config: AppConfig) -> Router:
         is_driver = driver is not None and driver.status == "approved"
         
         await state.clear()
+        # Перевірка чи це адмін
+        is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
+        
         await message.answer(
             "❌ Скасовано.",
-            reply_markup=main_menu_keyboard(is_registered=is_registered, is_driver=is_driver)
+            reply_markup=main_menu_keyboard(is_registered=is_registered, is_driver=is_driver, is_admin=is_admin)
         )
 
     return router
