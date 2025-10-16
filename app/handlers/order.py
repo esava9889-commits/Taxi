@@ -405,30 +405,33 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Відповідь клієнту
                 from app.handlers.start import main_menu_keyboard
+                is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
                 await message.answer(
                     f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
                     "🔍 Шукаємо водія...\n\n"
                     "Ваше замовлення надіслано водіям.\n"
                     "Очікуйте підтвердження! ⏱",
-                    reply_markup=main_menu_keyboard(is_registered=True)
+                    reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
                 )
                 
             except Exception as e:
                 logger.error(f"Failed to send order to group: {e}")
                 from app.handlers.start import main_menu_keyboard
+                is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
                 await message.answer(
                     f"⚠️ Замовлення #{order_id} створено, але виникла помилка при відправці водіям.\n"
                     "Зверніться до адміністратора.",
-                    reply_markup=main_menu_keyboard(is_registered=True)
+                    reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
                 )
         else:
             # Якщо група не налаштована
             from app.handlers.start import main_menu_keyboard
+            is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
             await message.answer(
                 f"✅ Замовлення #{order_id} створено!\n\n"
                 "⚠️ Група водіїв не налаштована.\n"
                 "Зверніться до адміністратора.",
-                reply_markup=main_menu_keyboard(is_registered=True)
+                reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
             )
 
     @router.message(F.text == "📜 Мої замовлення")
