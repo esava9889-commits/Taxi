@@ -29,6 +29,12 @@ class ClientRegStates(StatesGroup):
     city = State()
 
 
+class SavedAddressStates(StatesGroup):
+    name = State()
+    emoji = State()
+    address = State()
+
+
 def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Головне меню з кнопками"""
     # АДМІН ПАНЕЛЬ (найвищий пріоритет)
@@ -750,6 +756,213 @@ def create_router(config: AppConfig) -> Router:
             await show_saved_addresses(call)
         else:
             await call.answer("❌ Помилка видалення", show_alert=True)
+    
+    @router.callback_query(F.data == "address:add")
+    async def start_add_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Початок додавання адреси"""
+        if not call.from_user:
+            return
+        
+        await call.answer()
+        await state.set_state(SavedAddressStates.name)
+        
+        await call.message.answer(
+            "📍 <b>Додавання нової адреси</b>\n\n"
+            "Крок 1/3: Введіть назву адреси\n"
+            "Наприклад: Додому, На роботу, Вокзал\n\n"
+            "Або натисніть ❌ Скасувати",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+                resize_keyboard=True
+            )
+        )
+    
+    @router.message(SavedAddressStates.name)
+    async def process_address_name(message: Message, state: FSMContext) -> None:
+        """Обробка назви адреси"""
+        if not message.from_user or not message.text:
+            return
+        
+        if message.text == "❌ Скасувати":
+            await state.clear()
+            user = await get_user_by_id(config.database_path, message.from_user.id)
+            is_admin = message.from_user.id in config.bot.admin_ids
+            from app.storage.db import get_driver_by_tg_user_id
+            driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+            is_driver = driver is not None and driver.status == "approved"
+            
+            await message.answer(
+                "❌ Скасовано",
+                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+            )
+            return
+        
+        name = message.text.strip()
+        if len(name) > 50:
+            await message.answer("❌ Назва занадто довга. Максимум 50 символів.")
+            return
+        
+        await state.update_data(name=name)
+        await state.set_state(SavedAddressStates.emoji)
+        
+        # Емодзі на вибір
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="🏠", callback_data="emoji:🏠"),
+                    InlineKeyboardButton(text="💼", callback_data="emoji:💼"),
+                    InlineKeyboardButton(text="🚉", callback_data="emoji:🚉"),
+                    InlineKeyboardButton(text="🏪", callback_data="emoji:🏪")
+                ],
+                [
+                    InlineKeyboardButton(text="🏥", callback_data="emoji:🏥"),
+                    InlineKeyboardButton(text="🏫", callback_data="emoji:🏫"),
+                    InlineKeyboardButton(text="⭐", callback_data="emoji:⭐"),
+                    InlineKeyboardButton(text="📍", callback_data="emoji:📍")
+                ]
+            ]
+        )
+        
+        await message.answer(
+            f"✅ Назва: {name}\n\n"
+            "Крок 2/3: Оберіть емодзі для адреси:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data.startswith("emoji:"))
+    async def process_address_emoji(call: CallbackQuery, state: FSMContext) -> None:
+        """Обробка емодзі адреси"""
+        if not call.from_user:
+            return
+        
+        emoji = call.data.split(":")[-1]
+        await state.update_data(emoji=emoji)
+        await state.set_state(SavedAddressStates.address)
+        
+        await call.answer()
+        
+        # Кнопка для відправки локації
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати локацію", request_location=True)],
+                [KeyboardButton(text="❌ Скасувати")]
+            ],
+            resize_keyboard=True
+        )
+        
+        await call.message.answer(
+            f"✅ Емодзі: {emoji}\n\n"
+            "Крок 3/3: Введіть адресу або надішліть локацію\n\n"
+            "Наприклад: вул. Соборна, 15",
+            reply_markup=kb
+        )
+    
+    @router.message(SavedAddressStates.address, F.location)
+    async def process_address_location(message: Message, state: FSMContext) -> None:
+        """Обробка локації для адреси"""
+        if not message.from_user or not message.location:
+            return
+        
+        from app.utils.maps import geocode_address
+        
+        # Спробувати отримати адресу з координат (reverse geocoding)
+        # Для спрощення використаємо координати як адресу
+        address = f"Координати: {message.location.latitude:.6f}, {message.location.longitude:.6f}"
+        
+        data = await state.get_data()
+        
+        from app.storage.db import SavedAddress, save_address
+        from datetime import datetime, timezone
+        
+        saved_addr = SavedAddress(
+            id=None,
+            user_id=message.from_user.id,
+            name=data.get('name', 'Нова адреса'),
+            emoji=data.get('emoji', '📍'),
+            address=address,
+            lat=message.location.latitude,
+            lon=message.location.longitude,
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        await save_address(config.database_path, saved_addr)
+        await state.clear()
+        
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        is_admin = message.from_user.id in config.bot.admin_ids
+        from app.storage.db import get_driver_by_tg_user_id
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        is_driver = driver is not None and driver.status == "approved"
+        
+        await message.answer(
+            f"✅ <b>Адресу збережено!</b>\n\n"
+            f"{saved_addr.emoji} {saved_addr.name}\n"
+            f"📍 {address}",
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+        )
+    
+    @router.message(SavedAddressStates.address, F.text)
+    async def process_address_text(message: Message, state: FSMContext) -> None:
+        """Обробка текстової адреси"""
+        if not message.from_user or not message.text:
+            return
+        
+        if message.text == "❌ Скасувати":
+            await state.clear()
+            user = await get_user_by_id(config.database_path, message.from_user.id)
+            is_admin = message.from_user.id in config.bot.admin_ids
+            from app.storage.db import get_driver_by_tg_user_id
+            driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+            is_driver = driver is not None and driver.status == "approved"
+            
+            await message.answer(
+                "❌ Скасовано",
+                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+            )
+            return
+        
+        address = message.text.strip()
+        
+        # Спробувати геокодувати адресу
+        from app.utils.maps import geocode_address
+        lat, lon = None, None
+        
+        if config.google_maps_api_key:
+            result = await geocode_address(address, config.google_maps_api_key)
+            if result:
+                lat, lon = result
+        
+        data = await state.get_data()
+        
+        from app.storage.db import SavedAddress, save_address
+        from datetime import datetime, timezone
+        
+        saved_addr = SavedAddress(
+            id=None,
+            user_id=message.from_user.id,
+            name=data.get('name', 'Нова адреса'),
+            emoji=data.get('emoji', '📍'),
+            address=address,
+            lat=lat,
+            lon=lon,
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        await save_address(config.database_path, saved_addr)
+        await state.clear()
+        
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        is_admin = message.from_user.id in config.bot.admin_ids
+        from app.storage.db import get_driver_by_tg_user_id
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        is_driver = driver is not None and driver.status == "approved"
+        
+        await message.answer(
+            f"✅ <b>Адресу збережено!</b>\n\n"
+            f"{saved_addr.emoji} {saved_addr.name}\n"
+            f"📍 {address}",
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+        )
     
     @router.callback_query(F.data == "profile:history")
     async def show_profile_history(call: CallbackQuery) -> None:

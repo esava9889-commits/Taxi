@@ -88,7 +88,8 @@ def create_router(config: AppConfig) -> Router:
             keyboard=[
                 [KeyboardButton(text="📍 Поділитися локацією", request_location=True)],
                 [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
-                [KeyboardButton(text="📜 Історія поїздок")]
+                [KeyboardButton(text="📜 Історія поїздок")],
+                [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
             ],
             resize_keyboard=True
         )

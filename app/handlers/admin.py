@@ -480,4 +480,73 @@ def create_router(config: AppConfig) -> Router:
             logger.error(f"Error in broadcast: {e}")
             await message.answer("❌ Помилка при розсилці", reply_markup=admin_menu_keyboard())
 
+    @router.message(F.text == "⚙️ Налаштування")
+    async def show_settings(message: Message) -> None:
+        """Налаштування системи"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        from app.storage.db import get_online_drivers_count
+        online_count = await get_online_drivers_count(config.database_path)
+        
+        text = (
+            "⚙️ <b>Налаштування системи</b>\n\n"
+            f"🌐 Місто роботи: {', '.join(config.available_cities)}\n"
+            f"🚗 Водіїв онлайн: {online_count}\n"
+            f"💳 Картка для оплати: {config.payment_card or 'Не вказано'}\n"
+            f"👥 Група водіїв: {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
+            f"🗺️ Google Maps API: {'Підключено' if config.google_maps_api_key else 'Не підключено'}\n\n"
+            "💡 Для зміни налаштувань використовуйте змінні середовища на Render"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити дані", callback_data="settings:refresh")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")]
+            ]
+        )
+        
+        await message.answer(text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "settings:refresh")
+    async def refresh_settings(call: CallbackQuery) -> None:
+        """Оновити налаштування"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        
+        from app.storage.db import get_online_drivers_count
+        online_count = await get_online_drivers_count(config.database_path)
+        
+        text = (
+            "⚙️ <b>Налаштування системи</b>\n\n"
+            f"🌐 Місто роботи: {', '.join(config.available_cities)}\n"
+            f"🚗 Водіїв онлайн: {online_count}\n"
+            f"💳 Картка для оплати: {config.payment_card or 'Не вказано'}\n"
+            f"👥 Група водіїв: {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
+            f"🗺️ Google Maps API: {'Підключено' if config.google_maps_api_key else 'Не підключено'}\n\n"
+            "💡 Для зміни налаштувань використовуйте змінні середовища на Render"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити дані", callback_data="settings:refresh")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")]
+            ]
+        )
+        
+        await call.answer("✅ Оновлено")
+        await call.message.edit_text(text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "admin:back")
+    async def back_to_admin(call: CallbackQuery) -> None:
+        """Повернутись до адмін-панелі"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        
+        await call.answer()
+        await call.message.answer(
+            "🔐 <b>Адмін-панель</b>\n\nОберіть дію:",
+            reply_markup=admin_menu_keyboard()
+        )
+    
     return router
