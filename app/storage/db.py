@@ -56,11 +56,21 @@ class Order:
 
 
 async def ensure_driver_columns(db_path: str) -> None:
-    """Міграція: додати відсутні колонки до drivers"""
+    """Міграція: додати відсутні колонки до drivers (ТІЛЬКИ якщо таблиця існує)"""
     import logging
     logger = logging.getLogger(__name__)
     
     async with aiosqlite.connect(db_path) as db:
+        # Перевірити чи таблиця drivers існує
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='drivers'"
+        ) as cur:
+            table_exists = await cur.fetchone()
+        
+        if not table_exists:
+            logger.info("ℹ️  Таблиця drivers ще не створена, пропускаю міграцію")
+            return
+        
         # Отримати поточні колонки
         async with db.execute("PRAGMA table_info(drivers)") as cur:
             columns = await cur.fetchall()
@@ -83,9 +93,6 @@ async def ensure_driver_columns(db_path: str) -> None:
 
 async def init_db(db_path: str) -> None:
     async with aiosqlite.connect(db_path) as db:
-        # Міграція
-        await ensure_driver_columns(db_path)
-        
         # Збережені адреси
         await db.execute(
             """
@@ -273,8 +280,9 @@ async def init_db(db_path: str) -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_unpaid ON payments(driver_id, commission_paid)")
         
         await db.commit()
-        # Try to add missing columns for incremental upgrades (SQLite only)
-        await _ensure_columns(db)
+    
+    # Виконати міграції ПІСЛЯ створення всіх таблиць
+    await ensure_driver_columns(db_path)
 
 
 async def insert_order(db_path: str, order: Order) -> int:
