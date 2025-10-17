@@ -393,12 +393,20 @@ def create_router(config: AppConfig) -> Router:
                 dest_lon=address.lon
             )
             
-            # Якщо є pickup - показати вибір класу авто з цінами
+            # Якщо є pickup - перейти до вибору класу авто
             data = await state.get_data()
             if data.get("pickup"):
-                # Показати класи авто з цінами
-                from app.handlers.order import show_car_class_selection_with_prices
-                await show_car_class_selection_with_prices(call.message, state, config)
+                # Перейти до вибору класу (ціни покажуться в order.py)
+                from app.handlers.order import OrderStates
+                await state.set_state(OrderStates.car_class)
+                await call.message.answer(
+                    f"✅ Пункт призначення: {address.emoji} {address.name}\n\n"
+                    "🚗 <b>Тепер оберіть клас авто</b>\n\n"
+                    "Натисніть на кнопку нижче:",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🚗 Обрати клас авто", callback_data="show_car_classes")]
+                    ])
+                )
             else:
                 await state.set_state(OrderStates.pickup)
                 await call.message.answer(
