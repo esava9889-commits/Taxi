@@ -135,13 +135,6 @@ async def show_car_class_selection_with_prices(message: Message, state: FSMConte
     SKIP_TEXT = "⏩ Пропустити"
     CONFIRM_TEXT = "✅ Підтвердити"
 
-    class OrderStates(StatesGroup):
-        pickup = State()  # Спочатку звідки
-        destination = State()  # Потім куди
-        car_class = State()  # Після розрахунку - вибір класу (з цінами!)
-        comment = State()  # Після вибору класу
-        payment_method = State()  # Спосіб оплати
-        confirm = State()
 
     def cancel_keyboard() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
