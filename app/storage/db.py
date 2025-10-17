@@ -1030,6 +1030,8 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
                 last_lat=r[13],
                 last_lon=r[14],
                 last_seen_at=(datetime.fromisoformat(r[15]) if r[15] else None),
+                car_class=r[16] if r[16] else "economy",
+                card_number=r[17],
             )
         )
     return drivers
