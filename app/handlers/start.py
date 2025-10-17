@@ -20,6 +20,7 @@ from aiogram.types import (
 
 from app.config.config import AppConfig, AVAILABLE_CITIES
 from app.storage.db import User, upsert_user, get_user_by_id
+from app.utils.validation import validate_phone_number, validate_name
 
 logger = logging.getLogger(__name__)
 
@@ -270,10 +271,29 @@ def create_router(config: AppConfig) -> Router:
         city = data.get("city")
         phone = message.contact.phone_number
         
+        # ВАЛІДАЦІЯ: Перевірка номеру телефону
+        is_valid, cleaned_phone = validate_phone_number(phone)
+        if not is_valid:
+            await message.answer(
+                "❌ <b>Невірний формат номеру телефону</b>\n\n"
+                "Спробуйте ще раз або введіть вручну.\n"
+                "Приклад: +380 67 123 45 67",
+                reply_markup=contact_keyboard()
+            )
+            logger.warning(f"Invalid phone number from contact: {phone}")
+            return
+        
+        # Валідація імені
+        user_name = message.from_user.full_name or "Користувач"
+        is_valid_name, cleaned_name = validate_name(user_name)
+        if not is_valid_name:
+            cleaned_name = "Користувач"
+            logger.warning(f"Invalid name: {user_name}, using default")
+        
         user = User(
             user_id=message.from_user.id,
-            full_name=message.from_user.full_name or "Користувач",
-            phone=phone,
+            full_name=cleaned_name,
+            phone=cleaned_phone,
             role="client",
             city=city,
             created_at=datetime.now(timezone.utc),
@@ -286,13 +306,13 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"✅ <b>Реєстрація завершена!</b>\n\n"
-            f"👤 {user.full_name}\n"
+            f"👤 {cleaned_name}\n"
             f"📍 {city}\n"
-            f"📱 {phone}\n\n"
+            f"📱 {cleaned_phone}\n\n"
             "Тепер ви можете замовити таксі! 🚖",
             reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
         )
-        logger.info(f"User {message.from_user.id} registered in {city}")
+        logger.info(f"User {message.from_user.id} registered in {city} with phone {cleaned_phone}")
 
     @router.message(ClientRegStates.phone)
     async def save_phone_text(message: Message, state: FSMContext) -> None:
@@ -300,17 +320,36 @@ def create_router(config: AppConfig) -> Router:
             return
         
         phone = message.text.strip() if message.text else ""
-        if not is_valid_phone(phone):
-            await message.answer("❌ Невірний формат номеру.\n\nПриклад: +380 67 123 45 67")
+        
+        # ВАЛІДАЦІЯ: Перевірка номеру телефону
+        is_valid, cleaned_phone = validate_phone_number(phone)
+        if not is_valid:
+            await message.answer(
+                "❌ <b>Невірний формат номеру телефону</b>\n\n"
+                "Перевірте формат та спробуйте ще раз.\n\n"
+                "<b>Приклади правильних форматів:</b>\n"
+                "• +380 67 123 45 67\n"
+                "• +380671234567\n"
+                "• 0671234567\n\n"
+                "❗️ Номер має містити 10-12 цифр"
+            )
+            logger.warning(f"Invalid phone number: {phone}")
             return
         
         data = await state.get_data()
         city = data.get("city")
         
+        # Валідація імені
+        user_name = message.from_user.full_name or "Користувач"
+        is_valid_name, cleaned_name = validate_name(user_name)
+        if not is_valid_name:
+            cleaned_name = "Користувач"
+            logger.warning(f"Invalid name: {user_name}, using default")
+        
         user = User(
             user_id=message.from_user.id,
-            full_name=message.from_user.full_name or "Користувач",
-            phone=phone,
+            full_name=cleaned_name,
+            phone=cleaned_phone,
             role="client",
             city=city,
             created_at=datetime.now(timezone.utc),
@@ -323,13 +362,13 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"✅ <b>Реєстрація завершена!</b>\n\n"
-            f"👤 {user.full_name}\n"
+            f"👤 {cleaned_name}\n"
             f"📍 {city}\n"
-            f"📱 {phone}\n\n"
+            f"📱 {cleaned_phone}\n\n"
             "Тепер ви можете замовити таксі! 🚖",
             reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
         )
-        logger.info(f"User {message.from_user.id} registered in {city}")
+        logger.info(f"User {message.from_user.id} registered in {city} with phone {cleaned_phone}")
 
     @router.callback_query(F.data == "help:show")
     @router.message(F.text == "ℹ️ Допомога")

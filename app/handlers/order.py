@@ -29,6 +29,9 @@ from app.storage.db import (
     get_order_by_id,
 )
 from app.utils.maps import get_distance_and_duration, geocode_address
+from app.utils.privacy import mask_phone_number
+from app.utils.validation import validate_address, validate_comment
+from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,18 @@ def create_router(config: AppConfig) -> Router:
     @router.message(F.text == "🚖 Замовити таксі")
     async def start_order(message: Message, state: FSMContext) -> None:
         if not message.from_user:
+            return
+        
+        # RATE LIMITING: Перевірка ліміту замовлень (максимум 5 замовлень на годину)
+        if not check_rate_limit(message.from_user.id, "create_order", max_requests=5, window_seconds=3600):
+            time_until_reset = get_time_until_reset(message.from_user.id, "create_order", window_seconds=3600)
+            await message.answer(
+                "⏳ <b>Занадто багато замовлень</b>\n\n"
+                f"Ви перевищили ліміт замовлень (максимум 5 на годину).\n\n"
+                f"⏰ Спробуйте через: {format_time_remaining(time_until_reset)}\n\n"
+                "ℹ️ Це обмеження захищає від спаму."
+            )
+            logger.warning(f"User {message.from_user.id} exceeded order rate limit")
             return
         
         # Перевірка реєстрації
@@ -161,9 +176,21 @@ def create_router(config: AppConfig) -> Router:
     @router.message(OrderStates.pickup)
     async def pickup_text(message: Message, state: FSMContext) -> None:
         pickup = message.text.strip() if message.text else ""
-        if len(pickup) < 3:
-            await message.answer("❌ Адреса занадто коротка. Вкажіть точніше.")
+        
+        # ВАЛІДАЦІЯ: Перевірка адреси
+        is_valid, cleaned_address = validate_address(pickup, min_length=3, max_length=200)
+        if not is_valid:
+            await message.answer(
+                "❌ <b>Невірний формат адреси</b>\n\n"
+                "Адреса має містити:\n"
+                "• Від 3 до 200 символів\n"
+                "• Тільки допустимі символи\n\n"
+                "Приклад: вул. Хрещатик, 15"
+            )
+            logger.warning(f"Invalid pickup address: {pickup}")
             return
+        
+        pickup = cleaned_address
         
         # Спроба геокодувати адресу в координати
         coords = None
@@ -212,9 +239,21 @@ def create_router(config: AppConfig) -> Router:
     @router.message(OrderStates.destination)
     async def destination_text(message: Message, state: FSMContext) -> None:
         destination = message.text.strip() if message.text else ""
-        if len(destination) < 3:
-            await message.answer("❌ Адреса занадто коротка. Вкажіть точніше.")
+        
+        # ВАЛІДАЦІЯ: Перевірка адреси
+        is_valid, cleaned_address = validate_address(destination, min_length=3, max_length=200)
+        if not is_valid:
+            await message.answer(
+                "❌ <b>Невірний формат адреси</b>\n\n"
+                "Адреса має містити:\n"
+                "• Від 3 до 200 символів\n"
+                "• Тільки допустимі символи\n\n"
+                "Приклад: пр. Перемоги, 100"
+            )
+            logger.warning(f"Invalid destination address: {destination}")
             return
+        
+        destination = cleaned_address
         
         # Спроба геокодувати адресу в координати
         coords = None
@@ -272,6 +311,22 @@ def create_router(config: AppConfig) -> Router:
     @router.message(OrderStates.comment)
     async def save_comment(message: Message, state: FSMContext) -> None:
         comment = message.text.strip() if message.text else None
+        
+        # ВАЛІДАЦІЯ: Перевірка коментаря
+        if comment:
+            is_valid, cleaned_comment = validate_comment(comment, max_length=500)
+            if not is_valid:
+                await message.answer(
+                    "❌ <b>Невірний формат коментаря</b>\n\n"
+                    "Коментар має містити:\n"
+                    "• Максимум 500 символів\n"
+                    "• Тільки допустимі символи\n\n"
+                    "Спробуйте ще раз або натисніть 'Пропустити'"
+                )
+                logger.warning(f"Invalid comment: {comment}")
+                return
+            comment = cleaned_comment
+        
         await state.update_data(comment=comment)
         
         # Перейти до вибору способу оплати
@@ -562,18 +617,22 @@ def create_router(config: AppConfig) -> Router:
                 if dest_lat and dest_lon:
                     dest_link = f"\n📍 <a href='https://www.google.com/maps?q={dest_lat},{dest_lon}'>Геолокація прибуття (відкрити карту)</a>"
                 
+                # БЕЗПЕКА: Маскуємо номер телефону в групі (показуємо тільки останні 2 цифри)
+                masked_phone = mask_phone_number(str(data.get('phone', '')), show_last_digits=2)
+                
                 group_message = (
                     f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
                     f"🏙 Місто: {data.get('city')}\n"
                     f"🚗 Клас: {car_class_name}\n"
                     f"👤 Клієнт: {data.get('name')}\n"
-                    f"📱 Телефон: <code>{data.get('phone')}</code>\n\n"
+                    f"📱 Телефон: <code>{masked_phone}</code> 🔒\n\n"
                     f"📍 Звідки: {data.get('pickup')}{pickup_link}\n"
                     f"📍 Куди: {data.get('destination')}{dest_link}\n"
                     f"{distance_info}\n"
                     f"💬 Коментар: {data.get('comment') or '—'}\n\n"
                     f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}\n\n"
-                    f"🏆 <i>Топ-водії вже отримали сповіщення</i>"
+                    f"🏆 <i>Топ-водії вже отримали сповіщення</i>\n"
+                    f"ℹ️ <i>Повний номер буде доступний після прийняття</i>"
                 )
                 
                 await message.bot.send_message(

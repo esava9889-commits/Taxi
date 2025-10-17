@@ -34,6 +34,7 @@ from app.storage.db import (
     get_online_drivers_count,
     get_driver_tips_total,
 )
+from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +316,17 @@ def create_router(config: AppConfig) -> Router:
         if not call.from_user:
             return
         
+        # RATE LIMITING: Перевірка ліміту прийняття замовлень (максимум 20 спроб на годину)
+        if not check_rate_limit(call.from_user.id, "accept_order", max_requests=20, window_seconds=3600):
+            time_until_reset = get_time_until_reset(call.from_user.id, "accept_order", window_seconds=3600)
+            await call.answer(
+                f"⏳ Занадто багато спроб прийняти замовлення.\n"
+                f"Спробуйте через: {format_time_remaining(time_until_reset)}",
+                show_alert=True
+            )
+            logger.warning(f"Driver {call.from_user.id} exceeded accept_order rate limit")
+            return
+        
         driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
         if not driver:
             return
@@ -343,6 +355,7 @@ def create_router(config: AppConfig) -> Router:
                     order.user_id,
                     f"✅ <b>Водій прийняв замовлення!</b>\n\n"
                     f"🚗 {driver.full_name}\n"
+                    f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                     f"📱 <code>{driver.phone}</code>\n\n"
                     f"💳 <b>Картка для оплати:</b>\n"
                     f"<code>{driver.card_number}</code>\n\n"
@@ -354,6 +367,7 @@ def create_router(config: AppConfig) -> Router:
                     order.user_id,
                     f"✅ <b>Водій прийняв замовлення!</b>\n\n"
                     f"🚗 {driver.full_name}\n"
+                    f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                     f"📱 <code>{driver.phone}</code>\n\n"
                     f"💵 Оплата готівкою"
                 )
@@ -372,7 +386,7 @@ def create_router(config: AppConfig) -> Router:
                 except Exception as e:
                     logger.error(f"Не вдалося відредагувати повідомлення в групі: {e}")
             
-            # Надіслати водію ОСОБИСТЕ повідомлення з кнопкою
+            # Надіслати водію ОСОБИСТЕ повідомлення з ПОВНИМ номером телефону
             kb_driver = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="🚗 Керувати замовленням", callback_data=f"manage:{order_id}")]
@@ -382,6 +396,11 @@ def create_router(config: AppConfig) -> Router:
             await call.bot.send_message(
                 driver.tg_user_id,
                 f"✅ <b>Ви прийняли замовлення #{order_id}</b>\n\n"
+                f"👤 Клієнт: {order.name}\n"
+                f"📱 Телефон: <code>{order.phone}</code> 🔓\n\n"
+                f"📍 Звідки: {order.pickup_address}\n"
+                f"📍 Куди: {order.destination_address}\n\n"
+                f"ℹ️ <i>Повний номер телефону доступний тільки вам</i>\n\n"
                 f"Натисніть кнопку нижче для керування замовленням",
                 reply_markup=kb_driver
             )
