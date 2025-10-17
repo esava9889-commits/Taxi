@@ -95,9 +95,11 @@ def create_router(config: AppConfig) -> Router:
                 dest_lat, dest_lon
             )
             if result:
-                distance_km, duration_minutes = result
+                distance_m, duration_s = result  # API повертає МЕТРИ і СЕКУНДИ!
+                distance_km = distance_m / 1000.0  # Конвертувати в км
+                duration_minutes = duration_s / 60.0  # Конвертувати в хвилини
                 await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
-                logger.info(f"✅ Відстань: {distance_km} км, час: {duration_minutes} хв")
+                logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв (API: {distance_m}m, {duration_s}s)")
             else:
                 logger.warning("⚠️ Не вдалося розрахувати відстань через Google Maps API")
         
