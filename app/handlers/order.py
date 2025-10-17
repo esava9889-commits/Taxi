@@ -256,7 +256,8 @@ def create_router(config: AppConfig) -> Router:
             logger.warning(f"⚠️ Google Maps API не налаштований, адреса не геокодується: {destination}")
             await state.update_data(destination=destination)
         
-        await state.set_state(OrderStates.comment)
+        # Перейти до вибору класу авто (з розрахунком цін)
+        await show_car_class_selection(message, state, config)
         await message.answer(
             "✅ Пункт призначення зафіксовано!\n\n"
             "💬 <b>Додайте коментар</b> (опціонально):\n\n"
