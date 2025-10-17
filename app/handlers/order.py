@@ -41,9 +41,9 @@ def create_router(config: AppConfig) -> Router:
     CONFIRM_TEXT = "✅ Підтвердити"
 
     class OrderStates(StatesGroup):
-        car_class = State()
-        pickup = State()
-        destination = State()
+        pickup = State()  # Спочатку звідки
+        destination = State()  # Потім куди
+        car_class = State()  # Після розрахунку відстані - вибір класу
         comment = State()
         payment_method = State()  # Спосіб оплати
         confirm = State()
@@ -146,17 +146,6 @@ def create_router(config: AppConfig) -> Router:
         car_class = call.data.split(":", 1)[1]
         await state.update_data(car_class=car_class)
         await state.set_state(OrderStates.pickup)
-        
-        from app.handlers.car_classes import get_car_class_name
-        class_name = get_car_class_name(car_class)
-        
-        await call.answer()
-        await call.message.answer(
-            f"✅ Клас авто: {class_name}\n\n"
-            "📍 <b>Звідки подати таксі?</b>\n\n"
-            "Надішліть адресу або геолокацію",
-            reply_markup=location_keyboard("Вкажіть адресу подачі")
-        )
 
     @router.message(OrderStates.pickup, F.location)
     async def pickup_location(message: Message, state: FSMContext) -> None:
@@ -235,14 +224,8 @@ def create_router(config: AppConfig) -> Router:
             dest_lon=loc.longitude
         )
         
-        await state.set_state(OrderStates.comment)
-        await message.answer(
-            "✅ Пункт призначення зафіксовано!\n\n"
-            "💬 <b>Додайте коментар</b> (опціонально):\n\n"
-            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
-            "Або натисніть 'Пропустити'",
-            reply_markup=skip_or_cancel_keyboard()
-        )
+        # Перейти до вибору класу авто (з розрахунком цін)
+        await show_car_class_selection(message, state, config)
 
     @router.message(OrderStates.destination)
     async def destination_text(message: Message, state: FSMContext) -> None:
@@ -581,14 +564,29 @@ def create_router(config: AppConfig) -> Router:
                 from app.handlers.car_classes import get_car_class_name
                 car_class_name = get_car_class_name(data.get('car_class', 'economy'))
                 
+                # Створити посилання на Google Maps
+                pickup_lat = data.get('pickup_lat')
+                pickup_lon = data.get('pickup_lon')
+                dest_lat = data.get('dest_lat')
+                dest_lon = data.get('dest_lon')
+                
+                pickup_link = ""
+                dest_link = ""
+                
+                if pickup_lat and pickup_lon:
+                    pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={pickup_lat},{pickup_lon}'>Геолокація подачі (відкрити карту)</a>"
+                
+                if dest_lat and dest_lon:
+                    dest_link = f"\n📍 <a href='https://www.google.com/maps?q={dest_lat},{dest_lon}'>Геолокація прибуття (відкрити карту)</a>"
+                
                 group_message = (
                     f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
                     f"🏙 Місто: {data.get('city')}\n"
                     f"🚗 Клас: {car_class_name}\n"
                     f"👤 Клієнт: {data.get('name')}\n"
                     f"📱 Телефон: <code>{data.get('phone')}</code>\n\n"
-                    f"📍 Звідки: {data.get('pickup')}\n"
-                    f"📍 Куди: {data.get('destination')}\n"
+                    f"📍 Звідки: {data.get('pickup')}{pickup_link}\n"
+                    f"📍 Куди: {data.get('destination')}{dest_link}\n"
                     f"{distance_info}\n"
                     f"💬 Коментар: {data.get('comment') or '—'}\n\n"
                     f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}\n\n"
@@ -598,7 +596,8 @@ def create_router(config: AppConfig) -> Router:
                 await message.bot.send_message(
                     config.driver_group_chat_id,
                     group_message,
-                    reply_markup=kb
+                    reply_markup=kb,
+                    disable_web_page_preview=True
                 )
                 
                 logger.info(f"Order {order_id} sent to driver group {config.driver_group_chat_id}")
