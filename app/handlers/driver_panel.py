@@ -112,6 +112,7 @@ def create_router(config: AppConfig) -> Router:
         # REPLY клавіатура (внизу екрану)
         reply_kb = ReplyKeyboardMarkup(
             keyboard=[
+                [KeyboardButton(text="🚀 Почати роботу")],  # НОВА КНОПКА!
                 [KeyboardButton(text="📍 Поділитися локацією", request_location=True)],
                 [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
                 [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="📊 Розширена аналітика")],
@@ -120,9 +121,102 @@ def create_router(config: AppConfig) -> Router:
             resize_keyboard=True
         )
         
-        # Відправити
-        await message.answer(text, reply_markup=inline_kb)
-        await message.answer("👇 <b>Меню:</b>", reply_markup=reply_kb)
+        # Відправити (БЕЗ inline кнопок на початку)
+        await message.answer(text)
+        await message.answer("👇 <b>Меню водія:</b>", reply_markup=reply_kb)
+
+    @router.message(F.text == "🚀 Почати роботу")
+    async def start_work_menu(message: Message) -> None:
+        """Меню керування роботою"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            await message.answer("❌ Доступно тільки для водіїв")
+            return
+        
+        # Статус
+        online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        
+        # Онлайн водії
+        online_count = 0
+        try:
+            online_count = await get_online_drivers_count(config.database_path, driver.city)
+        except:
+            pass
+        
+        # Меню керування
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🟢 ПОЧАТИ ПРАЦЮВАТИ" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
+                    callback_data="driver:toggle_online"
+                )],
+                [InlineKeyboardButton(text="📊 Статистика", callback_data="driver:stats")],
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data="driver:refresh")],
+                [InlineKeyboardButton(text="« Назад до панелі", callback_data="driver:back")]
+            ]
+        )
+        
+        text = (
+            f"🚀 <b>Меню керування</b>\n\n"
+            f"Статус: {online_status}\n"
+            f"👥 Водіїв онлайн: {online_count}\n\n"
+            "Оберіть дію:"
+        )
+        
+        await message.answer(text, reply_markup=kb)
+
+    @router.callback_query(F.data == "driver:back")
+    async def back_to_panel(call: CallbackQuery) -> None:
+        """Повернутися до панелі"""
+        if not call.from_user or not call.message:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        earnings, commission_owed = await get_driver_earnings_today(config.database_path, call.from_user.id)
+        net_earnings = earnings - commission_owed
+        
+        tips_total = 0.0
+        try:
+            tips_total = await get_driver_tips_total(config.database_path, call.from_user.id)
+        except:
+            pass
+        
+        online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        location_status = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
+        
+        online_count = 0
+        try:
+            online_count = await get_online_drivers_count(config.database_path, driver.city)
+        except:
+            pass
+        
+        text = (
+            f"🚗 <b>Панель водія</b>\n\n"
+            f"Статус: {online_status}\n"
+            f"Локація: {location_status}\n"
+            f"ПІБ: {driver.full_name}\n"
+            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"👥 Водіїв онлайн: {online_count}\n"
+            f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
+            f"🔢 Номер: {driver.car_plate}\n\n"
+            f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
+            f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
+            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n"
+            f"💝 Чайові (всього): {tips_total:.2f} грн\n\n"
+            "ℹ️ Замовлення надходять у групу водіїв.\n"
+            "Прийміть замовлення першим, щоб його отримати!\n\n"
+            "💡 <i>Натисніть '🚀 Почати роботу' для керування</i>"
+        )
+        
+        await call.message.edit_text(text)
+        await call.answer()
 
     @router.callback_query(F.data == "driver:toggle_online")
     async def toggle_online(call: CallbackQuery) -> None:
