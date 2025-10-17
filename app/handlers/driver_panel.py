@@ -345,14 +345,62 @@ def create_router(config: AppConfig) -> Router:
                     reply_markup=kb
                 )
 
-    @router.callback_query(F.data.startswith("start:"))
-    async def start_trip(call: CallbackQuery) -> None:
-        """Почати"""
+    @router.callback_query(F.data.startswith("arrived:"))
+    async def driver_arrived(call: CallbackQuery) -> None:
+        """Водій на місці"""
         if not call.from_user:
             return
         
         order_id = int(call.data.split(":")[1])
-        await start_order(config.database_path, order_id)
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver or driver.id != order.driver_id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        await call.answer("📍 Повідомлення надіслано клієнту!", show_alert=True)
+        
+        # Повідомити клієнта
+        try:
+            await call.bot.send_message(
+                order.user_id,
+                f"📍 <b>Водій на місці!</b>\n\n"
+                f"🚗 {driver.full_name}\n"
+                f"📱 <code>{driver.phone}</code>\n\n"
+                f"Водій чекає на вас!"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify client: {e}")
+        
+        # Оновити кнопки
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🚗 Почати поїздку", callback_data=f"start:{order_id}")]
+            ]
+        )
+        
+        if call.message:
+            await call.message.edit_reply_markup(reply_markup=kb)
+    
+    @router.callback_query(F.data.startswith("start:"))
+    async def start_trip(call: CallbackQuery) -> None:
+        """Почати поїздку"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[1])
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        await start_order(config.database_path, order_id, driver.id)
         
         await call.answer("🚗 Поїздка почалась!", show_alert=True)
         
@@ -372,11 +420,32 @@ def create_router(config: AppConfig) -> Router:
             return
         
         order_id = int(call.data.split(":")[1])
+        order = await get_order_by_id(config.database_path, order_id)
         
-        # Розрахунок
-        fare = 100.0  # Базова ціна
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
         
-        await complete_order(config.database_path, order_id, fare)
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Розрахунок вартості з БД (якщо є) або базова
+        fare = order.fare_amount if order.fare_amount else 100.0
+        distance_m = order.distance_m if order.distance_m else 0
+        duration_s = order.duration_s if order.duration_s else 0
+        commission = fare * 0.02  # 2%
+        
+        await complete_order(
+            config.database_path,
+            order_id,
+            driver.id,
+            fare,
+            distance_m,
+            duration_s,
+            commission
+        )
         
         await call.answer(f"✅ Завершено! {fare:.0f} грн", show_alert=True)
         

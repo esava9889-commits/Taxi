@@ -378,6 +378,9 @@ def create_router(config: AppConfig) -> Router:
                             fare_estimate = f"💰 Орієнтовна вартість ({class_name}): {estimated_fare:.0f} грн\n\n"
                         
                         logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн (клас: {car_class}, surge: {surge_mult})")
+                        
+                        # Зберегти в FSM для використання при створенні замовлення
+                        await state.update_data(estimated_fare=estimated_fare)
                 else:
                     logger.warning(f"❌ Google Maps Distance Matrix API не повернув результат")
             else:
@@ -448,21 +451,52 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Додати інформацію про відстань якщо є
                 distance_info = ""
+                estimated_fare = None
+                
                 if data.get('distance_m'):
                     km = data.get('distance_m') / 1000.0
                     minutes = (data.get('duration_s') or 0) / 60.0
                     distance_info = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n"
                     logger.info(f"📤 Відправка в групу: відстань {km:.1f} км")
                     
-                    # Розрахунок орієнтовної вартості
+                    # Розрахунок з ТІЄЮ Ж ЛОГІКОЮ що і для клієнта
                     tariff = await get_latest_tariff(config.database_path)
                     if tariff:
-                        estimated_fare = max(
+                        # Базовий тариф
+                        base_fare = max(
                             tariff.minimum,
                             tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
                         )
-                        distance_info += f"💰 Орієнтовна вартість: ~{estimated_fare:.0f} грн\n"
-                        logger.info(f"💰 Відправка в групу: вартість ~{estimated_fare:.0f} грн")
+                        
+                        # Застосувати клас авто (ТАК ЯК ДЛЯ КЛІЄНТА!)
+                        from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
+                        car_class = data.get('car_class', 'economy')
+                        class_fare = calculate_fare_with_class(base_fare, car_class)
+                        
+                        # Динамічне ціноутворення (ТАК ЯК ДЛЯ КЛІЄНТА!)
+                        from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
+                        from app.storage.db import get_online_drivers_count
+                        
+                        city = data.get('city', 'Київ')
+                        online_count = await get_online_drivers_count(config.database_path, city)
+                        
+                        estimated_fare, surge_reason, surge_mult = await calculate_dynamic_price(
+                            class_fare, city, online_count, 5
+                        )
+                        
+                        class_name = get_car_class_name(car_class)
+                        surge_emoji = get_surge_emoji(surge_mult)
+                        
+                        if surge_mult != 1.0:
+                            surge_percent = int((surge_mult - 1) * 100)
+                            surge_text = f" {surge_emoji} +{surge_percent}%" if surge_percent > 0 else f" {surge_emoji} {surge_percent}%"
+                            distance_info += f"💰 Вартість ({class_name}{surge_text}): {estimated_fare:.0f} грн\n"
+                            if surge_reason:
+                                distance_info += f"<i>{surge_reason}</i>\n"
+                        else:
+                            distance_info += f"💰 Вартість ({class_name}): {estimated_fare:.0f} грн\n"
+                        
+                        logger.info(f"💰 Відправка в групу: вартість {estimated_fare:.0f} грн (клас: {car_class}, surge: {surge_mult})")
                 else:
                     logger.warning(f"⚠️ Відстань не розрахована, відправка в групу без distance_info")
                 
