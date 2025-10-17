@@ -70,10 +70,13 @@ def create_router(config: AppConfig) -> Router:
             one_time_keyboard=True,
         )
     
-    async def show_car_class_selection_with_prices(message: Message, state: FSMContext) -> None:
+    async def show_car_class_selection_with_prices(message: Message, state: FSMContext, config_param=None) -> None:
         """
         Розрахувати відстань, час та показати всі класи авто з цінами
         """
+        # Підтримка виклику з config як параметром (для saved_addresses.py)
+        if config_param is None:
+            config_param = config
         data = await state.get_data()
         
         pickup_lat = data.get("pickup_lat")
@@ -85,10 +88,10 @@ def create_router(config: AppConfig) -> Router:
         distance_km = None
         duration_minutes = None
         
-        if pickup_lat and pickup_lon and dest_lat and dest_lon and config.google_maps_api_key:
+        if pickup_lat and pickup_lon and dest_lat and dest_lon and config_param.google_maps_api_key:
             logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
             result = await get_distance_and_duration(
-                config.google_maps_api_key,
+                config_param.google_maps_api_key,
                 pickup_lat, pickup_lon,
                 dest_lat, dest_lon
             )
@@ -107,7 +110,7 @@ def create_router(config: AppConfig) -> Router:
             logger.warning(f"⚠️ Використовую приблизну відстань: {distance_km} км")
         
         # Отримати тариф
-        tariff = await get_latest_tariff(config.database_path)
+        tariff = await get_latest_tariff(config_param.database_path)
         if not tariff:
             await message.answer("❌ Помилка: тариф не налаштований. Зверніться до адміністратора.")
             await state.clear()

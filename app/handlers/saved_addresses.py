@@ -393,15 +393,12 @@ def create_router(config: AppConfig) -> Router:
                 dest_lon=address.lon
             )
             
-            # Якщо є pickup - перейти до коментаря
+            # Якщо є pickup - показати вибір класу авто з цінами
             data = await state.get_data()
             if data.get("pickup"):
-                await state.set_state(OrderStates.comment)
-                await call.message.answer(
-                    f"✅ Пункт призначення: {address.emoji} {address.name}\n\n"
-                    "💬 <b>Додайте коментар</b> (опціонально):\n\n"
-                    "Або натисніть 'Пропустити'"
-                )
+                # Показати класи авто з цінами
+                from app.handlers.order import show_car_class_selection_with_prices
+                await show_car_class_selection_with_prices(call.message, state, config)
             else:
                 await state.set_state(OrderStates.pickup)
                 await call.message.answer(
