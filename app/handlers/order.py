@@ -185,6 +185,45 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # ЗАХИСТ: Перевірка чи є вже активне замовлення
+        existing_order = await get_user_active_order(config.database_path, message.from_user.id)
+        if existing_order:
+            from app.handlers.keyboards import main_menu_keyboard
+            is_admin = message.from_user.id in config.bot.admin_ids
+            
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="❌ Скасувати поточне замовлення", callback_data=f"cancel_order:{existing_order.id}")]
+                ]
+            )
+            
+            status_emoji = {
+                "pending": "⏳",
+                "accepted": "✅",
+                "in_progress": "🚗"
+            }.get(existing_order.status, "📋")
+            
+            status_text = {
+                "pending": "очікує на водія",
+                "accepted": "прийнято водієм",
+                "in_progress": "виконується"
+            }.get(existing_order.status, existing_order.status)
+            
+            await message.answer(
+                f"{status_emoji} <b>У вас вже є активне замовлення!</b>\n\n"
+                f"📍 Звідки: {existing_order.pickup_address}\n"
+                f"📍 Куди: {existing_order.destination_address}\n"
+                f"📊 Статус: {status_text}\n\n"
+                f"⚠️ <b>Не можна створити нове замовлення</b>\n"
+                f"поки є активне.\n\n"
+                f"Щоб зробити нове замовлення:\n"
+                f"1. Скасуйте поточне замовлення ↓\n"
+                f"2. Або дочекайтесь завершення",
+                reply_markup=kb
+            )
+            logger.warning(f"User {message.from_user.id} намагається створити замовлення, але має активне #{existing_order.id}")
+            return
+        
         # RATE LIMITING: Перевірка ліміту замовлень (максимум 5 замовлень на годину)
         if not check_rate_limit(message.from_user.id, "create_order", max_requests=5, window_seconds=3600):
             time_until_reset = get_time_until_reset(message.from_user.id, "create_order", window_seconds=3600)
@@ -849,7 +888,7 @@ def create_router(config: AppConfig) -> Router:
 
     # Скасування замовлення клієнтом
     @router.callback_query(F.data.startswith("cancel_order:"))
-    async def cancel_order_handler(call: CallbackQuery) -> None:
+    async def cancel_order_handler(call: CallbackQuery, state: FSMContext) -> None:
         if not call.from_user or not call.message:
             return
         
@@ -861,8 +900,14 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Це не ваше замовлення", show_alert=True)
             return
         
-        if order.status != "pending":
-            await call.answer("❌ Замовлення вже прийнято водієм, скасувати неможливо", show_alert=True)
+        # Дозволити скасування якщо статус pending або accepted
+        if order.status not in ["pending", "accepted"]:
+            status_text = {
+                "in_progress": "вже виконується",
+                "completed": "вже завершене",
+                "cancelled": "вже скасоване"
+            }.get(order.status, f"має статус {order.status}")
+            await call.answer(f"❌ Замовлення {status_text}, скасувати неможливо", show_alert=True)
             return
         
         # Скасувати замовлення
@@ -871,10 +916,27 @@ def create_router(config: AppConfig) -> Router:
         if success:
             await call.answer("✅ Замовлення скасовано")
             
+            # Очистити FSM state якщо був в процесі створення
+            await state.clear()
+            
+            # Отримати головне меню
+            from app.handlers.keyboards import main_menu_keyboard
+            user = await get_user_by_id(config.database_path, call.from_user.id)
+            is_registered = user is not None and user.phone and user.city
+            is_admin = call.from_user.id in config.bot.admin_ids
+            
             # Оновити повідомлення клієнта
             await call.message.edit_text(
                 "❌ <b>Замовлення скасовано</b>\n\n"
-                "Ви скасували замовлення."
+                f"📍 Звідки: {order.pickup_address}\n"
+                f"📍 Куди: {order.destination_address}\n\n"
+                "✅ Тепер ви можете створити нове замовлення."
+            )
+            
+            # Надіслати головне меню
+            await call.message.answer(
+                "🏠 Головне меню:",
+                reply_markup=main_menu_keyboard(is_registered=is_registered, is_admin=is_admin)
             )
             
             # Повідомити в групу водіїв
