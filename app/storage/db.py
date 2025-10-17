@@ -55,8 +55,37 @@ class Order:
     payment_method: str = "cash"  # cash | card
 
 
+async def ensure_driver_columns(db_path: str) -> None:
+    """Міграція: додати відсутні колонки до drivers"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    async with aiosqlite.connect(db_path) as db:
+        # Отримати поточні колонки
+        async with db.execute("PRAGMA table_info(drivers)") as cur:
+            columns = await cur.fetchall()
+            col_names = [c[1] for c in columns]
+        
+        # Додати card_number якщо немає
+        if 'card_number' not in col_names:
+            logger.info("⚙️  Міграція: додаю колонку card_number...")
+            await db.execute("ALTER TABLE drivers ADD COLUMN card_number TEXT")
+            await db.commit()
+            logger.info("✅ Колонка card_number додана")
+        
+        # Додати car_class якщо немає
+        if 'car_class' not in col_names:
+            logger.info("⚙️  Міграція: додаю колонку car_class...")
+            await db.execute("ALTER TABLE drivers ADD COLUMN car_class TEXT NOT NULL DEFAULT 'economy'")
+            await db.commit()
+            logger.info("✅ Колонка car_class додана")
+
+
 async def init_db(db_path: str) -> None:
     async with aiosqlite.connect(db_path) as db:
+        # Міграція
+        await ensure_driver_columns(db_path)
+        
         # Збережені адреси
         await db.execute(
             """
