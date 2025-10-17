@@ -51,6 +51,8 @@ class Order:
     car_class: str = "economy"  # economy | standard | comfort | business
     # Чайові
     tip_amount: Optional[float] = None
+    # Спосіб оплати
+    payment_method: str = "cash"  # cash | card
 
 
 async def init_db(db_path: str) -> None:
@@ -1380,6 +1382,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE orders ADD COLUMN car_class TEXT NOT NULL DEFAULT 'economy'")
     if not await has_column('orders', 'tip_amount'):
         await db.execute("ALTER TABLE orders ADD COLUMN tip_amount REAL")
+    if not await has_column('orders', 'payment_method'):
+        await db.execute("ALTER TABLE orders ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'")
 
     # Drivers
     if not await has_column('drivers', 'online'):
@@ -1394,6 +1398,8 @@ async def _ensure_columns(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE drivers ADD COLUMN city TEXT")
     if not await has_column('drivers', 'car_class'):
         await db.execute("ALTER TABLE drivers ADD COLUMN car_class TEXT NOT NULL DEFAULT 'economy'")
+    if not await has_column('drivers', 'card_number'):
+        await db.execute("ALTER TABLE drivers ADD COLUMN card_number TEXT")
     
     # Users
     if not await has_column('users', 'city'):

@@ -45,6 +45,7 @@ def create_router(config: AppConfig) -> Router:
         pickup = State()
         destination = State()
         comment = State()
+        payment_method = State()  # Спосіб оплати
         confirm = State()
 
     def cancel_keyboard() -> ReplyKeyboardMarkup:
@@ -284,14 +285,70 @@ def create_router(config: AppConfig) -> Router:
     @router.message(OrderStates.comment, F.text == SKIP_TEXT)
     async def skip_comment(message: Message, state: FSMContext) -> None:
         await state.update_data(comment=None)
-        await show_confirmation(message, state, config)
+        
+        # Перейти до вибору способу оплати
+        await state.set_state(OrderStates.payment_method)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💵 Готівка", callback_data="payment:cash")],
+                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")]
+            ]
+        )
+        
+        await message.answer(
+            "💰 <b>Оберіть спосіб оплати:</b>\n\n"
+            "💵 Готівка - розрахунок з водієм\n"
+            "💳 Картка - переказ на картку водія",
+            reply_markup=kb
+        )
 
     @router.message(OrderStates.comment)
     async def save_comment(message: Message, state: FSMContext) -> None:
         comment = message.text.strip() if message.text else None
         await state.update_data(comment=comment)
-        await show_confirmation(message, state, config)
+        
+        # Перейти до вибору способу оплати
+        await state.set_state(OrderStates.payment_method)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💵 Готівка", callback_data="payment:cash")],
+                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")]
+            ]
+        )
+        
+        await message.answer(
+            "💰 <b>Оберіть спосіб оплати:</b>\n\n"
+            "💵 Готівка - розрахунок з водієм\n"
+            "💳 Картка - переказ на картку водія",
+            reply_markup=kb
+        )
 
+    @router.callback_query(F.data.startswith("payment:"))
+    async def select_payment_method(call: CallbackQuery, state: FSMContext) -> None:
+        """Вибір способу оплати"""
+        payment_method = call.data.split(":")[1]  # cash або card
+        await state.update_data(payment_method=payment_method)
+        
+        if payment_method == "card":
+            await call.answer()
+            await call.message.edit_text(
+                "💳 <b>Оплата карткою</b>\n\n"
+                "✅ Спосіб оплати обрано!\n\n"
+                "📌 Картка водія з'явиться одразу після того,\n"
+                "як він прийме ваше замовлення."
+            )
+        else:
+            await call.answer()
+            await call.message.edit_text(
+                "💵 <b>Оплата готівкою</b>\n\n"
+                "✅ Розрахунок з водієм після поїздки."
+            )
+        
+        # Перейти до підтвердження
+        await show_confirmation(call.message, state, config)
+    
     async def show_confirmation(message: Message, state: FSMContext, config: AppConfig) -> None:
         data = await state.get_data()
         

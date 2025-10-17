@@ -330,6 +330,33 @@ def create_router(config: AppConfig) -> Router:
         if success:
             await call.answer("✅ Прийнято!", show_alert=True)
             
+            # Повідомити клієнта що замовлення прийнято
+            # Якщо оплата карткою - показати картку водія
+            if order.payment_method == "card" and driver.card_number:
+                kb_client = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="💳 Сплатити поїздку", callback_data=f"pay:{order_id}")]
+                    ]
+                )
+                await call.bot.send_message(
+                    order.user_id,
+                    f"✅ <b>Водій прийняв замовлення!</b>\n\n"
+                    f"🚗 {driver.full_name}\n"
+                    f"📱 <code>{driver.phone}</code>\n\n"
+                    f"💳 <b>Картка для оплати:</b>\n"
+                    f"<code>{driver.card_number}</code>\n\n"
+                    f"💰 До сплати: {order.fare_amount:.0f} грн",
+                    reply_markup=kb_client
+                )
+            else:
+                await call.bot.send_message(
+                    order.user_id,
+                    f"✅ <b>Водій прийняв замовлення!</b>\n\n"
+                    f"🚗 {driver.full_name}\n"
+                    f"📱 <code>{driver.phone}</code>\n\n"
+                    f"💵 Оплата готівкою"
+                )
+            
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="📍 Я на місці", callback_data=f"arrived:{order_id}")],
@@ -451,5 +478,88 @@ def create_router(config: AppConfig) -> Router:
         
         if call.message:
             await call.message.edit_text(f"✅ Поїздка завершена!\n💰 {fare:.0f} грн")
+
+    @router.message(F.text == "💼 Гаманець")
+    async def show_wallet(message: Message) -> None:
+        """Гаманець водія - картка для отримання оплати"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            await message.answer("❌ Доступно тільки для водіїв")
+            return
+        
+        if driver.card_number:
+            text = (
+                f"💼 <b>Ваш гаманець</b>\n\n"
+                f"💳 Картка для оплати:\n"
+                f"<code>{driver.card_number}</code>\n\n"
+                f"ℹ️ Ця картка показується клієнтам,\n"
+                f"які обирають оплату карткою."
+            )
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="✏️ Змінити картку", callback_data="wallet:edit")]
+                ]
+            )
+        else:
+            text = (
+                f"💼 <b>Ваш гаманець</b>\n\n"
+                f"❌ Картка не додана\n\n"
+                f"Додайте картку, щоб клієнти могли\n"
+                f"переказувати вам оплату."
+            )
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Додати картку", callback_data="wallet:add")]
+                ]
+            )
+        
+        await message.answer(text, reply_markup=kb)
+    
+    @router.callback_query(F.data.in_(["wallet:add", "wallet:edit"]))
+    async def wallet_add_edit(call: CallbackQuery) -> None:
+        """Додати/змінити картку"""
+        await call.answer()
+        await call.message.answer(
+            "💳 <b>Введіть номер картки</b>\n\n"
+            "Формат: 1234 5678 9012 3456\n"
+            "або: 1234567890123456\n\n"
+            "Ця картка буде показуватись клієнтам\n"
+            "для оплати поїздки."
+        )
+        # Тут можна додати FSM, але для простоти зробимо через текстовий обробник
+    
+    @router.message(F.text.regexp(r'^\d{4}\s?\d{4}\s?\d{4}\s?\d{4}$'))
+    async def save_card_number(message: Message) -> None:
+        """Зберегти номер картки"""
+        if not message.from_user or not message.text:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            return
+        
+        card_number = message.text.strip().replace(" ", "")
+        # Форматувати як 1234 5678 9012 3456
+        formatted_card = f"{card_number[0:4]} {card_number[4:8]} {card_number[8:12]} {card_number[12:16]}"
+        
+        # Оновити в БД
+        import aiosqlite
+        async with aiosqlite.connect(config.database_path) as db:
+            await db.execute(
+                "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
+                (formatted_card, message.from_user.id)
+            )
+            await db.commit()
+        
+        await message.answer(
+            f"✅ <b>Картку збережено!</b>\n\n"
+            f"💳 {formatted_card}\n\n"
+            f"Тепер клієнти зможуть переказувати\n"
+            f"оплату на цю картку.",
+            reply_markup=driver_panel_keyboard()
+        )
 
     return router
