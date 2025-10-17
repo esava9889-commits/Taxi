@@ -38,19 +38,47 @@ def create_router(config: AppConfig) -> Router:
         # Перевірка чи це АДМІН (найвищий пріоритет)
         is_admin = message.from_user.id in config.bot.admin_ids
         
-        # Перевірити чи це водій
+        # Перевірити чи це ВОДІЙ
         from app.storage.db import get_driver_by_tg_user_id
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         is_driver = driver is not None and driver.status == "approved"
         
-        # Перевірити чи це клієнт (тільки якщо НЕ водій!)
-        user = None if is_driver else await get_user_by_id(config.database_path, message.from_user.id)
+        # Перевірити чи це КЛІЄНТ (тільки якщо НЕ водій, окрім адміна)
+        user = None
+        if not is_driver or is_admin:
+            user = await get_user_by_id(config.database_path, message.from_user.id)
         
-        # Перевірка чи це водій
-        from app.storage.db import get_driver_by_tg_user_id
-        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
-        is_driver = driver is not None and driver.status == "approved"
+        # АДМІН - найвищий пріоритет
+        if is_admin:
+            text = (
+                f"👋 <b>Вітаю, Адмін {message.from_user.first_name}!</b>\n\n"
+                "🔧 Ви маєте доступ до адміністративних функцій.\n"
+                "Оберіть дію з меню нижче."
+            )
+            
+            await message.answer(
+                text,
+                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=True)
+            )
+            return
         
+        # ВОДІЙ - показуємо меню водія
+        if is_driver:
+            text = (
+                f"👋 <b>Вітаю, {driver.full_name}!</b>\n\n"
+                f"🚗 Ви зареєстровані як <b>водій</b>\n"
+                f"📍 Місто: {driver.city or 'Не вказано'}\n"
+                f"🚙 Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})\n\n"
+                "Оберіть дію з меню нижче:"
+            )
+            
+            await message.answer(
+                text,
+                reply_markup=main_menu_keyboard(is_registered=False, is_driver=True, is_admin=False)
+            )
+            return
+        
+        # КЛІЄНТ - звичайний flow
         if user and user.phone and user.city:
             # Повна реєстрація
             greeting = "З поверненням, "
