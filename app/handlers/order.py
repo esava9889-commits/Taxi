@@ -33,6 +33,7 @@ from app.utils.privacy import mask_phone_number
 from app.utils.validation import validate_address, validate_comment
 from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
 from app.utils.order_timeout import start_order_timeout
+from app.handlers.car_classes import CAR_CLASSES, calculate_fare_with_class
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +48,8 @@ def create_router(config: AppConfig) -> Router:
     class OrderStates(StatesGroup):
         pickup = State()  # Спочатку звідки
         destination = State()  # Потім куди
-        car_class = State()  # Після розрахунку відстані - вибір класу
-        comment = State()
+        car_class = State()  # Після розрахунку - вибір класу (з цінами!)
+        comment = State()  # Після вибору класу
         payment_method = State()  # Спосіб оплати
         confirm = State()
 
@@ -68,6 +69,90 @@ def create_router(config: AppConfig) -> Router:
             resize_keyboard=True,
             one_time_keyboard=True,
         )
+    
+    async def show_car_class_selection_with_prices(message: Message, state: FSMContext) -> None:
+        """
+        Розрахувати відстань, час та показати всі класи авто з цінами
+        """
+        data = await state.get_data()
+        
+        pickup_lat = data.get("pickup_lat")
+        pickup_lon = data.get("pickup_lon")
+        dest_lat = data.get("dest_lat")
+        dest_lon = data.get("dest_lon")
+        
+        # Якщо є координати - розрахуємо точно
+        distance_km = None
+        duration_minutes = None
+        
+        if pickup_lat and pickup_lon and dest_lat and dest_lon and config.google_maps_api_key:
+            logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
+            result = await get_distance_and_duration(
+                config.google_maps_api_key,
+                pickup_lat, pickup_lon,
+                dest_lat, dest_lon
+            )
+            if result:
+                distance_km, duration_minutes = result
+                await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+                logger.info(f"✅ Відстань: {distance_km} км, час: {duration_minutes} хв")
+            else:
+                logger.warning("⚠️ Не вдалося розрахувати відстань через Google Maps API")
+        
+        # Якщо не вдалося розрахувати - беремо приблизну відстань
+        if distance_km is None:
+            distance_km = 5.0  # Приблизна відстань за замовчуванням
+            duration_minutes = 15
+            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+            logger.warning(f"⚠️ Використовую приблизну відстань: {distance_km} км")
+        
+        # Отримати тариф
+        tariff = await get_latest_tariff(config.database_path)
+        if not tariff:
+            await message.answer("❌ Помилка: тариф не налаштований. Зверніться до адміністратора.")
+            await state.clear()
+            return
+        
+        # Розрахувати базову ціну (для економ класу)
+        base_fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
+        if base_fare < tariff.minimum:
+            base_fare = tariff.minimum
+        
+        # Розрахувати ціни для КОЖНОГО класу
+        car_class_prices = {}
+        for class_key in ["economy", "standard", "comfort", "business"]:
+            class_fare = calculate_fare_with_class(base_fare, class_key)
+            car_class_prices[class_key] = round(class_fare, 2)
+        
+        # Створити кнопки з цінами для кожного класу
+        buttons = []
+        for class_key in ["economy", "standard", "comfort", "business"]:
+            class_info = CAR_CLASSES[class_key]
+            class_name = class_info["name_uk"]
+            class_price = car_class_prices[class_key]
+            class_desc = class_info["description_uk"]
+            
+            button_text = f"{class_name} - {class_price:.0f} грн"
+            buttons.append([InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"select_car_class:{class_key}"
+            )])
+        
+        # Кнопка "Скасувати"
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        # Показати інформацію з цінами
+        info_text = (
+            f"📏 <b>Розрахунок маршруту:</b>\n\n"
+            f"📍 Відстань: <b>{distance_km:.1f} км</b>\n"
+            f"⏱ Час в дорозі: <b>~{duration_minutes:.0f} хв</b>\n\n"
+            f"💰 <b>Оберіть клас авто:</b>\n"
+        )
+        
+        await state.set_state(OrderStates.car_class)
+        await message.answer(info_text, reply_markup=kb)
 
     def confirm_keyboard() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
@@ -139,11 +224,26 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=location_keyboard("Вкажіть адресу подачі")
         )
 
-    @router.callback_query(F.data.startswith("order_car_class:"))
-    async def save_order_car_class(call: CallbackQuery, state: FSMContext) -> None:
+    @router.callback_query(F.data.startswith("select_car_class:"))
+    async def select_car_class_handler(call: CallbackQuery, state: FSMContext) -> None:
+        """Вибір класу авто після перегляду цін"""
         car_class = call.data.split(":", 1)[1]
         await state.update_data(car_class=car_class)
-        await state.set_state(OrderStates.pickup)
+        await call.answer()
+        
+        # Отримати назву обраного класу
+        from app.handlers.car_classes import get_car_class_name
+        class_name = get_car_class_name(car_class)
+        
+        # Перейти до коментаря
+        await state.set_state(OrderStates.comment)
+        await call.message.answer(
+            f"✅ Обрано: <b>{class_name}</b>\n\n"
+            "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
+            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
+            "Або натисніть 'Пропустити'",
+            reply_markup=skip_or_cancel_keyboard()
+        )
 
     @router.message(OrderStates.pickup, F.location)
     async def pickup_location(message: Message, state: FSMContext) -> None:
@@ -234,15 +334,8 @@ def create_router(config: AppConfig) -> Router:
             dest_lon=loc.longitude
         )
         
-        # Перейти до коментаря
-        await state.set_state(OrderStates.comment)
-        await message.answer(
-            "✅ Пункт призначення зафіксовано!\n\n"
-            "💬 <b>Додайте коментар</b> (опціонально):\n\n"
-            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
-            "Або натисніть 'Пропустити'",
-            reply_markup=skip_or_cancel_keyboard()
-        )
+        # Показати класи авто з цінами
+        await show_car_class_selection_with_prices(message, state)
 
     @router.message(OrderStates.destination)
     async def destination_text(message: Message, state: FSMContext) -> None:
@@ -285,15 +378,8 @@ def create_router(config: AppConfig) -> Router:
             logger.warning(f"⚠️ Google Maps API не налаштований, адреса не геокодується: {destination}")
             await state.update_data(destination=destination)
         
-        # Перейти до коментаря
-        await state.set_state(OrderStates.comment)
-        await message.answer(
-            "✅ Пункт призначення зафіксовано!\n\n"
-            "💬 <b>Додайте коментар</b> (опціонально):\n\n"
-            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
-            "Або натисніть 'Пропустити'",
-            reply_markup=skip_or_cancel_keyboard()
-        )
+        # Показати класи авто з цінами
+        await show_car_class_selection_with_prices(message, state)
 
     @router.message(OrderStates.comment, F.text == SKIP_TEXT)
     async def skip_comment(message: Message, state: FSMContext) -> None:
