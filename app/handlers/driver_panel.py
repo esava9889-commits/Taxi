@@ -54,15 +54,23 @@ def create_router(config: AppConfig) -> Router:
         earnings, commission_owed = await get_driver_earnings_today(config.database_path, message.from_user.id)
         net_earnings = earnings - commission_owed
         
-        # Чайові
-        from app.storage.db import get_driver_tips_total
-        tips_total = await get_driver_tips_total(config.database_path, message.from_user.id)
+        # Чайові (з обробкою помилок)
+        tips_total = 0.0
+        try:
+            from app.storage.db import get_driver_tips_total
+            tips_total = await get_driver_tips_total(config.database_path, message.from_user.id)
+        except Exception as e:
+            logger.error(f"Помилка отримання чайових: {e}")
         
         online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
         location_status = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
         
-        # Підрахунок онлайн водіїв
-        online_count = await get_online_drivers_count(config.database_path, driver.city)
+        # Підрахунок онлайн водіїв (з обробкою помилок)
+        online_count = 0
+        try:
+            online_count = await get_online_drivers_count(config.database_path, driver.city)
+        except Exception as e:
+            logger.error(f"Помилка підрахунку онлайн водіїв: {e}")
         
         text = (
             f"🚗 <b>Панель водія</b>\n\n"
