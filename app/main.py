@@ -14,6 +14,7 @@ from aiohttp import web
 from app.config.config import load_config
 from app.handlers.order import create_router as create_order_router
 from app.handlers.start import create_router as create_start_router
+from app.handlers.registration import create_registration_router
 from app.handlers.driver import create_router as create_driver_router
 from app.handlers.admin import create_router as create_admin_router
 from app.handlers.driver_panel import create_router as create_driver_panel_router
@@ -73,6 +74,7 @@ async def main() -> None:
 
     # Include all routers (порядок важливий!)
     dp.include_router(create_start_router(config))
+    dp.include_router(create_registration_router(config))  # Registration module
     dp.include_router(create_order_router(config))  # Order перед Client!
     dp.include_router(create_driver_panel_router(config))
     dp.include_router(create_driver_router(config))
