@@ -19,7 +19,7 @@ from aiogram.types import (
 )
 
 from app.config.config import AppConfig
-from app.storage.db import get_user_by_id
+from app.storage.db import get_user_by_id, User, upsert_user
 from app.handlers.keyboards import main_menu_keyboard
 
 logger = logging.getLogger(__name__)
