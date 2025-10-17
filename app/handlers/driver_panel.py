@@ -122,8 +122,13 @@ def create_router(config: AppConfig) -> Router:
             resize_keyboard=True
         )
         
+        # Спочатку відправити з inline кнопками
         await message.answer(text, reply_markup=inline_kb)
-        await message.answer("Оберіть дію:", reply_markup=kb)
+        # Потім окреме повідомлення з reply клавіатурою (щоб не перезаписувати inline)
+        await message.answer(
+            "👇 <b>Меню водія:</b>",
+            reply_markup=kb
+        )
 
     @router.message(F.text == "📊 Мій заробіток")
     async def show_earnings(message: Message) -> None:
