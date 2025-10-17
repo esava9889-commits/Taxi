@@ -736,7 +736,7 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, online, last_lat, last_lon, last_seen_at
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number
             FROM drivers
             WHERE status = 'pending'
             ORDER BY id ASC
@@ -760,10 +760,13 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
                 status=r[8],
                 created_at=datetime.fromisoformat(r[9]),
                 updated_at=datetime.fromisoformat(r[10]),
-                online=r[11],
-                last_lat=r[12],
-                last_lon=r[13],
-                last_seen_at=(datetime.fromisoformat(r[14]) if r[14] else None),
+                city=r[11],
+                online=r[12],
+                last_lat=r[13],
+                last_lon=r[14],
+                last_seen_at=(datetime.fromisoformat(r[15]) if r[15] else None),
+                car_class=r[16] if r[16] else "economy",
+                card_number=r[17],
             )
         )
     return drivers
@@ -774,7 +777,7 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number
             FROM drivers WHERE id = ?
             """,
             (driver_id,),
@@ -799,6 +802,8 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         last_lat=row[13],
         last_lon=row[14],
         last_seen_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+        car_class=row[16] if row[16] else "economy",
+        card_number=row[17],
     )
 
 
@@ -807,7 +812,7 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number
             FROM drivers WHERE tg_user_id = ? ORDER BY id DESC LIMIT 1
             """,
             (tg_user_id,),
@@ -832,6 +837,8 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         last_lat=row[13],
         last_lon=row[14],
         last_seen_at=(datetime.fromisoformat(row[15]) if row[15] else None),
+        car_class=row[16] if row[16] else "economy",
+        card_number=row[17],
     )
 
 
