@@ -35,6 +35,7 @@ from app.storage.db import (
     get_driver_tips_total,
 )
 from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
+from app.utils.order_timeout import cancel_order_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,21 @@ def create_router(config: AppConfig) -> Router:
         
         # Статус
         status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
-        location = "📍 Активна" if driver.last_lat and driver.last_lon else "❌ Не встановлена"
+        
+        # Статус локації з віком
+        from app.utils.location_tracker import check_driver_location_status
+        loc_status = await check_driver_location_status(config.database_path, message.from_user.id)
+        
+        if not loc_status['has_location']:
+            location = "❌ Не встановлена"
+        else:
+            age = loc_status['age_minutes']
+            if loc_status['status'] == 'fresh':
+                location = f"📍 Активна ({age} хв тому)"
+            elif loc_status['status'] == 'warning':
+                location = f"⚠️ Потребує оновлення ({age} хв тому)"
+            else:
+                location = f"🔴 Застаріла ({age} хв тому)"
         
         # Онлайн водії
         online = 0
@@ -341,6 +356,10 @@ def create_router(config: AppConfig) -> Router:
         success = await accept_order(config.database_path, order_id, driver.id)
         
         if success:
+            # СКАСУВАТИ ТАЙМЕР: Замовлення прийнято водієм
+            cancel_order_timeout(order_id)
+            logger.info(f"✅ Таймер скасовано для замовлення #{order_id} (прийнято водієм)")
+            
             await call.answer("✅ Прийнято!", show_alert=True)
             
             # Повідомити клієнта що замовлення прийнято
@@ -411,6 +430,33 @@ def create_router(config: AppConfig) -> Router:
                     await call.message.delete()
                 except:
                     pass
+    
+    @router.callback_query(F.data.startswith("reject_order:"))
+    async def reject_order_handler(call: CallbackQuery) -> None:
+        """Водій відхиляє замовлення"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            return
+        
+        order_id = int(call.data.split(":")[1])
+        
+        # Додати водія до списку відхилених для цього замовлення
+        from app.storage.db import add_rejected_driver
+        await add_rejected_driver(config.database_path, order_id, driver.id)
+        
+        await call.answer("❌ Ви відхилили замовлення", show_alert=False)
+        
+        # Видалити повідомлення для цього водія
+        if call.message:
+            try:
+                await call.message.delete()
+            except:
+                pass
+        
+        logger.info(f"❌ Водій {driver.full_name} відхилив замовлення #{order_id}")
 
     @router.callback_query(F.data.startswith("arrived:"))
     async def driver_arrived(call: CallbackQuery) -> None:

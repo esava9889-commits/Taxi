@@ -146,10 +146,8 @@ async def notify_driver_new_order(
     
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Прийняти", callback_data=f"accept_order:{order_id}"),
-                InlineKeyboardButton(text="❌ Відхилити", callback_data=f"reject_order:{order_id}")
-            ]
+            [InlineKeyboardButton(text="✅ Прийняти замовлення", callback_data=f"accept_order:{order_id}")],
+            [InlineKeyboardButton(text="❌ Не можу взяти", callback_data=f"reject_order:{order_id}")]
         ]
     )
     

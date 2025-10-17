@@ -32,6 +32,7 @@ from app.utils.maps import get_distance_and_duration, geocode_address
 from app.utils.privacy import mask_phone_number
 from app.utils.validation import validate_address, validate_comment
 from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
+from app.utils.order_timeout import start_order_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -523,6 +524,10 @@ def create_router(config: AppConfig) -> Router:
                         [InlineKeyboardButton(
                             text="✅ Прийняти замовлення",
                             callback_data=f"accept_order:{order_id}"
+                        )],
+                        [InlineKeyboardButton(
+                            text="❌ Не можу взяти",
+                            callback_data=f"reject_order:{order_id}"
                         )]
                     ]
                 )
@@ -635,14 +640,27 @@ def create_router(config: AppConfig) -> Router:
                     f"ℹ️ <i>Повний номер буде доступний після прийняття</i>"
                 )
                 
-                await message.bot.send_message(
+                sent_message = await message.bot.send_message(
                     config.driver_group_chat_id,
                     group_message,
                     reply_markup=kb,
                     disable_web_page_preview=True
                 )
                 
+                # Зберегти ID повідомлення в БД
+                await update_order_group_message(config.database_path, order_id, sent_message.message_id)
+                
                 logger.info(f"Order {order_id} sent to driver group {config.driver_group_chat_id}")
+                
+                # ЗАПУСТИТИ ТАЙМЕР: Якщо замовлення не прийнято за 3 хв - перепропонувати
+                await start_order_timeout(
+                    message.bot,
+                    order_id,
+                    config.database_path,
+                    config.driver_group_chat_id,
+                    sent_message.message_id
+                )
+                logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
                 
                 # Відповідь клієнту
                 from app.handlers.start import main_menu_keyboard
