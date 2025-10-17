@@ -43,9 +43,9 @@ def create_router(config: AppConfig) -> Router:
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         is_driver = driver is not None and driver.status == "approved"
         
-        # Перевірити чи це КЛІЄНТ (тільки якщо НЕ водій, окрім адміна)
+        # Перевірити чи це КЛІЄНТ (тільки якщо НЕ водій і НЕ має заявки, окрім адміна)
         user = None
-        if not is_driver or is_admin:
+        if (not is_driver and not has_driver_application) or is_admin:
             user = await get_user_by_id(config.database_path, message.from_user.id)
         
         # АДМІН - найвищий пріоритет
@@ -58,7 +58,12 @@ def create_router(config: AppConfig) -> Router:
             
             await message.answer(
                 text,
-                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=True)
+                reply_markup=main_menu_keyboard(
+                    is_registered=True, 
+                    is_driver=is_driver, 
+                    is_admin=True,
+                    has_driver_application=has_driver_application
+                )
             )
             return
         
@@ -74,7 +79,12 @@ def create_router(config: AppConfig) -> Router:
             
             await message.answer(
                 text,
-                reply_markup=main_menu_keyboard(is_registered=False, is_driver=True, is_admin=False)
+                reply_markup=main_menu_keyboard(
+                    is_registered=False, 
+                    is_driver=True, 
+                    is_admin=False,
+                    has_driver_application=False  # Водій вже approved
+                )
             )
             return
         
@@ -90,7 +100,12 @@ def create_router(config: AppConfig) -> Router:
                 f"📍 Місто: {user.city}\n"
                 f"📱 Телефон: {user.phone}\n\n"
                 "Оберіть дію з меню нижче:",
-                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+                reply_markup=main_menu_keyboard(
+                    is_registered=True, 
+                    is_driver=is_driver, 
+                    is_admin=is_admin,
+                    has_driver_application=has_driver_application
+                )
             )
         elif user:
             # Неповна реєстрація - пропонуємо завершити

@@ -4,7 +4,12 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardBut
 from app.config.config import AVAILABLE_CITIES
 
 
-def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu_keyboard(
+    is_registered: bool = False, 
+    is_driver: bool = False, 
+    is_admin: bool = False,
+    has_driver_application: bool = False
+) -> ReplyKeyboardMarkup:
     """Головне меню з кнопками"""
     # АДМІН ПАНЕЛЬ (найвищий пріоритет)
     if is_admin:
@@ -18,7 +23,8 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
         # Якщо адмін також водій - додаємо панель водія
         if is_driver:
             keyboard.append([KeyboardButton(text="🚗 Панель водія")])
-        else:
+        elif not has_driver_application:
+            # Показувати "Стати водієм" тільки якщо немає заявки
             keyboard.append([KeyboardButton(text="🚗 Стати водієм")])
         
         keyboard.append([KeyboardButton(text="ℹ️ Допомога")])
@@ -44,14 +50,19 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
         )
     
     if is_registered:
+        keyboard = [
+            [KeyboardButton(text="🚖 Замовити таксі")],
+            [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
+            [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🎁 Реферальна програма")],
+            [KeyboardButton(text="🆘 SOS"), KeyboardButton(text="ℹ️ Допомога")],
+        ]
+        
+        # Показувати "Стати водієм" тільки якщо немає заявки
+        if not has_driver_application:
+            keyboard.append([KeyboardButton(text="🚗 Стати водієм")])
+        
         return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="🚖 Замовити таксі")],
-                [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
-                [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🎁 Реферальна програма")],
-                [KeyboardButton(text="🆘 SOS"), KeyboardButton(text="ℹ️ Допомога")],
-                [KeyboardButton(text="🚗 Стати водієм")],
-            ],
+            keyboard=keyboard,
             resize_keyboard=True,
             one_time_keyboard=False,
             input_field_placeholder="Оберіть дію",

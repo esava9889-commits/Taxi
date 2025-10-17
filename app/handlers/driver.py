@@ -50,6 +50,86 @@ class DriverRegStates(StatesGroup):
     confirm = State()
 
 
+async def show_driver_application_status(message: Message, driver: Driver, config: AppConfig) -> None:
+    """Показати статус заявки водія з відповідними кнопками"""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from datetime import datetime, timezone, timedelta
+    
+    if driver.status == "pending":
+        # Перевірити чи заявка не застаріла (>3 години)
+        application_time = driver.created_at
+        now = datetime.now(timezone.utc)
+        hours_waiting = (now - application_time).total_seconds() / 3600
+        
+        buttons = []
+        
+        if hours_waiting > 3:
+            # Більше 3 годин → дозволити скасувати
+            text = (
+                f"⏳ <b>Ваша заявка на розгляді</b>\n\n"
+                f"📝 ПІБ: {driver.full_name}\n"
+                f"📱 Телефон: {driver.phone}\n"
+                f"📍 Місто: {driver.city or 'Не вказано'}\n"
+                f"🚙 Авто: {driver.car_make} {driver.car_model}\n\n"
+                f"⏰ Очікування: {int(hours_waiting)} год\n\n"
+                f"⚠️ <b>Заявка чекає вже більше 3 годин.</b>\n\n"
+                f"Ви можете:\n"
+                f"• Продовжити чекати на розгляд\n"
+                f"• Скасувати заявку і зареєструватися як клієнт"
+            )
+            buttons.append([InlineKeyboardButton(
+                text="❌ Скасувати заявку", 
+                callback_data=f"driver_cancel:{driver.id}"
+            )])
+        else:
+            # Менше 3 годин → тільки інформація
+            hours_left = max(0, 3 - hours_waiting)
+            text = (
+                f"⏳ <b>Ваша заявка на розгляді</b>\n\n"
+                f"📝 ПІБ: {driver.full_name}\n"
+                f"📱 Телефон: {driver.phone}\n"
+                f"📍 Місто: {driver.city or 'Не вказано'}\n"
+                f"🚙 Авто: {driver.car_make} {driver.car_model}\n\n"
+                f"⏰ Очікування: {int(hours_waiting * 60)} хв\n"
+                f"⌛️ Зачекайте ще ~{int(hours_left * 60)} хв\n\n"
+                f"✅ Адміністратор розгляне вашу заявку найближчим часом.\n\n"
+                f"ℹ️ Зазвичай це займає до 3 годин."
+            )
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+        await message.answer(text, reply_markup=kb)
+    
+    elif driver.status == "rejected":
+        # Відхилено → дозволити подати знову
+        text = (
+            f"❌ <b>Вашу заявку відхилено</b>\n\n"
+            f"На жаль, адміністратор відхилив вашу заявку.\n\n"
+            f"Ви можете:\n"
+            f"• Видалити заявку і зареєструватися як клієнт\n"
+            f"• Зв'язатися з адміністратором для з'ясування причин"
+        )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🗑 Видалити заявку і стати клієнтом", 
+                    callback_data=f"driver_delete:{driver.id}"
+                )]
+            ]
+        )
+        await message.answer(text, reply_markup=kb)
+    
+    elif driver.status == "approved":
+        # Підтверджено → показати меню водія
+        text = (
+            f"✅ <b>Ви вже водій!</b>\n\n"
+            f"📝 ПІБ: {driver.full_name}\n"
+            f"📍 Місто: {driver.city or 'Не вказано'}\n"
+            f"🚙 Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})\n\n"
+            f"Використовуйте кнопку <b>'🚗 Панель водія'</b> для роботи."
+        )
+        await message.answer(text)
+
+
 def create_router(config: AppConfig) -> Router:
     router = Router(name="driver")
 
@@ -63,17 +143,8 @@ def create_router(config: AppConfig) -> Router:
         # Check if already a driver
         existing = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if existing:
-            status_text = {
-                "pending": "⏳ на розгляді",
-                "approved": "✅ підтверджено",
-                "rejected": "❌ відхилено"
-            }.get(existing.status, existing.status)
-            
-            await message.answer(
-                f"Ви вже подали заявку!\n\n"
-                f"Статус: {status_text}\n\n"
-                f"{'Очікуйте підтвердження адміністратора.' if existing.status == 'pending' else ''}"
-            )
+            # Показати ДЕТАЛЬНИЙ статус з кнопками
+            await show_driver_application_status(message, existing, config)
             return
         
         # ВАЖЛИВЕ ПОПЕРЕДЖЕННЯ: якщо клієнт стає водієм
@@ -154,6 +225,109 @@ def create_router(config: AppConfig) -> Router:
             "❌ Реєстрацію водія скасовано.\n\n"
             "Ви залишаєтесь клієнтом.",
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=False, is_admin=is_admin)
+        )
+    
+    @router.callback_query(F.data.startswith("driver_cancel:"))
+    async def cancel_pending_application(call: CallbackQuery) -> None:
+        """Скасувати заявку що очікує (>3 год)"""
+        if not call.from_user:
+            return
+        
+        driver_id = int(call.data.split(":", 1)[1])
+        
+        # Перевірити що це заявка користувача
+        driver = await get_driver_by_id(config.database_path, driver_id)
+        if not driver or driver.tg_user_id != call.from_user.id:
+            await call.answer("❌ Це не ваша заявка", show_alert=True)
+            return
+        
+        # Видалити заявку
+        import aiosqlite
+        async with aiosqlite.connect(config.database_path) as db:
+            await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
+            await db.commit()
+        
+        await call.answer("✅ Заявку скасовано")
+        await call.message.delete()
+        
+        from app.handlers.keyboards import main_menu_keyboard
+        is_admin = call.from_user.id in config.bot.admin_ids
+        
+        await call.message.answer(
+            "❌ <b>Заявку водія скасовано</b>\n\n"
+            "Тепер ви можете:\n"
+            "• Зареєструватися як клієнт\n"
+            "• Подати нову заявку водія",
+            reply_markup=main_menu_keyboard(is_registered=False, is_driver=False, is_admin=is_admin)
+        )
+    
+    @router.callback_query(F.data.startswith("driver_delete:"))
+    async def delete_rejected_application(call: CallbackQuery) -> None:
+        """Видалити відхилену заявку"""
+        if not call.from_user:
+            return
+        
+        driver_id = int(call.data.split(":", 1)[1])
+        
+        # Перевірити що це заявка користувача
+        driver = await get_driver_by_id(config.database_path, driver_id)
+        if not driver or driver.tg_user_id != call.from_user.id:
+            await call.answer("❌ Це не ваша заявка", show_alert=True)
+            return
+        
+        if driver.status != "rejected":
+            await call.answer("❌ Заявка не відхилена", show_alert=True)
+            return
+        
+        # Видалити заявку
+        import aiosqlite
+        async with aiosqlite.connect(config.database_path) as db:
+            await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
+            await db.commit()
+        
+        await call.answer("✅ Заявку видалено")
+        await call.message.delete()
+        
+        from app.handlers.keyboards import main_menu_keyboard
+        is_admin = call.from_user.id in config.bot.admin_ids
+        
+        await call.message.answer(
+            "🗑 <b>Заявку водія видалено</b>\n\n"
+            "Тепер ви можете зареєструватися як клієнт.",
+            reply_markup=main_menu_keyboard(
+                is_registered=False, 
+                is_driver=False, 
+                is_admin=is_admin,
+                has_driver_application=False
+            )
+        )
+    
+    @router.callback_query(F.data == "driver_status:check")
+    async def check_driver_status(call: CallbackQuery) -> None:
+        """Перевірити статус заявки водія"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Заявка не знайдена", show_alert=True)
+            return
+        
+        await call.answer()
+        await call.message.delete()
+        
+        # Показати актуальний статус
+        from aiogram import types
+        await show_driver_application_status(
+            types.Message(
+                message_id=call.message.message_id,
+                date=call.message.date,
+                chat=call.message.chat,
+                from_user=call.from_user,
+                bot=call.bot
+            ),
+            driver,
+            config
         )
 
     @router.message(F.text == CANCEL_TEXT)
@@ -361,13 +535,28 @@ def create_router(config: AppConfig) -> Router:
 
         from app.handlers.start import main_menu_keyboard
         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
+        # Показати статус "на розгляді"
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="📊 Перевірити статус заявки", 
+                    callback_data="driver_status:check"
+                )]
+            ]
+        )
+        
         await message.answer(
             f"✅ <b>Заявку успішно подано!</b>\n\n"
             f"📋 Номер заявки: #{driver_id}\n"
-            f"🏙 Місто: {data.get('city', 'Не вказано')}\n\n"
-            "Очікуйте підтвердження від адміністратора.\n"
-            "Ми повідомимо вас, коли заявку розглянуть.",
-            reply_markup=main_menu_keyboard(is_registered=False, is_driver=False, is_admin=is_admin)
+            f"📝 ПІБ: {data.get('full_name')}\n"
+            f"📱 Телефон: {data.get('phone')}\n"
+            f"🏙 Місто: {data.get('city', 'Не вказано')}\n"
+            f"🚙 Авто: {data.get('car_make')} {data.get('car_model')}\n\n"
+            f"⏳ <b>Статус: На розгляді</b>\n\n"
+            f"Очікуйте підтвердження від адміністратора.\n"
+            f"Зазвичай це займає до 3 годин.\n\n"
+            f"Ми повідомимо вас, коли заявку розглянуть.",
+            reply_markup=kb
         )
 
     # Admin moderation callbacks
