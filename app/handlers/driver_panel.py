@@ -521,5 +521,191 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer("📊 <b>Розширена аналітика</b>\n\nОберіть:", reply_markup=kb)
 
+    # === ОБРОБНИКИ ЗАМОВЛЕНЬ ===
+    
+    @router.callback_query(F.data.startswith("accept_order:"))
+    async def accept_order_handler(call: CallbackQuery) -> None:
+        """Прийняти замовлення"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver or driver.status != "approved":
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        order_id = int(call.data.split(":", 1)[1])
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if order.status != "pending":
+            await call.answer("❌ Вже прийнято іншим водієм", show_alert=True)
+            return
+        
+        # Прийняти
+        success = await accept_order(config.database_path, order_id, driver.id)
+        
+        if success:
+            await call.answer("✅ Ви прийняли замовлення!", show_alert=True)
+            
+            # Повідомити клієнта
+            try:
+                from app.handlers.notifications import notify_client_driver_accepted
+                await notify_client_driver_accepted(
+                    call.bot, order.user_id, order_id,
+                    driver.full_name, driver.car_make, driver.car_model, driver.car_plate
+                )
+            except:
+                pass
+            
+            # Панель керування поїздкою
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📍 Я на місці", callback_data=f"driver_arrived:{order_id}")],
+                    [InlineKeyboardButton(text="🚗 Почати поїздку", callback_data=f"start_trip:{order_id}")],
+                ]
+            )
+            
+            await call.message.edit_text(
+                f"✅ <b>Замовлення №{order_id} прийнято!</b>\n\n"
+                f"📍 Подача: {order.pickup_address}\n"
+                f"📍 Куди: {order.destination_address}\n\n"
+                "Їдьте до клієнта!",
+                reply_markup=kb
+            )
+        else:
+            await call.answer("❌ Не вдалося прийняти", show_alert=True)
+
+    @router.callback_query(F.data.startswith("driver_arrived:"))
+    async def driver_arrived_handler(call: CallbackQuery) -> None:
+        """Водій на місці"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":", 1)[1])
+        
+        # Повідомити клієнта
+        order = await get_order_by_id(config.database_path, order_id)
+        if order:
+            try:
+                from app.handlers.notifications import notify_client_driver_arrived
+                await notify_client_driver_arrived(call.bot, order.user_id, order_id)
+            except:
+                pass
+        
+        await call.answer("📍 Клієнта повідомлено що ви на місці!", show_alert=True)
+        
+        # Оновити кнопки
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🚗 Почати поїздку", callback_data=f"start_trip:{order_id}")],
+            ]
+        )
+        
+        await call.message.edit_reply_markup(reply_markup=kb)
+
+    @router.callback_query(F.data.startswith("start_trip:"))
+    async def start_trip_handler(call: CallbackQuery) -> None:
+        """Почати поїздку"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":", 1)[1])
+        
+        success = await start_order(config.database_path, order_id)
+        
+        if success:
+            await call.answer("🚗 Поїздка розпочата!", show_alert=True)
+            
+            # Повідомити клієнта
+            order = await get_order_by_id(config.database_path, order_id)
+            if order:
+                try:
+                    from app.handlers.notifications import notify_client_trip_started
+                    await notify_client_trip_started(call.bot, order.user_id, order_id)
+                except:
+                    pass
+            
+            # Оновити кнопки
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Завершити поїздку", callback_data=f"complete_trip:{order_id}")],
+                ]
+            )
+            
+            await call.message.edit_reply_markup(reply_markup=kb)
+        else:
+            await call.answer("❌ Помилка", show_alert=True)
+
+    @router.callback_query(F.data.startswith("complete_trip:"))
+    async def complete_trip_handler(call: CallbackQuery) -> None:
+        """Завершити поїздку"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":", 1)[1])
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        # Розрахунок вартості
+        if order.distance_m and config.google_maps_api_key:
+            tariff = await get_latest_tariff(config.database_path)
+            if tariff:
+                km = order.distance_m / 1000.0
+                minutes = (order.duration_s or 0) / 60.0
+                
+                # Базовий розрахунок
+                base_fare = tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
+                
+                # Клас авто
+                from app.handlers.car_classes import get_car_class_multiplier
+                class_mult = get_car_class_multiplier(order.car_class)
+                
+                # Динамічне ціноутворення
+                from app.handlers.dynamic_pricing import calculate_dynamic_price
+                final_fare = calculate_dynamic_price(base_fare * class_mult, order.client_city or "")
+                
+                fare_amount = max(tariff.minimum, final_fare)
+            else:
+                fare_amount = 50.0
+        else:
+            fare_amount = 50.0
+        
+        # Завершити
+        success = await complete_order(config.database_path, order_id, fare_amount)
+        
+        if success:
+            await call.answer(f"✅ Поїздка завершена! Вартість: {fare_amount:.0f} грн", show_alert=True)
+            
+            # Повідомити клієнта
+            try:
+                from app.handlers.notifications import notify_client_trip_completed
+                await notify_client_trip_completed(call.bot, order.user_id, order_id, fare_amount)
+            except:
+                pass
+            
+            # Кнопка для оцінки клієнта
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⭐ Оцінити клієнта", callback_data=f"rate_client:{order.user_id}:{order_id}")],
+                ]
+            )
+            
+            await call.message.edit_text(
+                f"✅ <b>Поїздка завершена!</b>\n\n"
+                f"💰 Вартість: {fare_amount:.2f} грн\n"
+                f"Дякуємо за роботу!",
+                reply_markup=kb
+            )
+        else:
+            await call.answer("❌ Помилка завершення", show_alert=True)
+
     return router
+
 
