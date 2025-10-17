@@ -533,7 +533,7 @@ def create_router(config: AppConfig) -> Router:
                 # Ignore delivery errors to some admins
                 pass
 
-        from app.handlers.start import main_menu_keyboard
+        from app.handlers.keyboards import main_menu_keyboard
         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
         # Показати статус "на розгляді"
         kb = InlineKeyboardMarkup(
