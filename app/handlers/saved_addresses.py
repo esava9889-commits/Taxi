@@ -194,15 +194,18 @@ def create_router(config: AppConfig) -> Router:
         await state.clear()
         
         # Повернути головне меню
-        from app.handlers.start import main_menu_keyboard
-        user_data = await state.get_data()
+        from app.handlers.keyboards import main_menu_keyboard
+        from app.storage.db import get_driver_by_tg_user_id
+        
         is_admin = message.from_user.id in config.bot.admin_ids
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        is_driver = driver is not None and driver.status == "approved"
         
         await message.answer(
             f"✅ Адресу збережено!\n\n"
             f"{saved_addr.emoji} <b>{saved_addr.name}</b>\n"
             f"{address}",
-            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
         )
 
     @router.message(SaveAddressStates.address)
@@ -213,11 +216,16 @@ def create_router(config: AppConfig) -> Router:
         
         if message.text == "❌ Скасувати":
             await state.clear()
-            from app.handlers.start import main_menu_keyboard
+            from app.handlers.keyboards import main_menu_keyboard
+            from app.storage.db import get_driver_by_tg_user_id
+            
             is_admin = message.from_user.id in config.bot.admin_ids
+            driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+            is_driver = driver is not None and driver.status == "approved"
+            
             await message.answer(
                 "❌ Скасовано",
-                reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
             )
             return
         
@@ -256,14 +264,18 @@ def create_router(config: AppConfig) -> Router:
         await save_address(config.database_path, saved_addr)
         await state.clear()
         
-        from app.handlers.start import main_menu_keyboard
+        from app.handlers.keyboards import main_menu_keyboard
+        from app.storage.db import get_driver_by_tg_user_id
+        
         is_admin = message.from_user.id in config.bot.admin_ids
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        is_driver = driver is not None and driver.status == "approved"
         
         await message.answer(
             f"✅ Адресу збережено!\n\n"
             f"{saved_addr.emoji} <b>{saved_addr.name}</b>\n"
             f"{address}",
-            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
         )
 
     @router.callback_query(F.data.startswith("address:view:"))
