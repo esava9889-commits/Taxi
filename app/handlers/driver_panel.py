@@ -350,4 +350,176 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer("✅ Локацію оновлено!")
 
+    @router.message(F.text == "📊 Мій заробіток")
+    async def show_earnings(message: Message) -> None:
+        """Показати заробіток"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            await message.answer("❌ Доступно тільки для водіїв")
+            return
+        
+        earnings_today, commission_today = await get_driver_earnings_today(config.database_path, message.from_user.id)
+        net_today = earnings_today - commission_today
+        
+        # За тиждень
+        orders = await get_driver_order_history(config.database_path, message.from_user.id, limit=1000)
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        week_orders = [o for o in orders if o.created_at >= week_ago and o.status == 'completed']
+        earnings_week = sum(o.fare_amount or 0 for o in week_orders)
+        
+        # За місяць
+        month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        month_orders = [o for o in orders if o.created_at >= month_ago and o.status == 'completed']
+        earnings_month = sum(o.fare_amount or 0 for o in month_orders)
+        
+        text = (
+            f"💰 <b>Ваш заробіток</b>\n\n"
+            f"📅 <b>Сьогодні:</b>\n"
+            f"Заробіток: {earnings_today:.2f} грн\n"
+            f"Комісія: -{commission_today:.2f} грн\n"
+            f"Чистий: {net_today:.2f} грн\n\n"
+            f"📅 <b>За тиждень:</b> {earnings_week:.2f} грн\n"
+            f"📅 <b>За місяць:</b> {earnings_month:.2f} грн\n"
+        )
+        
+        await message.answer(text)
+
+    @router.message(F.text == "💳 Комісія")
+    async def show_commission(message: Message) -> None:
+        """Показати комісію"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            await message.answer("❌ Доступно тільки для водіїв")
+            return
+        
+        unpaid = await get_driver_unpaid_commission(config.database_path, message.from_user.id)
+        
+        if unpaid > 0:
+            # QR код
+            try:
+                from app.utils.qr_generator import generate_payment_qr
+                from aiogram.types import BufferedInputFile
+                
+                qr = generate_payment_qr(config.payment_card or "4149499901234567", unpaid, f"Комісія водія")
+                photo = BufferedInputFile(qr.read(), filename="commission_qr.png")
+                
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Я сплатив", callback_data="mark_commission_paid")]
+                    ]
+                )
+                
+                await message.answer_photo(
+                    photo=photo,
+                    caption=(
+                        f"💳 <b>Комісія до сплати</b>\n\n"
+                        f"💸 Сума: {unpaid:.2f} грн\n\n"
+                        f"📱 Відскануйте QR-код для оплати\n"
+                        f"або перерахуйте на картку:\n"
+                        f"<code>{config.payment_card or '4149499901234567'}</code>\n\n"
+                        "Після оплати натисніть '✅ Я сплатив'"
+                    ),
+                    reply_markup=kb
+                )
+            except Exception as e:
+                logger.error(f"QR error: {e}")
+                await message.answer(
+                    f"💳 <b>Комісія до сплати:</b> {unpaid:.2f} грн\n\n"
+                    f"Перерахуйте на картку:\n<code>{config.payment_card or '4149499901234567'}</code>"
+                )
+        else:
+            await message.answer("✅ Комісія сплачена!")
+
+    @router.callback_query(F.data == "mark_commission_paid")
+    async def mark_paid(call: CallbackQuery) -> None:
+        """Відмітити комісію сплаченою"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        unpaid = await get_driver_unpaid_commission(config.database_path, call.from_user.id)
+        
+        if unpaid > 0:
+            payment = Payment(
+                id=None,
+                driver_id=driver.id,
+                amount=unpaid,
+                payment_type="commission",
+                created_at=datetime.now(timezone.utc)
+            )
+            await insert_payment(config.database_path, payment)
+            await mark_commission_paid(config.database_path, call.from_user.id)
+            
+            await call.answer("✅ Комісію відмічено як сплачену!", show_alert=True)
+            if call.message:
+                await call.message.answer("✅ Дякуємо за оплату!")
+        else:
+            await call.answer("Комісія вже сплачена", show_alert=True)
+
+    @router.message(F.text == "📜 Історія поїздок")
+    async def show_history(message: Message) -> None:
+        """Історія поїздок"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            await message.answer("❌ Доступно тільки для водіїв")
+            return
+        
+        orders = await get_driver_order_history(config.database_path, message.from_user.id, limit=10)
+        
+        if not orders:
+            await message.answer("📜 Поки немає поїздок")
+            return
+        
+        text = "📜 <b>Останні 10 поїздок:</b>\n\n"
+        
+        for i, order in enumerate(orders, 1):
+            status_emoji = {
+                'completed': '✅',
+                'cancelled_by_client': '❌',
+                'cancelled_by_driver': '❌'
+            }.get(order.status, '⏳')
+            
+            text += (
+                f"{i}. {status_emoji} {order.pickup_address[:30]}... → {order.destination_address[:30]}...\n"
+                f"   💰 {order.fare_amount or 0:.0f} грн | "
+                f"{order.created_at.strftime('%d.%m %H:%M')}\n\n"
+            )
+        
+        await message.answer(text)
+
+    @router.message(F.text == "📊 Розширена аналітика")
+    async def show_analytics_menu(message: Message) -> None:
+        """Меню розширеної аналітики"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            await message.answer("❌ Доступно тільки для водіїв")
+            return
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⏰ Кращі години", callback_data="analytics:best_hours")],
+                [InlineKeyboardButton(text="🗺️ Топ-маршрути", callback_data="analytics:top_routes")],
+                [InlineKeyboardButton(text="💰 Прогноз заробітку", callback_data="analytics:forecast")]
+            ]
+        )
+        
+        await message.answer("📊 <b>Розширена аналітика</b>\n\nОберіть:", reply_markup=kb)
+
     return router
+
