@@ -1002,7 +1002,7 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number
             FROM drivers WHERE status = 'approved' AND online = 1
             ORDER BY last_seen_at DESC
             LIMIT ?
