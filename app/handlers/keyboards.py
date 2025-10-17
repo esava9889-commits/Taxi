@@ -96,3 +96,11 @@ def city_selection_keyboard() -> InlineKeyboardMarkup:
     for city in AVAILABLE_CITIES:
         buttons.append([InlineKeyboardButton(text=f"📍 {city}", callback_data=f"city:{city}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def driver_city_selection_keyboard() -> InlineKeyboardMarkup:
+    """Інлайн кнопки для вибору міста (для водіїв)"""
+    buttons = []
+    for city in AVAILABLE_CITIES:
+        buttons.append([InlineKeyboardButton(text=f"📍 {city}", callback_data=f"driver_city:{city}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -764,7 +764,7 @@ def create_router(config: AppConfig) -> Router:
                 logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
                 
                 # Відповідь клієнту
-                from app.handlers.start import main_menu_keyboard
+                from app.handlers.keyboards import main_menu_keyboard
                 is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
                 await message.answer(
                     f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
@@ -776,7 +776,7 @@ def create_router(config: AppConfig) -> Router:
                 
             except Exception as e:
                 logger.error(f"Failed to send order to group: {e}")
-                from app.handlers.start import main_menu_keyboard
+                from app.handlers.keyboards import main_menu_keyboard
                 is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
                 await message.answer(
                     f"⚠️ Замовлення #{order_id} створено, але виникла помилка при відправці водіям.\n"
@@ -785,7 +785,7 @@ def create_router(config: AppConfig) -> Router:
                 )
         else:
             # Якщо група не налаштована
-            from app.handlers.start import main_menu_keyboard
+            from app.handlers.keyboards import main_menu_keyboard
             is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
             await message.answer(
                 f"✅ Замовлення #{order_id} створено!\n\n"
@@ -839,7 +839,7 @@ def create_router(config: AppConfig) -> Router:
         is_registered = user is not None and user.phone and user.city
         is_admin = message.from_user.id in config.bot.admin_ids
         
-        from app.handlers.start import main_menu_keyboard
+        from app.handlers.keyboards import main_menu_keyboard
         await message.answer(
             "❌ Замовлення скасовано.",
             reply_markup=main_menu_keyboard(is_registered=is_registered, is_admin=is_admin)

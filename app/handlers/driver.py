@@ -86,7 +86,7 @@ def create_router(config: AppConfig) -> Router:
     @router.message(F.text == CANCEL_TEXT)
     async def cancel(message: Message, state: FSMContext) -> None:
         await state.clear()
-        from app.handlers.start import main_menu_keyboard
+        from app.handlers.keyboards import main_menu_keyboard
         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
         await message.answer(
             "❌ Реєстрацію скасовано.",
@@ -116,15 +116,15 @@ def create_router(config: AppConfig) -> Router:
         await state.update_data(phone=phone)
         
         # City selection with inline buttons
-        from app.handlers.start import city_selection_keyboard
+        from app.handlers.keyboards import driver_city_selection_keyboard
         await state.set_state(DriverRegStates.city)
         await message.answer(
             "🏙 <b>Крок 3/7: Місто роботи</b>\n\n"
             "Оберіть місто, в якому ви будете працювати:",
-            reply_markup=city_selection_keyboard()
+            reply_markup=driver_city_selection_keyboard()
         )
 
-    @router.callback_query(F.data.startswith("city:"), DriverRegStates.city)
+    @router.callback_query(F.data.startswith("driver_city:"), DriverRegStates.city)
     async def take_city(call: CallbackQuery, state: FSMContext) -> None:
         city = call.data.split(":", 1)[1]
         await state.update_data(city=city)

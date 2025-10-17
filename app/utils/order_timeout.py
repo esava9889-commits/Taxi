@@ -114,15 +114,18 @@ class OrderTimeoutManager:
                         ]
                     )
                     
+                    # Безпечне форматування суми
+                    fare_text = f"{order.fare_amount:.0f} грн" if order.fare_amount else "Уточнюється"
+                    
                     await bot.edit_message_text(
                         chat_id=group_chat_id,
                         message_id=group_message_id,
                         text=(
                             f"🔴 <b>ТЕРМІНОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n"
                             f"⚠️ <b>Вже чекає 3+ хвилини!</b>\n\n"
-                            f"📍 Звідки: {order.pickup_address}\n"
-                            f"📍 Куди: {order.destination_address}\n\n"
-                            f"💰 Вартість: {order.fare_amount:.0f} грн\n\n"
+                            f"📍 Звідки: {order.pickup_address or 'Не вказано'}\n"
+                            f"📍 Куди: {order.destination_address or 'Не вказано'}\n\n"
+                            f"💰 Вартість: {fare_text}\n\n"
                             f"❗️ <i>Клієнт очікує! Візьміть замовлення ЗАРАЗ!</i>"
                         ),
                         reply_markup=kb

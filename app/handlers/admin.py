@@ -343,7 +343,7 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Notify driver
                 try:
-                    from app.handlers.start import main_menu_keyboard
+                    from app.handlers.keyboards import main_menu_keyboard
                     
                     kb = InlineKeyboardMarkup(
                         inline_keyboard=[
@@ -367,7 +367,7 @@ def create_router(config: AppConfig) -> Router:
                     # Перевірка чи водій також адмін
                     is_driver_admin = driver.tg_user_id in config.bot.admin_ids
                     
-                    from app.handlers.start import main_menu_keyboard
+                    from app.handlers.keyboards import main_menu_keyboard
                     await call.bot.send_message(
                         driver.tg_user_id,
                         "🚗 <b>Панель водія активована!</b>\n\n"
