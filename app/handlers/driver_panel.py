@@ -100,7 +100,8 @@ def create_router(config: AppConfig) -> Router:
                 [KeyboardButton(text="🚀 Почати роботу")],
                 [KeyboardButton(text="📍 Поділитися локацією", request_location=True)],
                 [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
-                [KeyboardButton(text="📜 Історія поїздок")],
+                [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
+                [KeyboardButton(text="📊 Розширена аналітика")],
                 [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
             ],
             resize_keyboard=True
@@ -559,7 +560,16 @@ def create_router(config: AppConfig) -> Router:
             f"💳 {formatted_card}\n\n"
             f"Тепер клієнти зможуть переказувати\n"
             f"оплату на цю картку.",
-            reply_markup=driver_panel_keyboard()
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="🚗 Панель водія"), KeyboardButton(text="🚀 Почати роботу")],
+                    [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
+                    [KeyboardButton(text="📊 Розширена аналітика")],
+                    [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
+                ],
+                resize_keyboard=True
+            )
         )
 
     return router
