@@ -115,30 +115,12 @@ def create_router(config: AppConfig) -> Router:
             city=user.city,
         )
         
-        # Вибір класу авто
-        from app.handlers.car_classes import CAR_CLASSES
-        
-        buttons = []
-        for class_code, class_info in CAR_CLASSES.items():
-            mult_percent = int((class_info['multiplier']-1)*100)
-            mult_text = f" (+{mult_percent}%)" if mult_percent > 0 else ""
-            buttons.append([
-                InlineKeyboardButton(
-                    text=f"{class_info['name_uk']}{mult_text}",
-                    callback_data=f"order_car_class:{class_code}"
-                )
-            ])
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        await state.set_state(OrderStates.car_class)
+        # СПОЧАТКУ адреса звідки
+        await state.set_state(OrderStates.pickup)
         await message.answer(
-            "🚗 <b>Оберіть клас авто:</b>\n\n"
-            "• 🚗 Економ - базовий тариф\n"
-            "• 🚙 Стандарт - +30%\n"
-            "• 🚘 Комфорт - +60%\n"
-            "• 🏆 Бізнес - +100%",
-            reply_markup=kb
+            "📍 <b>Звідки вас забрати?</b>\n\n"
+            "Надішліть адресу текстом або поділіться геолокацією 📍",
+            reply_markup=location_keyboard("Вкажіть адресу подачі")
         )
 
     @router.callback_query(F.data.startswith("order_car_class:"))
