@@ -35,8 +35,8 @@ def main_menu_keyboard(is_registered: bool = False, is_driver: bool = False, is_
             keyboard=[
                 [KeyboardButton(text="🚗 Панель водія")],
                 [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
-                [KeyboardButton(text="📜 Історія поїздок")],
-                [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
+                [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
+                [KeyboardButton(text="📊 Розширена аналітика"), KeyboardButton(text="ℹ️ Допомога")],
             ],
             resize_keyboard=True,
             one_time_keyboard=False,

@@ -671,6 +671,17 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
     )
 
 
+async def delete_user(db_path: str, user_id: int) -> bool:
+    """Видалити користувача з БД (коли стає водієм)"""
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM users WHERE user_id = ?",
+            (user_id,)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
 # --- Drivers ---
 
 @dataclass

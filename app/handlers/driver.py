@@ -76,11 +76,84 @@ def create_router(config: AppConfig) -> Router:
             )
             return
         
+        # ВАЖЛИВЕ ПОПЕРЕДЖЕННЯ: якщо клієнт стає водієм
+        from app.storage.db import get_user_by_id, delete_user
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        if user and user.role == "client":
+            # Показати попередження
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Так, продовжити", callback_data="driver_reg:confirm")],
+                    [InlineKeyboardButton(text="❌ Ні, скасувати", callback_data="driver_reg:cancel")]
+                ]
+            )
+            
+            await message.answer(
+                "⚠️ <b>ВАЖЛИВО!</b>\n\n"
+                "Ви зараз зареєстровані як <b>клієнт</b>.\n\n"
+                "Якщо ви станете <b>водієм</b>:\n"
+                "• Ви втратите доступ до панелі клієнта\n"
+                "• Не зможете створювати замовлення\n"
+                "• Будете тільки приймати замовлення як водій\n\n"
+                "⚠️ <b>Одна людина = одна роль!</b>\n"
+                "(або клієнт, або водій)\n\n"
+                "Продовжити реєстрацію водія?",
+                reply_markup=kb
+            )
+            return
+        
         await state.set_state(DriverRegStates.name)
         await message.answer(
             "🚗 <b>Реєстрація водія</b>\n\n"
             "📝 Крок 1/7: Введіть ваше ПІБ:",
             reply_markup=cancel_keyboard()
+        )
+    
+    @router.callback_query(F.data == "driver_reg:confirm")
+    async def driver_reg_confirm(call: CallbackQuery, state: FSMContext) -> None:
+        """Підтвердження переходу з клієнта на водія"""
+        if not call.from_user:
+            return
+        
+        from app.storage.db import delete_user
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Видалити користувача з таблиці users
+        deleted = await delete_user(config.database_path, call.from_user.id)
+        if deleted:
+            logger.info(f"✅ Користувач {call.from_user.id} видалений з clients (стає водієм)")
+        
+        await call.answer("✅ Переходимо до реєстрації водія")
+        await call.message.delete()
+        
+        await state.set_state(DriverRegStates.name)
+        await call.message.answer(
+            "🚗 <b>Реєстрація водія</b>\n\n"
+            "📝 Крок 1/7: Введіть ваше ПІБ:",
+            reply_markup=cancel_keyboard()
+        )
+    
+    @router.callback_query(F.data == "driver_reg:cancel")
+    async def driver_reg_cancel_callback(call: CallbackQuery) -> None:
+        """Скасування реєстрації водія"""
+        if not call.from_user:
+            return
+        
+        await call.answer("❌ Реєстрацію скасовано")
+        await call.message.delete()
+        
+        from app.handlers.keyboards import main_menu_keyboard
+        is_admin = call.from_user.id in config.bot.admin_ids
+        
+        await call.message.answer(
+            "❌ Реєстрацію водія скасовано.\n\n"
+            "Ви залишаєтесь клієнтом.",
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=False, is_admin=is_admin)
         )
 
     @router.message(F.text == CANCEL_TEXT)

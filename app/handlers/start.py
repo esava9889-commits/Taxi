@@ -35,10 +35,16 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
-        user = await get_user_by_id(config.database_path, message.from_user.id)
-        
         # Перевірка чи це АДМІН (найвищий пріоритет)
         is_admin = message.from_user.id in config.bot.admin_ids
+        
+        # Перевірити чи це водій
+        from app.storage.db import get_driver_by_tg_user_id
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        is_driver = driver is not None and driver.status == "approved"
+        
+        # Перевірити чи це клієнт (тільки якщо НЕ водій!)
+        user = None if is_driver else await get_user_by_id(config.database_path, message.from_user.id)
         
         # Перевірка чи це водій
         from app.storage.db import get_driver_by_tg_user_id
