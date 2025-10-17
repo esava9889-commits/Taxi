@@ -234,8 +234,15 @@ def create_router(config: AppConfig) -> Router:
             dest_lon=loc.longitude
         )
         
-        # Перейти до вибору класу авто (з розрахунком цін)
-        await show_car_class_selection(message, state, config)
+        # Перейти до коментаря
+        await state.set_state(OrderStates.comment)
+        await message.answer(
+            "✅ Пункт призначення зафіксовано!\n\n"
+            "💬 <b>Додайте коментар</b> (опціонально):\n\n"
+            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
+            "Або натисніть 'Пропустити'",
+            reply_markup=skip_or_cancel_keyboard()
+        )
 
     @router.message(OrderStates.destination)
     async def destination_text(message: Message, state: FSMContext) -> None:
@@ -278,8 +285,8 @@ def create_router(config: AppConfig) -> Router:
             logger.warning(f"⚠️ Google Maps API не налаштований, адреса не геокодується: {destination}")
             await state.update_data(destination=destination)
         
-        # Перейти до вибору класу авто (з розрахунком цін)
-        await show_car_class_selection(message, state, config)
+        # Перейти до коментаря
+        await state.set_state(OrderStates.comment)
         await message.answer(
             "✅ Пункт призначення зафіксовано!\n\n"
             "💬 <b>Додайте коментар</b> (опціонально):\n\n"
