@@ -38,10 +38,11 @@ def create_router(config: AppConfig) -> Router:
         # Перевірка чи це АДМІН (найвищий пріоритет)
         is_admin = message.from_user.id in config.bot.admin_ids
         
-        # Перевірити чи це ВОДІЙ
+        # Перевірити чи це ВОДІЙ або є заявка водія
         from app.storage.db import get_driver_by_tg_user_id
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         is_driver = driver is not None and driver.status == "approved"
+        has_driver_application = driver is not None  # pending/rejected/approved → заявка існує
         
         # Перевірити чи це КЛІЄНТ (тільки якщо НЕ водій і НЕ має заявки, окрім адміна)
         user = None
