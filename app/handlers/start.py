@@ -1047,15 +1047,17 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
         )
 
-    # Команди для швидкого переходу
+    # ВИДАЛЕНО ОБРОБНИК "🚗 Панель водія" - він тепер тільки в driver_panel.py!
+    # Це виправляє конфлікт обробників
+    
+    # Команда /driver залишена для сумісності
     @router.message(Command("driver"))
-    @router.message(F.text == "🚗 Панель водія")
-    async def quick_driver_panel(message: Message) -> None:
-        """Швидкий перехід до панелі водія"""
+    async def quick_driver_command(message: Message) -> None:
+        """Команда /driver - показати підказку"""
         if not message.from_user:
             return
         
-        from app.storage.db import get_driver_by_tg_user_id, get_driver_earnings_today
+        from app.storage.db import get_driver_by_tg_user_id
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         
         if not driver:
@@ -1063,36 +1065,13 @@ def create_router(config: AppConfig) -> Router:
             return
         
         if driver.status != "approved":
-            await message.answer(
-                "⏳ Вашу заявку на роль водія ще не схвалено.\n\n"
-                "Очікуйте на підтвердження від адміністратора."
-            )
+            await message.answer("⏳ Ваша заявка на розгляді.")
             return
         
-        earnings, commission_owed = await get_driver_earnings_today(config.database_path, message.from_user.id)
-        net_earnings = earnings - commission_owed
-        
-        online_status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
-        
-        text = (
-            f"🚗 <b>Панель водія</b>\n\n"
-            f"Статус: {online_status}\n"
-            f"ПІБ: {driver.full_name}\n"
-            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
-            f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
-            f"🔢 Номер: {driver.car_plate}\n\n"
-            f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
-            f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
-            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
-            "ℹ️ Замовлення надходять у групу водіїв.\n"
-            "Прийміть замовлення першим, щоб його отримати!"
-        )
-        
-        # Перевірка чи адмін
+        # Показати підказку
         is_admin = message.from_user.id in config.bot.admin_ids
-        
         await message.answer(
-            text,
+            "🚗 Використовуйте кнопку <b>'🚗 Панель водія'</b> внизу екрану",
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
         )
     
