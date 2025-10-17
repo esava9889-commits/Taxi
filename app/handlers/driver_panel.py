@@ -633,12 +633,28 @@ def create_router(config: AppConfig) -> Router:
         
         # Оновити в БД
         import aiosqlite
+        import logging
+        logger = logging.getLogger(__name__)
+        
         async with aiosqlite.connect(config.database_path) as db:
-            await db.execute(
+            cursor = await db.execute(
                 "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
                 (formatted_card, message.from_user.id)
             )
             await db.commit()
+            
+            # Перевірити що UPDATE спрацював
+            if cursor.rowcount > 0:
+                logger.info(f"✅ Картку збережено для водія {message.from_user.id}: {formatted_card}")
+            else:
+                logger.error(f"❌ UPDATE не спрацював для водія {message.from_user.id}")
+        
+        # Перевірити що картка дійсно збереглася
+        driver_check = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if driver_check and driver_check.card_number:
+            logger.info(f"✅ Перевірка: картка в БД = {driver_check.card_number}")
+        else:
+            logger.error(f"❌ Перевірка: картка НЕ збереглася в БД!")
         
         await message.answer(
             f"✅ <b>Картку збережено!</b>\n\n"
