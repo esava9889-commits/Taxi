@@ -34,7 +34,7 @@ https://api.telegram.org/botYOUR_BOT_TOKEN/deleteWebhook?drop_pending_updates=tr
 
 **Приклад:**
 ```
-https://api.telegram.org/bot7167306396:AAH.../deleteWebhook?drop_pending_updates=true
+https://api.telegram.org/botYOUR_BOT_TOKEN/deleteWebhook?drop_pending_updates=true
 ```
 
 **Відповідь має бути:**
