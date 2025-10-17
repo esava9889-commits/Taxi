@@ -378,7 +378,7 @@ def create_router(config: AppConfig) -> Router:
                     f"📱 <code>{driver.phone}</code>\n\n"
                     f"💳 <b>Картка для оплати:</b>\n"
                     f"<code>{driver.card_number}</code>\n\n"
-                    f"💰 До сплати: {order.fare_amount:.0f} грн",
+                    f"💰 До сплати: {int(order.fare_amount):.0f} грн" if order.fare_amount is not None else "💰 Вартість: уточнюється",
                     reply_markup=kb_client
                 )
             else:
@@ -702,13 +702,14 @@ def create_router(config: AppConfig) -> Router:
         
         payment_text = "💵 Готівка" if order.payment_method == "cash" else "💳 Картка"
         
+        fare_text = f"{order.fare_amount:.0f} грн" if isinstance(order.fare_amount, (int, float)) else "уточнюється"
         text = (
             f"🚗 <b>Замовлення #{order_id}</b>\n\n"
             f"👤 Клієнт: {client.full_name if client else 'Невідомо'}\n"
             f"📱 Телефон: <code>{order.phone}</code>\n\n"
             f"📍 <b>Звідки:</b> {order.pickup_address}\n"
             f"📍 <b>Куди:</b> {order.destination_address}{distance_text}\n\n"
-            f"💰 Вартість: {order.fare_amount:.0f} грн\n"
+            f"💰 Вартість: {fare_text}\n"
             f"💳 Оплата: {payment_text}\n"
         )
         
