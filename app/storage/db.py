@@ -147,7 +147,8 @@ async def init_db(db_path: str) -> None:
                 last_lat REAL,
                 last_lon REAL,
                 last_seen_at TEXT,
-                car_class TEXT NOT NULL DEFAULT 'economy'
+                car_class TEXT NOT NULL DEFAULT 'economy',
+                card_number TEXT
             )
             """
         )
@@ -444,7 +445,7 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
                        license_photo_file_id, city, status, created_at, updated_at, online,
-                       last_lat, last_lon, last_seen_at
+                       last_lat, last_lon, last_seen_at, car_class, card_number
                 FROM drivers
                 WHERE online = 1 AND status = 'approved' AND city = ?
                 ORDER BY last_seen_at DESC
@@ -454,7 +455,7 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
                        license_photo_file_id, city, status, created_at, updated_at, online,
-                       last_lat, last_lon, last_seen_at
+                       last_lat, last_lon, last_seen_at, car_class, card_number
                 FROM drivers
                 WHERE online = 1 AND status = 'approved'
                 ORDER BY last_seen_at DESC
@@ -481,6 +482,8 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
                     last_lat=row[13],
                     last_lon=row[14],
                     last_seen_at=datetime.fromisoformat(row[15]) if row[15] else None,
+                    car_class=row[16] if row[16] else "economy",
+                    card_number=row[17],
                 )
                 for row in rows
             ]
@@ -660,6 +663,7 @@ class Driver:
     last_lon: Optional[float] = None
     last_seen_at: Optional[datetime] = None
     car_class: str = "economy"  # economy | standard | comfort | business
+    card_number: Optional[str] = None  # Номер картки для оплати
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
