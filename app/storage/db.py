@@ -379,7 +379,7 @@ async def init_db(db_path: str) -> None:
             col_names = [c[1] for c in cols]
         if 'commission_percent' not in col_names:
             await db.execute("ALTER TABLE tariffs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0.02")
-            await _commit(db)
+            await db.commit()
 
 
 async def insert_order(db_path: str, order: Order) -> int:
