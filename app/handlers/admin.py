@@ -229,7 +229,7 @@ def create_router(config: AppConfig) -> Router:
         
         await state.update_data(base_fare=base_fare)
         await state.set_state(TariffStates.per_km)
-        await message.answer("Введіть ціну за кілометр (грн):", reply_markup=cancel_keyboard())
+        await message.answer("Введіть ціну за кілометр (грн), потім здасте комісію (%):", reply_markup=cancel_keyboard())
 
     @router.message(TariffStates.per_km)
     async def set_per_km(message: Message, state: FSMContext) -> None:
