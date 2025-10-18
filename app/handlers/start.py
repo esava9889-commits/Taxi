@@ -670,17 +670,17 @@ def create_router(config: AppConfig) -> Router:
         # Перевірка чи це адмін
         is_admin = call.from_user.id in config.bot.admin_ids
         
-        # Спробувати редагувати попереднє повідомлення
+        # Видалити попереднє повідомлення "Вашу заявку схвалено" або "Панель водія активована"
         try:
-            await call.message.edit_text(text)
+            await call.message.delete()
         except:
             pass
         
-        # Відправити клавіатуру
+        # Відправити панель водія з клавіатурою
         await call.message.answer(
-            "✅ <b>Панель водія готова!</b>\n\n"
-            "Використовуйте меню внизу для керування.",
-            reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
+            text,
+            reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin),
+            parse_mode="HTML"
         )
 
     # ВИДАЛЕНО ОБРОБНИК "🚗 Панель водія" - він тепер тільки в driver_panel.py!

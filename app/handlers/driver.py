@@ -517,21 +517,63 @@ def create_router(config: AppConfig) -> Router:
             return
         
         await call.answer()
-        await call.message.delete()
         
-        # Показати актуальний статус
-        from aiogram import types
-        await show_driver_application_status(
-            types.Message(
-                message_id=call.message.message_id,
-                date=call.message.date,
-                chat=call.message.chat,
-                from_user=call.from_user,
-                bot=call.bot
-            ),
-            driver,
-            config
+        # Показати актуальний статус без видалення попереднього повідомлення
+        if driver.status == "pending":
+            status_text = "⏳ <b>На розгляді</b>"
+            status_emoji = "⏳"
+            description = (
+                "Ваша заявка зараз розглядається адміністратором.\n\n"
+                "Зазвичай це займає до 3 годин.\n"
+                "Ми повідомимо вас, коли заявку схвалять."
+            )
+        elif driver.status == "approved":
+            status_text = "✅ <b>Схвалено</b>"
+            status_emoji = "✅"
+            description = (
+                "Вашу заявку схвалено!\n\n"
+                "Ви можете приступати до роботи."
+            )
+        elif driver.status == "rejected":
+            status_text = "❌ <b>Відхилено</b>"
+            status_emoji = "❌"
+            description = (
+                "На жаль, вашу заявку було відхилено.\n\n"
+                "Зв'яжіться з підтримкою для деталей."
+            )
+        else:
+            status_text = "❓ <b>Невідомий статус</b>"
+            status_emoji = "❓"
+            description = "Статус заявки невідомий."
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🔄 Оновити статус", 
+                    callback_data="driver_status:check"
+                )]
+            ]
         )
+        
+        try:
+            await call.message.edit_text(
+                f"{status_emoji} <b>Статус заявки</b>\n\n"
+                f"📋 Номер заявки: #{driver.id}\n"
+                f"📊 Статус: {status_text}\n\n"
+                f"{description}",
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
+        except:
+            # Якщо не вдалося відредагувати, відправимо нове
+            await call.message.answer(
+                f"{status_emoji} <b>Статус заявки</b>\n\n"
+                f"📋 Номер заявки: #{driver.id}\n"
+                f"📊 Статус: {status_text}\n\n"
+                f"{description}",
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
 
     @router.message(F.text == CANCEL_TEXT)
     async def cancel(message: Message, state: FSMContext) -> None:
@@ -753,13 +795,14 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        await message.answer(
+        msg = await message.answer(
             f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
             "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
             "Введіть номерний знак авто:\n\n"
             "Приклад: АА1234ВВ, КА5678ІН",
             reply_markup=kb
         )
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.message(DriverRegStates.car_plate)
     async def take_car_plate(message: Message, state: FSMContext) -> None:
