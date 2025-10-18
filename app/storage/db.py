@@ -643,6 +643,58 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
     return orders
 
 
+async def get_pending_orders(db_path: str, city: Optional[str] = None) -> List[Order]:
+    """
+    Отримати всі очікуючі замовлення (pending)
+    """
+    async with aiosqlite.connect(db_path) as db:
+        query = """
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   pickup_lat, pickup_lon, dest_lat, dest_lon,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id,
+                   car_class, tip_amount, payment_method
+            FROM orders
+            WHERE status = 'pending'
+            ORDER BY created_at DESC
+        """
+        
+        async with db.execute(query) as cur:
+            rows = await cur.fetchall()
+
+    orders = []
+    for row in rows:
+        orders.append(
+            Order(
+                    id=row[0],
+                    user_id=row[1],
+                    name=row[2],
+                    phone=row[3],
+                    pickup_address=row[4],
+                    destination_address=row[5],
+                    comment=row[6],
+                    created_at=datetime.fromisoformat(row[7]),
+                    pickup_lat=row[8],
+                    pickup_lon=row[9],
+                    dest_lat=row[10],
+                    dest_lon=row[11],
+                    driver_id=row[12],
+                    distance_m=row[13],
+                    duration_s=row[14],
+                    fare_amount=row[15],
+                    commission=row[16],
+                    status=row[17],
+                    started_at=(datetime.fromisoformat(row[18]) if row[18] else None),
+                    finished_at=(datetime.fromisoformat(row[19]) if row[19] else None),
+                    group_message_id=row[20],
+                    car_class=row[21] if row[21] else "economy",
+                    tip_amount=row[22] if row[22] is not None else 0.0,
+                    payment_method=row[23] if row[23] else "cash",
+                    city=None,
+            )
+        )
+    return orders
+
+
 # --- Users ---
 
 @dataclass

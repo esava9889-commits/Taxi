@@ -257,18 +257,93 @@ def create_router(config: AppConfig) -> Router:
 
     @router.message(F.location)
     async def update_loc(message: Message) -> None:
-        """Оновити локацію"""
+        """Оновити локацію з детальною інформацією та автоматичним онлайн"""
         if not message.from_user or not message.location:
             return
         
+        # Перевірити чи це водій
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver or driver.status != "approved":
+            return
+        
+        lat = message.location.latitude
+        lon = message.location.longitude
+        
+        # 1. Оновити локацію
         await update_driver_location(
             config.database_path,
             message.from_user.id,
-            message.location.latitude,
-            message.location.longitude
+            lat,
+            lon
         )
         
-        await message.answer("✅ Локацію оновлено!")
+        # 2. Автоматично поставити онлайн (якщо був офлайн)
+        was_offline = not driver.online
+        if was_offline:
+            await set_driver_online_status(config.database_path, driver.id, True)
+        
+        # 3. Знайти активні замовлення поруч (в радіусі 10 км)
+        from app.storage.db import get_pending_orders
+        all_orders = await get_pending_orders(config.database_path)
+        
+        nearby_orders = 0
+        for order in all_orders:
+            if order.status != "pending":  # Тільки очікуючі замовлення
+                continue
+            if not order.pickup_lat or not order.pickup_lon:
+                continue
+            if order.city and driver.city and order.city != driver.city:
+                continue
+                
+            # Розрахувати відстань до замовлення
+            from app.utils.matching import calculate_distance
+            distance_m = calculate_distance(lat, lon, order.pickup_lat, order.pickup_lon)
+            distance_km = distance_m / 1000.0
+            
+            if distance_km <= 10:  # В радіусі 10 км
+                nearby_orders += 1
+        
+        # 4. Отримати адресу (якщо є Google Maps API)
+        address = None
+        if config.google_maps_api_key:
+            try:
+                from app.utils.maps import reverse_geocode
+                address = await reverse_geocode(config.google_maps_api_key, lat, lon)
+            except:
+                pass
+        
+        # 5. Сформувати відповідь
+        response = "✅ <b>Локацію успішно оновлено!</b>\n\n"
+        
+        # Показати позицію
+        if address:
+            response += f"📍 <b>Ваша позиція:</b>\n{address}\n\n"
+        else:
+            response += f"📍 <b>Координати:</b>\n{lat:.6f}, {lon:.6f}\n\n"
+        
+        # Статус
+        if was_offline:
+            response += "🟢 <b>Ви автоматично в онлайн!</b>\n\n"
+        else:
+            response += "🟢 <b>Статус:</b> Онлайн\n\n"
+        
+        # Замовлення поруч
+        if nearby_orders > 0:
+            response += f"🎯 <b>Замовлень поруч (10 км):</b> {nearby_orders}\n\n"
+        else:
+            response += "🔍 <b>Замовлень поруч:</b> Поки немає\n\n"
+        
+        # Переваги
+        response += (
+            "💡 <b>Ваші переваги:</b>\n"
+            "✅ Вищий пріоритет при розподілі замовлень\n"
+            "✅ Клієнти бачать вас на карті\n"
+            "✅ Точний розрахунок ETA для клієнтів\n"
+            "✅ Отримуєте найближчі замовлення\n\n"
+            "💡 <i>Оновлюйте локацію кожні 5-10 хвилин для кращих результатів</i>"
+        )
+        
+        await message.answer(response)
 
     @router.message(F.text == "📊 Мій заробіток")
     async def earnings(message: Message) -> None:
