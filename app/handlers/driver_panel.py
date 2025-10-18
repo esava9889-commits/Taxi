@@ -176,10 +176,36 @@ def create_router(config: AppConfig) -> Router:
         
         online = await get_online_drivers_count(config.database_path, driver.city)
         
+        # Push-повідомлення при зміні статусу
         if new:
             await call.answer(f"✅ Ви онлайн! Водіїв: {online}", show_alert=True)
+            # Відправити push-повідомлення про статус онлайн
+            try:
+                await call.bot.send_message(
+                    call.from_user.id,
+                    f"🟢 <b>Статус: ОНЛАЙН</b>\n\n"
+                    f"Ви тепер онлайн і готові приймати замовлення!\n\n"
+                    f"👥 Онлайн водіїв у {driver.city}: {online}\n\n"
+                    f"📢 Замовлення надходять у групу водіїв.\n"
+                    f"Прийміть замовлення першим!",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send online status push: {e}")
         else:
             await call.answer("🔴 Ви офлайн", show_alert=True)
+            # Відправити push-повідомлення про статус офлайн
+            try:
+                await call.bot.send_message(
+                    call.from_user.id,
+                    f"🔴 <b>Статус: ОФЛАЙН</b>\n\n"
+                    f"Ви пішли в офлайн.\n\n"
+                    f"Ви не будете отримувати нові замовлення.\n\n"
+                    f"💡 Щоб почати працювати знову, увімкніть статус онлайн.",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send offline status push: {e}")
         
         # Оновити
         driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
