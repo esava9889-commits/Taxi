@@ -366,12 +366,18 @@ async def init_db(db_path: str) -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_unpaid ON payments(driver_id, commission_paid)")
         
-        # Ensure newly added columns exist on older databases
-        await _ensure_columns(db)
         await db.commit()
+        logger.info("✅ Всі таблиці SQLite створено!")
+    
+    except Exception as e:
+        logger.error(f"❌ ПОМИЛКА при створенні таблиць: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
     
     # Виконати міграції ПІСЛЯ створення всіх таблиць
-    await ensure_driver_columns(db_path)
+    try:
+        await ensure_driver_columns(db_path)
         # Міграція: додати commission_percent у tariffs якщо відсутнє
         async with aiosqlite.connect(db_path) as db:
             async with db.execute("PRAGMA table_info(tariffs)") as cur:
