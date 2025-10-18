@@ -63,6 +63,7 @@ async def start_scheduler(bot: Bot, db_path: str, payment_card: str = "4149 4999
     # Start commission reminder task
     asyncio.create_task(commission_reminder_task(bot, db_path, payment_card))
     
-    # Start location tracking task (перевірка геолокації кожні 5 хв)
-    from app.utils.location_tracker import location_reminder_task
-    asyncio.create_task(location_reminder_task(bot, db_path))
+    # ❌ ВИМКНЕНО: Location tracking task (перевірка геолокації кожні 5 хв)
+    # Водій ділиться геолокацією ТІЛЬКИ під час виконання замовлення
+    # from app.utils.location_tracker import location_reminder_task
+    # asyncio.create_task(location_reminder_task(bot, db_path))
