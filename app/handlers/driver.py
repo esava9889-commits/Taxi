@@ -960,11 +960,12 @@ def create_router(config: AppConfig) -> Router:
                     
                     welcome_text += "Натисніть кнопку нижче або напишіть боту /start"
                     
-                    # Відправити повідомлення з inline кнопкою
+                    # Відправити повідомлення з inline кнопкою (parse_mode=HTML)
                     await call.message.bot.send_message(
                         drv.tg_user_id,
                         welcome_text,
-                        reply_markup=kb
+                        reply_markup=kb,
+                        parse_mode="HTML"
                     )
                     
                     # Відправити панель водія з ReplyKeyboardMarkup
@@ -977,7 +978,8 @@ def create_router(config: AppConfig) -> Router:
                         "• Переглядати свій заробіток\n"
                         "• Відстежувати статистику\n\n"
                         "Оберіть дію з меню нижче:",
-                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin)
+                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin),
+                        parse_mode="HTML"
                     )
                     
                     logger.info(f"✅ Driver {driver_id} approved, notification sent to {drv.tg_user_id}")
