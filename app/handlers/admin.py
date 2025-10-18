@@ -385,7 +385,7 @@ def create_router(config: AppConfig) -> Router:
         
         if rejected_drivers:
             await message.answer(
-                f"❌ <b>Відхилені ({len(rejected_drivers)})</b>",
+                f"❌ <b>Заблоковані ({len(rejected_drivers)})</b>",
                 parse_mode="HTML"
             )
             for d in rejected_drivers:
@@ -394,13 +394,19 @@ def create_router(config: AppConfig) -> Router:
                 
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="✅ Розблокувати", callback_data=f"admin_driver:unblock:{driver_id}"),
+                            InlineKeyboardButton(text="💬 Написати", url=f"tg://user?id={tg_user_id}")
+                        ],
                         [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"admin_driver:delete:{driver_id}")]
                     ]
                 )
                 
                 text = (
-                    f"👤 <b>{full_name}</b>\n"
+                    f"👤 <b>{full_name}</b> 🚫\n"
                     f"📱 {phone}\n"
+                    f"🏙️ {city or 'Не вказано'}\n"
+                    f"🚗 {car_make} {car_model} ({car_plate})\n"
                     f"🆔 ID: {driver_id}"
                 )
                 
@@ -660,22 +666,60 @@ def create_router(config: AppConfig) -> Router:
                 await update_driver_status(config.database_path, driver_id, "approved")
                 await call.answer("✅ Водія розблоковано", show_alert=True)
                 
-                # Повідомити водія
+                # Повідомити водія з inline кнопкою
                 try:
+                    from app.handlers.keyboards import main_menu_keyboard
+                    
+                    kb_driver = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🚗 Відкрити панель водія", callback_data="open_driver_panel")]
+                        ]
+                    )
+                    
                     await call.bot.send_message(
                         driver.tg_user_id,
-                        "✅ <b>Ваш акаунт розблоковано</b>\n\n"
-                        "Адміністратор відновив ваш доступ до системи.\n"
-                        "Ви можете продовжити роботу.",
+                        "✅ <b>Ваш акаунт розблоковано!</b>\n\n"
+                        "Адміністратор відновив ваш доступ до системи.\n\n"
+                        "🎉 Ви знову можете:\n"
+                        "• Приймати замовлення з групи водіїв\n"
+                        "• Відстежувати свій заробіток\n"
+                        "• Переглядати історію поїздок\n\n"
+                        "Натисніть кнопку нижче для відкриття панелі водія:",
+                        reply_markup=kb_driver,
+                        parse_mode="HTML"
+                    )
+                    
+                    # Відправити панель водія
+                    is_driver_admin = driver.tg_user_id in config.bot.admin_ids
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        "🚗 <b>Панель водія активна!</b>\n\n"
+                        "Використовуйте меню внизу:",
+                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin),
                         parse_mode="HTML"
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify driver about unblock: {e}")
                 
+                # Оновити повідомлення адміна з новими кнопками
+                kb_admin = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="🚫 Заблокувати знову", callback_data=f"admin_driver:block:{driver_id}"),
+                            InlineKeyboardButton(text="💬 Написати", url=f"tg://user?id={driver.tg_user_id}")
+                        ],
+                        [InlineKeyboardButton(text="📊 Статистика", callback_data=f"admin_driver:stats:{driver_id}")]
+                    ]
+                )
+                
                 await call.message.edit_text(
-                    f"✅ <b>Водій розблокований</b>\n\n"
+                    f"✅ <b>Водій розблокований!</b>\n\n"
                     f"👤 {driver.full_name}\n"
-                    f"📱 {driver.phone}",
+                    f"📱 {driver.phone}\n"
+                    f"🚗 {driver.car_make} {driver.car_model}\n\n"
+                    f"Статус змінено на: <b>approved</b>\n"
+                    f"Водій отримав повідомлення і може працювати.",
+                    reply_markup=kb_admin,
                     parse_mode="HTML"
                 )
                 
