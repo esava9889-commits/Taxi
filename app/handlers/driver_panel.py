@@ -110,11 +110,10 @@ def create_router(config: AppConfig) -> Router:
             "👇 Натисніть '🚀 Почати роботу' для керування"
         )
         
-        # КЛАВІАТУРА з кнопкою
+        # КЛАВІАТУРА БЕЗ кнопки поділитися локацією (вона тепер в активному замовленні)
         kb = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="🚀 Почати роботу")],
-                [KeyboardButton(text="📍 Поділитися локацією", request_location=True)],
                 [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
                 [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
                 [KeyboardButton(text="📊 Розширена аналітика")],
@@ -256,8 +255,8 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
 
     @router.message(F.location)
-    async def update_loc(message: Message) -> None:
-        """Оновити локацію з детальною інформацією та автоматичним онлайн"""
+    async def share_location_with_client(message: Message) -> None:
+        """Поділитися локацією з клієнтом (для активного замовлення)"""
         if not message.from_user or not message.location:
             return
         
@@ -266,10 +265,28 @@ def create_router(config: AppConfig) -> Router:
         if not driver or driver.status != "approved":
             return
         
+        # Знайти активне замовлення водія
+        from app.storage.db import get_driver_order_history
+        orders = await get_driver_order_history(config.database_path, driver.tg_user_id, limit=5)
+        
+        active_order = None
+        for order in orders:
+            if order.status in ["accepted", "in_progress"] and order.driver_id == driver.id:
+                active_order = order
+                break
+        
+        if not active_order:
+            await message.answer(
+                "❌ <b>Немає активного замовлення</b>\n\n"
+                "Щоб поділитися локацією з клієнтом,\n"
+                "спочатку прийміть замовлення."
+            )
+            return
+        
         lat = message.location.latitude
         lon = message.location.longitude
         
-        # 1. Оновити локацію
+        # Оновити локацію водія в БД
         await update_driver_location(
             config.database_path,
             message.from_user.id,
@@ -277,73 +294,52 @@ def create_router(config: AppConfig) -> Router:
             lon
         )
         
-        # 2. Автоматично поставити онлайн (якщо був офлайн)
-        was_offline = not driver.online
-        if was_offline:
-            await set_driver_online_status(config.database_path, driver.id, True)
-        
-        # 3. Знайти активні замовлення поруч (в радіусі 10 км)
-        from app.storage.db import get_pending_orders
-        all_orders = await get_pending_orders(config.database_path)
-        
-        nearby_orders = 0
-        for order in all_orders:
-            if order.status != "pending":  # Тільки очікуючі замовлення
-                continue
-            if not order.pickup_lat or not order.pickup_lon:
-                continue
-            if order.city and driver.city and order.city != driver.city:
-                continue
-                
-            # Розрахувати відстань до замовлення
-            from app.utils.matching import calculate_distance
-            distance_m = calculate_distance(lat, lon, order.pickup_lat, order.pickup_lon)
-            distance_km = distance_m / 1000.0
+        try:
+            # Надіслати live location клієнту (оновлюється автоматично 15 хвилин)
+            await message.bot.send_location(
+                active_order.user_id,
+                latitude=lat,
+                longitude=lon,
+                live_period=900,  # 15 хвилин
+            )
             
-            if distance_km <= 10:  # В радіусі 10 км
-                nearby_orders += 1
-        
-        # 4. Отримати адресу (якщо є Google Maps API)
-        address = None
-        if config.google_maps_api_key:
-            try:
-                from app.utils.maps import reverse_geocode
-                address = await reverse_geocode(config.google_maps_api_key, lat, lon)
-            except:
-                pass
-        
-        # 5. Сформувати відповідь
-        response = "✅ <b>Локацію успішно оновлено!</b>\n\n"
-        
-        # Показати позицію
-        if address:
-            response += f"📍 <b>Ваша позиція:</b>\n{address}\n\n"
-        else:
-            response += f"📍 <b>Координати:</b>\n{lat:.6f}, {lon:.6f}\n\n"
-        
-        # Статус
-        if was_offline:
-            response += "🟢 <b>Ви автоматично в онлайн!</b>\n\n"
-        else:
-            response += "🟢 <b>Статус:</b> Онлайн\n\n"
-        
-        # Замовлення поруч
-        if nearby_orders > 0:
-            response += f"🎯 <b>Замовлень поруч (10 км):</b> {nearby_orders}\n\n"
-        else:
-            response += "🔍 <b>Замовлень поруч:</b> Поки немає\n\n"
-        
-        # Переваги
-        response += (
-            "💡 <b>Ваші переваги:</b>\n"
-            "✅ Вищий пріоритет при розподілі замовлень\n"
-            "✅ Клієнти бачать вас на карті\n"
-            "✅ Точний розрахунок ETA для клієнтів\n"
-            "✅ Отримуєте найближчі замовлення\n\n"
-            "💡 <i>Оновлюйте локацію кожні 5-10 хвилин для кращих результатів</i>"
-        )
-        
-        await message.answer(response)
+            # Надіслати повідомлення з інформацією
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="🗺️ Відкрити в Google Maps",
+                        url=f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+                    )]
+                ]
+            )
+            
+            await message.bot.send_message(
+                active_order.user_id,
+                f"📍 <b>Водій поділився локацією!</b>\n\n"
+                f"🚗 {driver.full_name}\n"
+                f"🚙 {driver.car_make} {driver.car_model}\n"
+                f"📱 <code>{driver.phone}</code>\n\n"
+                f"Ви можете відстежувати його переміщення\n"
+                f"протягом наступних 15 хвилин.",
+                reply_markup=kb
+            )
+            
+            await message.answer(
+                f"✅ <b>Локацію надіслано клієнту!</b>\n\n"
+                f"👤 Клієнт: {active_order.name}\n"
+                f"📱 {active_order.phone}\n\n"
+                f"Клієнт тепер бачить вашу локацію в реальному часі.\n"
+                f"⏱️ Live tracking активний: 15 хвилин"
+            )
+            
+            logger.info(f"Driver {driver.tg_user_id} shared location with client for order #{active_order.id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to share location with client: {e}")
+            await message.answer(
+                "❌ Не вдалося надіслати локацію клієнту.\n"
+                "Спробуйте ще раз."
+            )
 
     @router.message(F.text == "📊 Мій заробіток")
     async def earnings(message: Message) -> None:
@@ -438,25 +434,56 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("✅ Прийнято!", show_alert=True)
             
             # Повідомити клієнта що замовлення прийнято
+            # Автоматично надіслати live location якщо є координати
+            if driver.last_lat and driver.last_lon:
+                try:
+                    # Надіслати live location клієнту
+                    await call.bot.send_location(
+                        order.user_id,
+                        latitude=driver.last_lat,
+                        longitude=driver.last_lon,
+                        live_period=900,  # 15 хвилин
+                    )
+                    logger.info(f"📍 Auto-sent live location to client for order #{order_id}")
+                except Exception as e:
+                    logger.error(f"Failed to send live location: {e}")
+            
             # Якщо оплата карткою - показати картку водія
             if order.payment_method == "card" and driver.card_number:
                 kb_client = InlineKeyboardMarkup(
                     inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="🗺️ Відкрити в Google Maps",
+                            url=f"https://www.google.com/maps/dir/?api=1&destination={driver.last_lat},{driver.last_lon}"
+                        )] if driver.last_lat and driver.last_lon else [],
                         [InlineKeyboardButton(text="💳 Сплатити поїздку", callback_data=f"pay:{order_id}")]
                     ]
                 )
+                location_text = "\n📍 <b>Локація водія надіслана вище</b>\n" if driver.last_lat and driver.last_lon else ""
                 await call.bot.send_message(
                     order.user_id,
                     f"✅ <b>Водій прийняв замовлення!</b>\n\n"
                     f"🚗 {driver.full_name}\n"
                     f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                     f"📱 <code>{driver.phone}</code>\n\n"
+                    f"{location_text}\n"
                     f"💳 <b>Картка для оплати:</b>\n"
                     f"<code>{driver.card_number}</code>\n\n"
                     f"💰 До сплати: {int(order.fare_amount):.0f} грн" if order.fare_amount is not None else "💰 Вартість: уточнюється",
                     reply_markup=kb_client
                 )
             else:
+                kb_client = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="🗺️ Відкрити в Google Maps",
+                            url=f"https://www.google.com/maps/dir/?api=1&destination={driver.last_lat},{driver.last_lon}"
+                        )]
+                    ]
+                ) if driver.last_lat and driver.last_lon else None
+                
+                location_text = "\n📍 <b>Локація водія надіслана вище</b>\n" if driver.last_lat and driver.last_lon else ""
+                
                 await call.bot.send_message(
                     order.user_id,
                     (
@@ -464,9 +491,11 @@ def create_router(config: AppConfig) -> Router:
                         f"🚗 {driver.full_name}\n"
                         f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                         f"📱 <code>{driver.phone}</code>\n\n"
+                        f"{location_text}\n"
                         f"💵 Оплата готівкою\n\n"
                         f"🚗 Водій уже в дорозі. Очікуйте!"
-                    )
+                    ),
+                    reply_markup=kb_client
                 )
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
@@ -500,6 +529,24 @@ def create_router(config: AppConfig) -> Router:
                 f"ℹ️ <i>Повний номер телефону доступний тільки вам</i>\n\n"
                 f"Натисніть кнопку нижче для керування замовленням",
                 reply_markup=kb_driver
+            )
+            
+            # Надіслати окрему клавіатуру з кнопкою поділитися локацією
+            location_kb = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="📍 Поділитися локацією з клієнтом", request_location=True)],
+                    [KeyboardButton(text="🚗 Панель водія")]
+                ],
+                resize_keyboard=True
+            )
+            
+            await call.bot.send_message(
+                driver.tg_user_id,
+                "📍 <b>Поділіться локацією з клієнтом</b>\n\n"
+                "Натисніть кнопку нижче щоб клієнт міг\n"
+                "відстежувати ваше переміщення в реальному часі.\n\n"
+                "⏱️ Live tracking буде активний 15 хвилин.",
+                reply_markup=location_kb
             )
             
             # Видалити повідомлення в групі (якщо це група)
@@ -816,7 +863,8 @@ def create_router(config: AppConfig) -> Router:
         kb = None
         
         if order.status == "accepted":
-            text += "✅ Прийнято"
+            text += "✅ Прийнято\n\n"
+            text += "💡 <i>Клієнт вже бачить вашу локацію (якщо ви її надсилали)</i>"
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="📍 Я на місці", callback_data=f"arrived:{order_id}")],
@@ -824,8 +872,10 @@ def create_router(config: AppConfig) -> Router:
                     [InlineKeyboardButton(text="🔄 Оновити", callback_data=f"manage:{order_id}")]
                 ]
             )
+            
         elif order.status == "in_progress":
-            text += "🚗 В дорозі"
+            text += "🚗 В дорозі\n\n"
+            text += "💡 <i>Оновіть локацію щоб клієнт бачив де ви</i>"
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="✅ Завершити поїздку", callback_data=f"complete:{order_id}")],
