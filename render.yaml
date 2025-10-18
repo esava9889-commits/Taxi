@@ -34,8 +34,14 @@ services:
         value: "6828579427"
       
       # Шлях до бази даних (відносно /opt/render/project/src)
+      # Використовується тільки якщо DATABASE_URL не встановлено
       - key: DB_PATH
         value: data/taxi.sqlite3
+      
+      # PostgreSQL Database URL (додай вручну після створення БД на Render)
+      # Приклад: postgresql://user:password@hostname/database
+      - key: DATABASE_URL
+        sync: false  # Вводиться вручну в Render Dashboard після створення PostgreSQL
       
       # ОПЦІОНАЛЬНО: Google Maps API Key
       - key: GOOGLE_MAPS_API_KEY

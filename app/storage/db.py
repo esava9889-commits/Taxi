@@ -3,8 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
+import os
+import logging
 
 import aiosqlite
+
+# Додаємо підтримку PostgreSQL
+try:
+    import asyncpg
+    HAS_ASYNCPG = True
+except ImportError:
+    HAS_ASYNCPG = False
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -92,6 +103,26 @@ async def ensure_driver_columns(db_path: str) -> None:
 
 
 async def init_db(db_path: str) -> None:
+    """Ініціалізація бази даних (SQLite або PostgreSQL)"""
+    
+    # Перевірити чи це PostgreSQL
+    database_url = os.getenv("DATABASE_URL")
+    
+    if database_url and database_url.startswith("postgres"):
+        # PostgreSQL на Render
+        logger.info("🐘 Ініціалізація PostgreSQL...")
+        
+        # Конвертувати postgres:// на postgresql://
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        
+        from app.storage.init_postgres import init_postgres_db
+        await init_postgres_db(database_url)
+        logger.info("✅ PostgreSQL готова!")
+        return
+    
+    # SQLite для локальної розробки
+    logger.info(f"📁 Ініціалізація SQLite: {db_path}")
     async with aiosqlite.connect(db_path) as db:
         # Збережені адреси
         await db.execute(
