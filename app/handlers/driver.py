@@ -203,20 +203,35 @@ def create_router(config: AppConfig) -> Router:
         await call.message.delete()
         
         await state.set_state(DriverRegStates.name)
-        await call.message.answer(
-            "🚗 <b>Реєстрація водія</b>\n\n"
-            "📝 Крок 1/7: Введіть ваше ПІБ:",
-            reply_markup=cancel_keyboard()
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
         )
+        
+        msg = await call.message.answer(
+            "🚗 <b>Реєстрація водія</b>\n\n"
+            "📝 <b>Крок 1/8: Введіть ваше ПІБ</b>\n\n"
+            "Приклад: Іванов Іван Іванович",
+            reply_markup=kb
+        )
+        await state.update_data(reg_message_id=msg.message_id)
     
     @router.callback_query(F.data == "driver_reg:cancel")
-    async def driver_reg_cancel_callback(call: CallbackQuery) -> None:
+    @router.callback_query(F.data == "driver_reg:cancel_start")
+    async def driver_reg_cancel_callback(call: CallbackQuery, state: FSMContext) -> None:
         """Скасування реєстрації водія"""
         if not call.from_user:
             return
         
         await call.answer("❌ Реєстрацію скасовано")
-        await call.message.delete()
+        await state.clear()
+        
+        try:
+            await call.message.delete()
+        except:
+            pass
         
         from app.handlers.keyboards import main_menu_keyboard
         is_admin = call.from_user.id in config.bot.admin_ids
@@ -226,6 +241,188 @@ def create_router(config: AppConfig) -> Router:
             "Ви залишаєтесь клієнтом.",
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=False, is_admin=is_admin)
         )
+    
+    # Обробники кнопок "Назад" для реєстрації водія
+    @router.callback_query(F.data == "driver:back_to_name")
+    async def back_to_name(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до введення ПІБ"""
+        await call.answer()
+        await state.set_state(DriverRegStates.name)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                "🚗 <b>Реєстрація водія</b>\n\n"
+                "📝 <b>Крок 1/8: Введіть ваше ПІБ</b>\n\n"
+                "Приклад: Іванов Іван Іванович",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                "🚗 <b>Реєстрація водія</b>\n\n"
+                "📝 <b>Крок 1/8: Введіть ваше ПІБ</b>\n\n"
+                "Приклад: Іванов Іван Іванович",
+                reply_markup=kb
+            )
+    
+    @router.callback_query(F.data == "driver:back_to_phone")
+    async def back_to_phone(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до введення телефону"""
+        await call.answer()
+        await state.set_state(DriverRegStates.phone)
+        
+        data = await state.get_data()
+        full_name = data.get("full_name", "")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до ПІБ", callback_data="driver:back_to_name")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>ПІБ:</b> {full_name}\n\n"
+                "📱 <b>Крок 2/8: Номер телефону</b>\n\n"
+                "Введіть ваш номер телефону:\n\n"
+                "Приклад: +380 67 123 45 67",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>ПІБ:</b> {full_name}\n\n"
+                "📱 <b>Крок 2/8: Номер телефону</b>\n\n"
+                "Введіть ваш номер телефону:\n\n"
+                "Приклад: +380 67 123 45 67",
+                reply_markup=kb
+            )
+    
+    @router.callback_query(F.data == "driver:back_to_city")
+    async def back_to_city(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до вибору міста"""
+        await call.answer()
+        await state.set_state(DriverRegStates.city)
+        
+        from app.handlers.keyboards import driver_city_selection_keyboard
+        
+        try:
+            await call.message.edit_text(
+                "🏙 <b>Крок 3/8: Місто роботи</b>\n\n"
+                "Оберіть місто, в якому ви будете працювати:",
+                reply_markup=driver_city_selection_keyboard()
+            )
+        except:
+            await call.message.answer(
+                "🏙 <b>Крок 3/8: Місто роботи</b>\n\n"
+                "Оберіть місто, в якому ви будете працювати:",
+                reply_markup=driver_city_selection_keyboard()
+            )
+    
+    @router.callback_query(F.data == "driver:back_to_make")
+    async def back_to_make(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до введення марки"""
+        await call.answer()
+        await state.set_state(DriverRegStates.car_make)
+        
+        data = await state.get_data()
+        city = data.get("city", "")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до міста", callback_data="driver:back_to_city")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Місто:</b> {city}\n\n"
+                "🚗 <b>Крок 4/8: Марка автомобіля</b>\n\n"
+                "Введіть марку вашого авто:\n\n"
+                "Приклад: Toyota, Volkswagen, BMW",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Місто:</b> {city}\n\n"
+                "🚗 <b>Крок 4/8: Марка автомобіля</b>\n\n"
+                "Введіть марку вашого авто:\n\n"
+                "Приклад: Toyota, Volkswagen, BMW",
+                reply_markup=kb
+            )
+    
+    @router.callback_query(F.data == "driver:back_to_model")
+    async def back_to_model(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до введення моделі"""
+        await call.answer()
+        await state.set_state(DriverRegStates.car_model)
+        
+        data = await state.get_data()
+        car_make = data.get("car_make", "")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до марки", callback_data="driver:back_to_make")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Марка:</b> {car_make}\n\n"
+                "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
+                "Введіть модель вашого авто:\n\n"
+                "Приклад: Camry, Passat, X5",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Марка:</b> {car_make}\n\n"
+                "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
+                "Введіть модель вашого авто:\n\n"
+                "Приклад: Camry, Passat, X5",
+                reply_markup=kb
+            )
+    
+    @router.callback_query(F.data == "driver:back_to_plate")
+    async def back_to_plate(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до введення номерного знаку"""
+        await call.answer()
+        await state.set_state(DriverRegStates.car_plate)
+        
+        data = await state.get_data()
+        car_make = data.get("car_make", "")
+        car_model = data.get("car_model", "")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до моделі", callback_data="driver:back_to_model")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
+                "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
+                "Введіть номерний знак авто:\n\n"
+                "Приклад: АА1234ВВ, КА5678ІН",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
+                "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
+                "Введіть номерний знак авто:\n\n"
+                "Приклад: АА1234ВВ, КА5678ІН",
+                reply_markup=kb
+            )
     
     @router.callback_query(F.data.startswith("driver_cancel:"))
     async def cancel_pending_application(call: CallbackQuery) -> None:
@@ -344,21 +541,52 @@ def create_router(config: AppConfig) -> Router:
     async def take_name(message: Message, state: FSMContext) -> None:
         full_name = message.text.strip() if message.text else ""
         if len(full_name) < 3:
-            await message.answer("❌ Введіть коректне ПІБ (мінімум 3 символи).")
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+                ]
+            )
+            await message.answer(
+                "❌ <b>Невірний формат</b>\n\n"
+                "ПІБ має містити мінімум 3 символи.\n\n"
+                "Спробуйте ще раз:",
+                reply_markup=kb
+            )
             return
         await state.update_data(full_name=full_name)
         await state.set_state(DriverRegStates.phone)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до ПІБ", callback_data="driver:back_to_name")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
         await message.answer(
-            "📱 <b>Крок 2/7: Номер телефону</b>\n\n"
-            "Вкажіть ваш номер телефону:",
-            reply_markup=cancel_keyboard()
+            f"✅ <b>ПІБ:</b> {full_name}\n\n"
+            "📱 <b>Крок 2/8: Номер телефону</b>\n\n"
+            "Введіть ваш номер телефону:\n\n"
+            "Приклад: +380 67 123 45 67",
+            reply_markup=kb
         )
 
     @router.message(DriverRegStates.phone)
     async def take_phone(message: Message, state: FSMContext) -> None:
         phone = message.text.strip() if message.text else ""
         if len(phone) < 7:
-            await message.answer("❌ Введіть коректний номер телефону.")
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад до ПІБ", callback_data="driver:back_to_name")],
+                    [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+                ]
+            )
+            await message.answer(
+                "❌ <b>Невірний формат</b>\n\n"
+                "Номер телефону має містити мінімум 7 символів.\n\n"
+                "Спробуйте ще раз:",
+                reply_markup=kb
+            )
             return
         await state.update_data(phone=phone)
         
@@ -366,7 +594,8 @@ def create_router(config: AppConfig) -> Router:
         from app.handlers.keyboards import driver_city_selection_keyboard
         await state.set_state(DriverRegStates.city)
         await message.answer(
-            "🏙 <b>Крок 3/7: Місто роботи</b>\n\n"
+            f"✅ <b>Телефон:</b> {phone}\n\n"
+            "🏙 <b>Крок 3/8: Місто роботи</b>\n\n"
             "Оберіть місто, в якому ви будете працювати:",
             reply_markup=driver_city_selection_keyboard()
         )
@@ -375,49 +604,131 @@ def create_router(config: AppConfig) -> Router:
     async def take_city(call: CallbackQuery, state: FSMContext) -> None:
         city = call.data.split(":", 1)[1]
         await state.update_data(city=city)
-        await call.answer(f"Обрано: {city}")
+        await call.answer(f"✅ {city}")
         
         await state.set_state(DriverRegStates.car_make)
-        await call.message.answer(
-            f"✅ Місто: {city}\n\n"
-            "🚗 <b>Крок 4/7: Марка автомобіля</b>\n\n"
-            "Введіть марку вашого авто (наприклад: Toyota, Volkswagen):",
-            reply_markup=cancel_keyboard()
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до телефону", callback_data="driver:back_to_phone")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
         )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Місто:</b> {city}\n\n"
+                "🚗 <b>Крок 4/8: Марка автомобіля</b>\n\n"
+                "Введіть марку вашого авто:\n\n"
+                "Приклад: Toyota, Volkswagen, BMW",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Місто:</b> {city}\n\n"
+                "🚗 <b>Крок 4/8: Марка автомобіля</b>\n\n"
+                "Введіть марку вашого авто:\n\n"
+                "Приклад: Toyota, Volkswagen, BMW",
+                reply_markup=kb
+            )
 
     @router.message(DriverRegStates.car_make)
     async def take_car_make(message: Message, state: FSMContext) -> None:
         car_make = message.text.strip() if message.text else ""
         if len(car_make) < 2:
-            await message.answer("❌ Введіть коректну марку авто.")
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад до міста", callback_data="driver:back_to_city")],
+                    [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+                ]
+            )
+            await message.answer(
+                "❌ <b>Невірний формат</b>\n\n"
+                "Марка авто має містити мінімум 2 символи.\n\n"
+                "Спробуйте ще раз:",
+                reply_markup=kb
+            )
             return
         await state.update_data(car_make=car_make)
         await state.set_state(DriverRegStates.car_model)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до міста", callback_data="driver:back_to_city")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
         await message.answer(
-            "🚙 <b>Крок 5/7: Модель автомобіля</b>\n\n"
-            "Введіть модель вашого авто (наприклад: Camry, Passat):",
-            reply_markup=cancel_keyboard()
+            f"✅ <b>Марка:</b> {car_make}\n\n"
+            "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
+            "Введіть модель вашого авто:\n\n"
+            "Приклад: Camry, Passat, X5",
+            reply_markup=kb
         )
 
     @router.message(DriverRegStates.car_model)
     async def take_car_model(message: Message, state: FSMContext) -> None:
         car_model = message.text.strip() if message.text else ""
         if len(car_model) < 2:
-            await message.answer("❌ Введіть коректну модель авто.")
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад до марки", callback_data="driver:back_to_make")],
+                    [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+                ]
+            )
+            await message.answer(
+                "❌ <b>Невірний формат</b>\n\n"
+                "Модель авто має містити мінімум 2 символи.\n\n"
+                "Спробуйте ще раз:",
+                reply_markup=kb
+            )
             return
         await state.update_data(car_model=car_model)
         await state.set_state(DriverRegStates.car_plate)
+        
+        data = await state.get_data()
+        car_make = data.get("car_make", "")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад до марки", callback_data="driver:back_to_make")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
+        )
+        
         await message.answer(
-            "🔢 <b>Крок 6/7: Номерний знак</b>\n\n"
-            "Введіть номерний знак авто (наприклад: АА1234ВВ):",
-            reply_markup=cancel_keyboard()
+            f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
+            "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
+            "Введіть номерний знак авто:\n\n"
+            "Приклад: АА1234ВВ, КА5678ІН",
+            reply_markup=kb
         )
 
     @router.message(DriverRegStates.car_plate)
     async def take_car_plate(message: Message, state: FSMContext) -> None:
         car_plate = message.text.strip().upper()
+        if len(car_plate) < 4:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад до моделі", callback_data="driver:back_to_model")],
+                    [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+                ]
+            )
+            await message.answer(
+                "❌ <b>Невірний формат</b>\n\n"
+                "Номерний знак має містити мінімум 4 символи.\n\n"
+                "Спробуйте ще раз:",
+                reply_markup=kb
+            )
+            return
+        
         await state.update_data(car_plate=car_plate)
         await state.set_state(DriverRegStates.car_class)
+        
+        data = await state.get_data()
+        car_make = data.get("car_make", "")
+        car_model = data.get("car_model", "")
         
         # Вибір класу авто
         from app.handlers.car_classes import CAR_CLASSES
@@ -433,11 +744,16 @@ def create_router(config: AppConfig) -> Router:
                 )
             ])
         
+        # Додати кнопку "Назад"
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад до моделі", callback_data="driver:back_to_model")])
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")])
+        
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         await message.answer(
+            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n\n"
             "🚗 <b>Крок 7/8: Клас автомобіля</b>\n\n"
-            "Оберіть клас вашого авто:\n"
+            "Оберіть клас вашого авто:\n\n"
             "• 🚗 Економ - базовий тариф\n"
             "• 🚙 Стандарт - +30% до тарифу\n"
             "• 🚘 Комфорт - +60% до тарифу\n"
@@ -455,16 +771,43 @@ def create_router(config: AppConfig) -> Router:
         from app.handlers.car_classes import get_car_class_name
         class_name = get_car_class_name(car_class)
         
-        await call.answer()
-        await call.message.answer(
-            f"✅ Клас авто: {class_name}\n\n"
-            "📸 <b>Крок 8/8: Фото посвідчення</b>\n\n"
-            "Надішліть фото посвідчення водія (можна пропустити командою /skip)",
-            reply_markup=cancel_keyboard()
+        await call.answer(f"✅ {class_name}")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⏩ Пропустити фото", callback_data="driver:skip_photo")],
+                [InlineKeyboardButton(text="⬅️ Назад до номерного знаку", callback_data="driver:back_to_plate")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
+            ]
         )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Клас авто:</b> {class_name}\n\n"
+                "📸 <b>Крок 8/8: Фото посвідчення водія</b>\n\n"
+                "Надішліть фото посвідчення водія або пропустіть цей крок.\n\n"
+                "💡 Фото допоможе адміну швидше розглянути заявку.",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Клас авто:</b> {class_name}\n\n"
+                "📸 <b>Крок 8/8: Фото посвідчення водія</b>\n\n"
+                "Надішліть фото посвідчення водія або пропустіть цей крок.\n\n"
+                "💡 Фото допоможе адміну швидше розглянути заявку.",
+                reply_markup=kb
+            )
 
+    @router.callback_query(F.data == "driver:skip_photo", DriverRegStates.license_photo)
+    async def skip_license_callback(call: CallbackQuery, state: FSMContext) -> None:
+        """Пропустити фото (inline кнопка)"""
+        await call.answer("⏩ Без фото")
+        await state.update_data(license_photo_file_id=None)
+        await finalize_application(call.message, state)
+    
     @router.message(Command("skip"), DriverRegStates.license_photo)
     async def skip_license(message: Message, state: FSMContext) -> None:
+        """Пропустити фото (команда для сумісності)"""
         await state.update_data(license_photo_file_id=None)
         await finalize_application(message, state)
 

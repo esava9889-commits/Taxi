@@ -155,8 +155,9 @@ def create_router(config: AppConfig) -> Router:
                 callback_data=f"select_car_class:{class_key}"
             )])
         
-        # Кнопка "Скасувати"
-        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        # Кнопки навігації
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад до адреси призначення", callback_data="order:back_to_destination")])
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
@@ -288,6 +289,78 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
         await show_car_class_selection_with_prices(call.message, state)
     
+    @router.callback_query(F.data == "order:back_to_destination")
+    async def back_to_destination(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до введення адреси призначення"""
+        await call.answer()
+        await state.set_state(OrderStates.destination)
+        
+        try:
+            await call.message.edit_text(
+                "📍 <b>Куди їдемо?</b>\n\n"
+                "Надішліть адресу призначення текстом\n"
+                "або поділіться геолокацією 📍"
+            )
+        except:
+            await call.message.answer(
+                "📍 <b>Куди їдемо?</b>\n\n"
+                "Надішліть адресу призначення текстом\n"
+                "або поділіться геолокацією 📍"
+            )
+    
+    @router.callback_query(F.data == "order:back_to_car_class")
+    async def back_to_car_class(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору класу авто"""
+        await call.answer()
+        await state.set_state(OrderStates.car_class)
+        await show_car_class_selection_with_prices(call.message, state)
+    
+    @router.callback_query(F.data == "order:back_to_comment")
+    async def back_to_comment(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до введення коментаря"""
+        await call.answer()
+        await state.set_state(OrderStates.comment)
+        
+        data = await state.get_data()
+        car_class = data.get("car_class", "economy")
+        estimated_fare = data.get("estimated_fare", 0)
+        
+        from app.handlers.car_classes import get_car_class_name
+        class_name = get_car_class_name(car_class)
+        
+        comment_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⏩ Без коментаря", callback_data="comment:skip")],
+                [InlineKeyboardButton(text="⬅️ Назад до вибору класу", callback_data="order:back_to_car_class")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Обрано:</b> {class_name}\n"
+                f"💰 <b>Вартість:</b> {estimated_fare:.0f} грн\n\n"
+                "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
+                "Наприклад:\n"
+                "• Під'їзд 3, код домофону 123\n"
+                "• Поверх 5, квартира справа\n"
+                "• Зателефонуйте при приїзді\n\n"
+                "Або натисніть '⏩ Без коментаря'",
+                reply_markup=comment_kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Обрано:</b> {class_name}\n"
+                f"💰 <b>Вартість:</b> {estimated_fare:.0f} грн\n\n"
+                "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
+                "Наприклад:\n"
+                "• Під'їзд 3, код домофону 123\n"
+                "• Поверх 5, квартира справа\n"
+                "• Зателефонуйте при приїзді\n\n"
+                "Або натисніть '⏩ Без коментаря'",
+                reply_markup=comment_kb
+            )
+    
     @router.callback_query(F.data.startswith("select_car_class:"))
     async def select_car_class_handler(call: CallbackQuery, state: FSMContext) -> None:
         """Вибір класу авто після перегляду цін"""
@@ -318,15 +391,40 @@ def create_router(config: AppConfig) -> Router:
 
         # Перейти до коментаря
         await state.set_state(OrderStates.comment)
-        await call.message.answer(
-            f"✅ Обрано: <b>{class_name}</b>\n"
-            f"💰 Вартість: <b>{final_price:.0f} грн</b>\n"
-            f"Причини: \n{explanation if explanation else 'Базовий тариф'}\n\n"
-            "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
-            "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
-            "Або натисніть 'Пропустити'",
-            reply_markup=skip_or_cancel_keyboard()
+        
+        # Inline кнопки для коментаря
+        comment_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⏩ Без коментаря", callback_data="comment:skip")],
+                [InlineKeyboardButton(text="⬅️ Назад до вибору класу", callback_data="order:back_to_car_class")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
+            ]
         )
+        
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Обрано:</b> {class_name}\n"
+                f"💰 <b>Вартість:</b> {final_price:.0f} грн\n\n"
+                "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
+                "Наприклад:\n"
+                "• Під'їзд 3, код домофону 123\n"
+                "• Поверх 5, квартира справа\n"
+                "• Зателефонуйте при приїзді\n\n"
+                "Або натисніть '⏩ Без коментаря'",
+                reply_markup=comment_kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ <b>Обрано:</b> {class_name}\n"
+                f"💰 <b>Вартість:</b> {final_price:.0f} грн\n\n"
+                "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
+                "Наприклад:\n"
+                "• Під'їзд 3, код домофону 123\n"
+                "• Поверх 5, квартира справа\n"
+                "• Зателефонуйте при приїзді\n\n"
+                "Або натисніть '⏩ Без коментаря'",
+                reply_markup=comment_kb
+            )
 
     @router.message(OrderStates.pickup, F.location)
     async def pickup_location(message: Message, state: FSMContext) -> None:
@@ -464,8 +562,10 @@ def create_router(config: AppConfig) -> Router:
         # Показати класи авто з цінами
         await show_car_class_selection_with_prices(message, state)
 
-    @router.message(OrderStates.comment, F.text == SKIP_TEXT)
-    async def skip_comment(message: Message, state: FSMContext) -> None:
+    @router.callback_query(F.data == "comment:skip", OrderStates.comment)
+    async def skip_comment(call: CallbackQuery, state: FSMContext) -> None:
+        """Пропустити коментар (inline кнопка)"""
+        await call.answer("Без коментаря")
         await state.update_data(comment=None)
         
         # Перейти до вибору способу оплати
@@ -474,14 +574,48 @@ def create_router(config: AppConfig) -> Router:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="💵 Готівка", callback_data="payment:cash")],
-                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")]
+                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")],
+                [InlineKeyboardButton(text="⬅️ Назад до коментаря", callback_data="order:back_to_comment")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                "💰 <b>Оберіть спосіб оплати:</b>\n\n"
+                "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
+                "💳 <b>Картка</b> - переказ на картку водія (реквізити одразу після прийняття)",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                "💰 <b>Оберіть спосіб оплати:</b>\n\n"
+                "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
+                "💳 <b>Картка</b> - переказ на картку водія (реквізити одразу після прийняття)",
+                reply_markup=kb
+            )
+    
+    @router.message(OrderStates.comment, F.text == SKIP_TEXT)
+    async def skip_comment_text(message: Message, state: FSMContext) -> None:
+        """Пропустити коментар (старий текстовий метод для сумісності)"""
+        await state.update_data(comment=None)
+        
+        # Перейти до вибору способу оплати
+        await state.set_state(OrderStates.payment_method)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💵 Готівка", callback_data="payment:cash")],
+                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")],
+                [InlineKeyboardButton(text="⬅️ Назад до коментаря", callback_data="order:back_to_comment")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
             ]
         )
         
         await message.answer(
             "💰 <b>Оберіть спосіб оплати:</b>\n\n"
-            "💵 Готівка - розрахунок з водієм\n"
-            "💳 Картка - переказ на картку водія",
+            "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
+            "💳 <b>Картка</b> - переказ на картку водія (реквізити одразу після прийняття)",
             reply_markup=kb
         )
 
@@ -493,12 +627,19 @@ def create_router(config: AppConfig) -> Router:
         if comment:
             is_valid, cleaned_comment = validate_comment(comment, max_length=500)
             if not is_valid:
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="⏩ Без коментаря", callback_data="comment:skip")],
+                        [InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back_to_car_class")]
+                    ]
+                )
                 await message.answer(
                     "❌ <b>Невірний формат коментаря</b>\n\n"
                     "Коментар має містити:\n"
                     "• Максимум 500 символів\n"
                     "• Тільки допустимі символи\n\n"
-                    "Спробуйте ще раз або натисніть 'Пропустити'"
+                    "Спробуйте ще раз або пропустіть",
+                    reply_markup=kb
                 )
                 logger.warning(f"Invalid comment: {comment}")
                 return
@@ -512,14 +653,17 @@ def create_router(config: AppConfig) -> Router:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="💵 Готівка", callback_data="payment:cash")],
-                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")]
+                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")],
+                [InlineKeyboardButton(text="⬅️ Назад до коментаря", callback_data="order:back_to_comment")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
             ]
         )
         
         await message.answer(
+            f"✅ <b>Коментар додано:</b>\n{comment}\n\n"
             "💰 <b>Оберіть спосіб оплати:</b>\n\n"
-            "💵 Готівка - розрахунок з водієм\n"
-            "💳 Картка - переказ на картку водія",
+            "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
+            "💳 <b>Картка</b> - переказ на картку водія",
             reply_markup=kb
         )
 
@@ -529,20 +673,18 @@ def create_router(config: AppConfig) -> Router:
         payment_method = call.data.split(":")[1]  # cash або card
         await state.update_data(payment_method=payment_method)
         
+        payment_text = ""
         if payment_method == "card":
-            await call.answer()
-            await call.message.edit_text(
-                "💳 <b>Оплата карткою</b>\n\n"
-                "✅ Спосіб оплати обрано!\n\n"
-                "📌 Картка водія з'явиться одразу після того,\n"
-                "як він прийме ваше замовлення."
-            )
+            await call.answer("💳 Картка")
+            payment_text = "💳 <b>Оплата карткою</b>\n\n✅ Картка водія з'явиться після прийняття замовлення."
         else:
-            await call.answer()
-            await call.message.edit_text(
-                "💵 <b>Оплата готівкою</b>\n\n"
-                "✅ Розрахунок з водієм після поїздки."
-            )
+            await call.answer("💵 Готівка")
+            payment_text = "💵 <b>Оплата готівкою</b>\n\n✅ Розрахунок з водієм після поїздки."
+        
+        try:
+            await call.message.edit_text(payment_text)
+        except:
+            pass
         
         # Перейти до підтвердження
         await show_confirmation(call.message, state, config)
@@ -620,25 +762,82 @@ def create_router(config: AppConfig) -> Router:
             f"📍 Куди: {data.get('destination')}\n"
             f"💬 Коментар: {data.get('comment') or '—'}\n\n"
             f"{distance_text}"
-            f"💰 Вартість: {data.get('estimated_fare', 0):.0f} грн\n\n"
-            + (f"💳 Оплата: {payment_text}\n\n" if payment_text else "")
-            + "Все вірно?"
+            f"💰 Вартість: {data.get('estimated_fare', 0):.0f} грн\n"
+            + (f"💳 Оплата: {payment_text}\n\n" if payment_text else "\n")
+            + "✅ Все вірно? Підтвердіть замовлення:"
+        )
+        
+        # Inline кнопки для підтвердження
+        confirm_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Підтвердити замовлення", callback_data="order:confirm")],
+                [InlineKeyboardButton(text="⬅️ Назад до способу оплати", callback_data="order:back_to_payment")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
+            ]
         )
         
         await state.set_state(OrderStates.confirm)
-        await message.answer(text, reply_markup=confirm_keyboard())
+        await message.answer(text, reply_markup=confirm_kb)
 
+    @router.callback_query(F.data == "order:back_to_payment")
+    async def back_to_payment(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору способу оплати"""
+        await call.answer()
+        await state.set_state(OrderStates.payment_method)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💵 Готівка", callback_data="payment:cash")],
+                [InlineKeyboardButton(text="💳 Картка", callback_data="payment:card")],
+                [InlineKeyboardButton(text="⬅️ Назад до коментаря", callback_data="order:back_to_comment")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(
+                "💰 <b>Оберіть спосіб оплати:</b>\n\n"
+                "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
+                "💳 <b>Картка</b> - переказ на картку водія",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                "💰 <b>Оберіть спосіб оплати:</b>\n\n"
+                "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
+                "💳 <b>Картка</b> - переказ на картку водія",
+                reply_markup=kb
+            )
+    
+    @router.callback_query(F.data == "order:confirm", OrderStates.confirm)
+    async def confirm_order_callback(call: CallbackQuery, state: FSMContext) -> None:
+        """Підтвердження замовлення (inline кнопка)"""
+        await call.answer("✅ Створюємо замовлення...")
+        
+        # Видалити кнопки підтвердження
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except:
+            pass
+        
+        # Викликати основну логіку
+        await process_order_confirmation(call.message, state, call.from_user.id, config)
+    
     @router.message(OrderStates.confirm, F.text == CONFIRM_TEXT)
-    async def confirm_order(message: Message, state: FSMContext) -> None:
+    async def confirm_order_text(message: Message, state: FSMContext) -> None:
+        """Підтвердження замовлення (текстова кнопка для сумісності)"""
         if not message.from_user:
             return
-        
+        await process_order_confirmation(message, state, message.from_user.id, config)
+    
+    async def process_order_confirmation(message: Message, state: FSMContext, user_id: int, config: AppConfig) -> None:
+        """Основна логіка створення замовлення"""
         data = await state.get_data()
         
         # Створення замовлення з координатами, відстанню, класом авто, ціною та способом оплати
         order = Order(
             id=None,
-            user_id=message.from_user.id,
+            user_id=user_id,
             name=str(data.get("name")),
             phone=str(data.get("phone")),
             pickup_address=str(data.get("pickup")),
