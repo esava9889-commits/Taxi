@@ -1270,12 +1270,3 @@ def create_router(config: AppConfig) -> Router:
                 pass
 
     return router
-.")
-        drv = await get_driver_by_id(config.database_path, driver_id)
-        if drv:
-            try:
-                await message.bot.send_message(drv.tg_user_id, "Вашу заявку водія відхилено. Зв'яжіться з підтримкою.")
-            except Exception:
-                pass
-
-    return router
