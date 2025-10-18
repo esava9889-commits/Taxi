@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from aiogram import F, Router
@@ -15,6 +16,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
+
+logger = logging.getLogger(__name__)
 
 from app.config.config import AppConfig, AVAILABLE_CITIES
 from app.storage.db import (
