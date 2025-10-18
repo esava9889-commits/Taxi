@@ -358,6 +358,21 @@ def create_router(config: AppConfig) -> Router:
                 await update_driver_status(config.database_path, driver_id, "approved")
                 await call.answer("✅ Водія підтверджено!", show_alert=True)
                 
+                # ВАЖЛИВО: Перевірити чи це не бот
+                bot_info = await call.bot.get_me()
+                if driver.tg_user_id == bot_info.id:
+                    logger.warning(f"⚠️ Skipping notification for bot driver {driver_id}")
+                    if call.message:
+                        await call.message.edit_text(
+                            f"⚠️ <b>УВАГА: Заявку #{driver_id} схвалено, але це БОТ!</b>\n\n"
+                            f"tg_user_id = {driver.tg_user_id} (ID самого бота)\n\n"
+                            f"❌ Повідомлення не відправлено.\n"
+                            f"Видаліть цей запис з бази даних:\n"
+                            f"<code>DELETE FROM drivers WHERE id = {driver_id};</code>",
+                            parse_mode="HTML"
+                        )
+                    return
+                
                 # Notify driver
                 try:
                     from app.handlers.keyboards import main_menu_keyboard

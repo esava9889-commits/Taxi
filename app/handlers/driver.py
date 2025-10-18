@@ -143,6 +143,17 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # ВАЖЛИВО: Заборонити ботам реєструватися як водії
+        if message.from_user.is_bot:
+            await message.answer(
+                "❌ <b>Помилка</b>\n\n"
+                "Боти не можуть реєструватися як водії.\n"
+                "Використовуйте особистий акаунт Telegram.",
+                parse_mode="HTML"
+            )
+            logger.warning(f"Bot {message.from_user.id} tried to register as driver")
+            return
+        
         # Check if already a driver
         existing = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if existing:
@@ -929,6 +940,20 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("✅ Водія підтверджено!", show_alert=True)
             drv = await get_driver_by_id(config.database_path, driver_id)
             if drv:
+                # ВАЖЛИВО: Перевірити чи це не бот
+                bot_info = await call.bot.get_me()
+                if drv.tg_user_id == bot_info.id:
+                    logger.warning(f"⚠️ Skipping notification for bot driver {driver_id}")
+                    await call.message.edit_text(
+                        f"⚠️ <b>УВАГА: Заявку #{driver_id} схвалено, але це БОТ!</b>\n\n"
+                        f"tg_user_id = {drv.tg_user_id} (ID самого бота)\n\n"
+                        f"❌ Повідомлення не відправлено.\n"
+                        f"Видаліть цей запис з бази даних:\n"
+                        f"<code>DELETE FROM drivers WHERE id = {driver_id};</code>",
+                        parse_mode="HTML"
+                    )
+                    return
+                
                 try:
                     from app.handlers.keyboards import main_menu_keyboard
                     
@@ -1067,6 +1092,20 @@ def create_router(config: AppConfig) -> Router:
         await message.answer(f"Водія #{driver_id} підтверджено.")
         drv = await get_driver_by_id(config.database_path, driver_id)
         if drv:
+            # ВАЖЛИВО: Перевірити чи це не бот
+            bot_info = await message.bot.get_me()
+            if drv.tg_user_id == bot_info.id:
+                logger.warning(f"⚠️ Skipping notification for bot driver {driver_id}")
+                await message.answer(
+                    f"⚠️ <b>УВАГА: Водія #{driver_id} підтверджено, але це БОТ!</b>\n\n"
+                    f"tg_user_id = {drv.tg_user_id} (ID самого бота)\n\n"
+                    f"❌ Повідомлення не відправлено.\n"
+                    f"Видаліть цей запис з бази даних:\n"
+                    f"<code>DELETE FROM drivers WHERE id = {driver_id};</code>",
+                    parse_mode="HTML"
+                )
+                return
+            
             try:
                 # Формуємо текст повідомлення з посиланням на групу
                 welcome_text = (
