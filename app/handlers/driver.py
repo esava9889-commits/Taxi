@@ -815,23 +815,38 @@ def create_router(config: AppConfig) -> Router:
     @router.callback_query(F.data == "driver:skip_photo", DriverRegStates.license_photo)
     async def skip_license_callback(call: CallbackQuery, state: FSMContext) -> None:
         """Пропустити фото (inline кнопка)"""
+        if not call.from_user:
+            return
         await call.answer("⏩ Без фото")
         await state.update_data(license_photo_file_id=None)
-        await finalize_application(call.message, state)
+        # ВАЖЛИВО: Передати ID користувача, який натиснув кнопку (call.from_user.id)
+        await finalize_application(call.message, state, call.from_user.id)
     
     @router.message(Command("skip"), DriverRegStates.license_photo)
     async def skip_license(message: Message, state: FSMContext) -> None:
         """Пропустити фото (команда для сумісності)"""
+        if not message.from_user:
+            return
         await state.update_data(license_photo_file_id=None)
-        await finalize_application(message, state)
+        await finalize_application(message, state, message.from_user.id)
 
     @router.message(DriverRegStates.license_photo, F.photo)
     async def take_license_photo(message: Message, state: FSMContext) -> None:
+        if not message.from_user:
+            return
         file_id = message.photo[-1].file_id  # biggest size
         await state.update_data(license_photo_file_id=file_id)
-        await finalize_application(message, state)
+        await finalize_application(message, state, message.from_user.id)
 
-    async def finalize_application(message: Message, state: FSMContext) -> None:
+    async def finalize_application(message: Message, state: FSMContext, user_id: int) -> None:
+        """
+        Завершити реєстрацію водія
+        
+        Args:
+            message: Повідомлення для відповіді
+            state: FSM state
+            user_id: ID користувача (ВАЖЛИВО: НЕ message.from_user.id!)
+        """
         data = await state.get_data()
         
         from app.handlers.car_classes import get_car_class_name
@@ -839,7 +854,7 @@ def create_router(config: AppConfig) -> Router:
         
         driver = Driver(
             id=None,
-            tg_user_id=message.from_user.id if message.from_user else 0,
+            tg_user_id=user_id,  # ✅ Використовуємо переданий user_id
             full_name=str(data.get("full_name")),
             phone=str(data.get("phone")),
             car_make=str(data.get("car_make")),
