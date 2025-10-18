@@ -372,14 +372,22 @@ async def init_db(db_path: str) -> None:
     
     # Виконати міграції ПІСЛЯ створення всіх таблиць
     await ensure_driver_columns(db_path)
-    # Міграція: додати commission_percent у tariffs якщо відсутнє
-    async with aiosqlite.connect(db_path) as db:
-        async with db.execute("PRAGMA table_info(tariffs)") as cur:
-            cols = await cur.fetchall()
-            col_names = [c[1] for c in cols]
-        if 'commission_percent' not in col_names:
-            await db.execute("ALTER TABLE tariffs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0.02")
-            await db.commit()
+        # Міграція: додати commission_percent у tariffs якщо відсутнє
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute("PRAGMA table_info(tariffs)") as cur:
+                cols = await cur.fetchall()
+                col_names = [c[1] for c in cols]
+            if 'commission_percent' not in col_names:
+                await db.execute("ALTER TABLE tariffs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0.02")
+                await db.commit()
+        
+        logger.info("✅ init_db() завершено успішно!")
+    
+    except Exception as e:
+        logger.error(f"❌ ПОМИЛКА при міграціях: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
 
 
 async def insert_order(db_path: str, order: Order) -> int:
