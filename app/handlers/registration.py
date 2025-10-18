@@ -1,4 +1,4 @@
-"""Модуль реєстрації клієнтів"""
+"""Модуль реєстрації клієнтів - оптимізований"""
 from __future__ import annotations
 
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 
 from app.config.config import AppConfig
 from app.storage.db import User, upsert_user, get_user_by_id
@@ -47,7 +47,11 @@ def create_registration_router(config: AppConfig) -> Router:
             text = f"✅ Ви вже зареєстровані!\n\n📍 Місто: {user.city}\n📱 Телефон: {user.phone}"
             if isinstance(event, CallbackQuery):
                 await event.answer("Ви вже зареєстровані!")
-                await event.message.answer(text, reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin))
+                try:
+                    await event.message.edit_text(text)
+                except:
+                    await event.message.answer(text)
+                await event.message.answer("Головне меню:", reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin))
             else:
                 await event.answer(text, reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin))
             return
@@ -62,22 +66,132 @@ def create_registration_router(config: AppConfig) -> Router:
         await state.set_state(ClientRegStates.city)
         
         if isinstance(event, CallbackQuery):
-            await event.message.answer(text, reply_markup=kb)
+            # Зберегти message_id для редагування
+            await state.update_data(reg_message_id=event.message.message_id)
+            try:
+                await event.message.edit_text(text, reply_markup=kb)
+            except:
+                msg = await event.message.answer(text, reply_markup=kb)
+                await state.update_data(reg_message_id=msg.message_id)
         else:
-            await event.answer(text, reply_markup=kb)
+            msg = await event.answer(text, reply_markup=kb)
+            await state.update_data(reg_message_id=msg.message_id)
     
     @router.callback_query(F.data.startswith("city:"), ClientRegStates.city)
     async def select_city(call: CallbackQuery, state: FSMContext) -> None:
         """Вибір міста"""
         city = call.data.split(":", 1)[1]
         await state.update_data(city=city)
-        await call.answer(f"Обрано: {city}")
+        await call.answer(f"✅ {city}")
+        
+        # Редагувати попереднє повідомлення
+        text = (
+            f"✅ <b>Місто обрано:</b> {city}\n\n"
+            "📱 <b>Крок 2/2: Надайте номер телефону</b>\n\n"
+            "Це потрібно щоб водій міг з вами зв'язатись.\n\n"
+            "Ви можете:\n"
+            "• Поділитися контактом (кнопка нижче)\n"
+            "• Ввести номер вручну"
+        )
+        
+        # Кнопки: Назад + інструкція
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Ввести номер вручну", callback_data="phone:manual")],
+                [InlineKeyboardButton(text="⬅️ Назад до вибору міста", callback_data="register:back_to_city")]
+            ]
+        )
         
         await state.set_state(ClientRegStates.phone)
+        
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except:
+            await call.message.answer(text, reply_markup=kb)
+        
+        # Надіслати contact keyboard окремо
         await call.message.answer(
-            f"✅ Місто: {city}\n\n"
+            "👇 Або поділіться контактом:",
+            reply_markup=contact_keyboard()
+        )
+    
+    @router.callback_query(F.data == "phone:manual", ClientRegStates.phone)
+    async def phone_manual_entry(call: CallbackQuery, state: FSMContext) -> None:
+        """Ручне введення номеру"""
+        await call.answer()
+        
+        data = await state.get_data()
+        city = data.get("city", "Місто")
+        
+        text = (
+            f"✅ <b>Місто:</b> {city}\n\n"
+            "📱 <b>Введіть номер телефону</b>\n\n"
+            "<b>Приклади правильних форматів:</b>\n"
+            "• +380 67 123 45 67\n"
+            "• +380671234567\n"
+            "• 0671234567"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="register:back_to_phone")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except:
+            await call.message.answer(text, reply_markup=kb)
+        
+        # Прибрати contact keyboard
+        await call.message.answer("✍️ Введіть номер:", reply_markup=ReplyKeyboardRemove())
+    
+    @router.callback_query(F.data == "register:back_to_city", ClientRegStates.phone)
+    async def back_to_city(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору міста"""
+        await call.answer()
+        await state.set_state(ClientRegStates.city)
+        
+        text = "📍 <b>Крок 1/2: Оберіть ваше місто</b>\n\nВиберіть місто, в якому ви плануєте користуватися таксі:"
+        kb = city_selection_keyboard()
+        
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except:
+            await call.message.answer(text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "register:back_to_phone")
+    async def back_to_phone_choice(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору способу введення телефону"""
+        await call.answer()
+        
+        data = await state.get_data()
+        city = data.get("city", "Місто")
+        
+        text = (
+            f"✅ <b>Місто обрано:</b> {city}\n\n"
             "📱 <b>Крок 2/2: Надайте номер телефону</b>\n\n"
-            "Це потрібно щоб водій міг з вами зв'язатись.",
+            "Це потрібно щоб водій міг з вами зв'язатись.\n\n"
+            "Ви можете:\n"
+            "• Поділитися контактом (кнопка нижче)\n"
+            "• Ввести номер вручну"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Ввести номер вручну", callback_data="phone:manual")],
+                [InlineKeyboardButton(text="⬅️ Назад до вибору міста", callback_data="register:back_to_city")]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except:
+            await call.message.answer(text, reply_markup=kb)
+        
+        # Повернути contact keyboard
+        await call.message.answer(
+            "👇 Або поділіться контактом:",
             reply_markup=contact_keyboard()
         )
     
@@ -94,11 +208,16 @@ def create_registration_router(config: AppConfig) -> Router:
         # ВАЛІДАЦІЯ: Перевірка номеру телефону
         is_valid, cleaned_phone = validate_phone_number(phone)
         if not is_valid:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="register:back_to_phone")]
+                ]
+            )
             await message.answer(
                 "❌ <b>Невірний формат номеру телефону</b>\n\n"
                 "Спробуйте ще раз або введіть вручну.\n"
                 "Приклад: +380 67 123 45 67",
-                reply_markup=contact_keyboard()
+                reply_markup=kb
             )
             logger.warning(f"Invalid phone number from contact: {phone}")
             return
@@ -145,6 +264,11 @@ def create_registration_router(config: AppConfig) -> Router:
         # ВАЛІДАЦІЯ: Перевірка номеру телефону
         is_valid, cleaned_phone = validate_phone_number(phone)
         if not is_valid:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="register:back_to_phone")]
+                ]
+            )
             await message.answer(
                 "❌ <b>Невірний формат номеру телефону</b>\n\n"
                 "Перевірте формат та спробуйте ще раз.\n\n"
@@ -152,7 +276,8 @@ def create_registration_router(config: AppConfig) -> Router:
                 "• +380 67 123 45 67\n"
                 "• +380671234567\n"
                 "• 0671234567\n\n"
-                "❗️ Номер має містити 10-12 цифр"
+                "❗️ Номер має містити 10-12 цифр",
+                reply_markup=kb
             )
             logger.warning(f"Invalid phone number: {phone}")
             return
