@@ -63,6 +63,7 @@ class TariffStates(StatesGroup):
     per_km = State()
     per_minute = State()
     minimum = State()
+    commission = State()
 
 
 class BroadcastStates(StatesGroup):
@@ -268,24 +269,14 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("Введіть коректне число (наприклад, 60.00)")
             return
         
-        data = await state.get_data()
         # Запит комісії після мінімальної суми
         await state.update_data(minimum=minimum)
-        await state.set_state(TariffStates.minimum)  # тимчасово залишимо стан
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="➡️ Далі: Комісія (%)", callback_data="tariff:commission")]]
-        )
-        await message.answer("Введення мінімальної суми збережено.", reply_markup=kb)
+        await state.set_state(TariffStates.commission)
+        await message.answer("Введіть комісію сервісу у відсотках (наприклад, 2 або 2.5):", reply_markup=cancel_keyboard())
 
-    @router.callback_query(F.data == "tariff:commission")
-    async def ask_commission(call: CallbackQuery, state: FSMContext) -> None:
-        if not call.from_user or not is_admin(call.from_user.id):
-            return
-        await call.answer()
-        # Використаємо існуючий стан minimum як проміжний, щоб не додавати новий
-        await call.message.answer("Введіть комісію сервісу у відсотках (наприклад, 2 або 2.5):", reply_markup=cancel_keyboard())
+    # Видалили callback-етап, вводимо комісію напряму у стані TariffStates.commission
 
-    @router.message(TariffStates.minimum)
+    @router.message(TariffStates.commission)
     async def set_commission_percent(message: Message, state: FSMContext) -> None:
         # Перевикористання стану для вводу комісії після мінімальної суми
         try:
