@@ -8,10 +8,10 @@ services:
     env: python
     # План: free, starter ($7/mo), standard, pro
     plan: starter
-    # Автоматичний деплой при push в main
+    # Автоматичний деплой при push в fix-taxi-bot
     autoDeploy: true
     # Гілка для автодеплою
-    branch: main
+    branch: fix-taxi-bot
     # Регіон (oregon, frankfurt, singapore)
     region: frankfurt
     # Python версія
