@@ -768,6 +768,22 @@ def create_router(config: AppConfig) -> Router:
     @router.message(DriverRegStates.car_model)
     async def take_car_model(message: Message, state: FSMContext) -> None:
         car_model = message.text.strip() if message.text else ""
+        
+        # Спочатку ЗАВЖДИ видаляємо попереднє повідомлення "Крок 5/8"
+        data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
+        
+        # Видалити повідомлення користувача з моделлю
+        try:
+            await message.delete()
+        except:
+            pass
+        
         if len(car_model) < 2:
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -775,17 +791,17 @@ def create_router(config: AppConfig) -> Router:
                     [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
                 ]
             )
-            await message.answer(
+            msg = await message.answer(
                 "❌ <b>Невірний формат</b>\n\n"
                 "Модель авто має містити мінімум 2 символи.\n\n"
                 "Спробуйте ще раз:",
                 reply_markup=kb
             )
+            await state.update_data(reg_message_id=msg.message_id)
             return
         await state.update_data(car_model=car_model)
         await state.set_state(DriverRegStates.car_plate)
         
-        data = await state.get_data()
         car_make = data.get("car_make", "")
         
         kb = InlineKeyboardMarkup(
