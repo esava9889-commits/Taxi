@@ -110,8 +110,14 @@ def create_router(config: AppConfig) -> Router:
             "/client - Меню клієнта\n"
             "/my_rating - Переглянути ваш рейтинг\n\n"
             "<b>Підтримка:</b>\n"
-            "З питань пишіть адміністратору"
         )
+        
+        # Додати посилання на адміна, якщо є
+        if config.admin_username:
+            text += f"З питань пишіть @{config.admin_username}"
+        else:
+            text += "З питань пишіть адміністратору"
+        
         await message.answer(text, reply_markup=client_menu_keyboard())
 
     return router

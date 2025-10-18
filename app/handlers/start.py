@@ -159,6 +159,11 @@ def create_router(config: AppConfig) -> Router:
     @router.callback_query(F.data == "help:show")
     @router.message(F.text == "ℹ️ Допомога")
     async def show_help(event) -> None:
+        # Отримати актуальну комісію з БД
+        from app.storage.db import get_latest_tariff
+        tariff = await get_latest_tariff(config.database_path)
+        commission_percent = tariff.commission_percent * 100 if tariff else 2.0
+        
         help_text = (
             "ℹ️ <b>Як користуватися ботом?</b>\n\n"
             "<b>Для клієнтів:</b>\n"
@@ -174,9 +179,14 @@ def create_router(config: AppConfig) -> Router:
             "• Перший хто прийме - отримує замовлення\n\n"
             "💰 <b>Тарифи:</b>\n"
             "• Базова ціна + відстань + час\n"
-            "• Комісія сервісу: 2%\n\n"
-            "📞 <b>Підтримка:</b> Напишіть адміністратору"
+            f"• Комісія сервісу: {commission_percent:.1f}%\n\n"
         )
+        
+        # Додати посилання на адміна, якщо є
+        if config.admin_username:
+            help_text += f"📞 <b>Підтримка:</b> @{config.admin_username}"
+        else:
+            help_text += "📞 <b>Підтримка:</b> Напишіть адміністратору"
         
         if isinstance(event, CallbackQuery):
             await event.answer()

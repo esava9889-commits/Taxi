@@ -18,6 +18,8 @@ class AppConfig:
     google_maps_api_key: Optional[str]
     payment_card: Optional[str]
     driver_group_chat_id: Optional[int]
+    driver_group_invite_link: Optional[str]
+    admin_username: Optional[str]
     
 # Список доступних міст
 AVAILABLE_CITIES = [
@@ -81,6 +83,12 @@ def load_config() -> AppConfig:
     # Group chat ID for drivers (optional)
     driver_group_raw = os.getenv("DRIVER_GROUP_CHAT_ID")
     driver_group_chat_id = int(driver_group_raw) if driver_group_raw else None
+    
+    # Group invite link for drivers (optional)
+    driver_group_invite_link = os.getenv("DRIVER_GROUP_INVITE_LINK") or None
+    
+    # Admin username for support (optional)
+    admin_username = os.getenv("ADMIN_USERNAME") or None
 
     # Ensure the parent directory exists (if not /tmp)
     db_dir = os.path.dirname(db_path)
@@ -93,4 +101,6 @@ def load_config() -> AppConfig:
         google_maps_api_key=google_maps_api_key,
         payment_card=payment_card,
         driver_group_chat_id=driver_group_chat_id,
+        driver_group_invite_link=driver_group_invite_link,
+        admin_username=admin_username,
     )
