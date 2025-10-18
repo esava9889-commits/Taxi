@@ -379,6 +379,14 @@ def create_router(config: AppConfig) -> Router:
         
         data = await state.get_data()
         car_make = data.get("car_make", "")
+        reg_message_id = data.get("reg_message_id")
+        
+        # Видалити попереднє повідомлення
+        if reg_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, reg_message_id)
+            except:
+                pass
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -387,22 +395,14 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        try:
-            await call.message.edit_text(
-                f"✅ <b>Марка:</b> {car_make}\n\n"
-                "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
-                "Введіть модель вашого авто:\n\n"
-                "Приклад: Camry, Passat, X5",
-                reply_markup=kb
-            )
-        except:
-            await call.message.answer(
-                f"✅ <b>Марка:</b> {car_make}\n\n"
-                "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
-                "Введіть модель вашого авто:\n\n"
-                "Приклад: Camry, Passat, X5",
-                reply_markup=kb
-            )
+        msg = await call.message.answer(
+            f"✅ <b>Марка:</b> {car_make}\n\n"
+            "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
+            "Введіть модель вашого авто:\n\n"
+            "Приклад: Camry, Passat, X5",
+            reply_markup=kb
+        )
+        await state.update_data(reg_message_id=msg.message_id)
     
     @router.callback_query(F.data == "driver:back_to_plate")
     async def back_to_plate(call: CallbackQuery, state: FSMContext) -> None:
@@ -421,22 +421,14 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        try:
-            await call.message.edit_text(
-                f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
-                "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
-                "Введіть номерний знак авто:\n\n"
-                "Приклад: АА1234ВВ, КА5678ІН",
-                reply_markup=kb
-            )
-        except:
-            await call.message.answer(
-                f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
-                "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
-                "Введіть номерний знак авто:\n\n"
-                "Приклад: АА1234ВВ, КА5678ІН",
-                reply_markup=kb
-            )
+        msg = await call.message.answer(
+            f"✅ <b>Авто:</b> {car_make} {car_model}\n\n"
+            "🔢 <b>Крок 6/8: Номерний знак</b>\n\n"
+            "Введіть номерний знак авто:\n\n"
+            "Приклад: АА1234ВВ, КА5678ІН",
+            reply_markup=kb
+        )
+        await state.update_data(reg_message_id=msg.message_id)
     
     @router.callback_query(F.data.startswith("driver_cancel:"))
     async def cancel_pending_application(call: CallbackQuery) -> None:
@@ -1270,6 +1262,15 @@ def create_router(config: AppConfig) -> Router:
         driver_id = int(parts[1])
         await update_driver_status(config.database_path, driver_id, "rejected")
         await message.answer(f"Заявку #{driver_id} відхилено.")
+        drv = await get_driver_by_id(config.database_path, driver_id)
+        if drv:
+            try:
+                await message.bot.send_message(drv.tg_user_id, "Вашу заявку водія відхилено. Зв'яжіться з підтримкою.")
+            except Exception:
+                pass
+
+    return router
+.")
         drv = await get_driver_by_id(config.database_path, driver_id)
         if drv:
             try:
