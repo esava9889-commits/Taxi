@@ -280,6 +280,32 @@ def create_registration_router(config: AppConfig) -> Router:
             created_at=datetime.now(timezone.utc),
         )
         await upsert_user(config.database_path, user)
+        
+        # Видалити всі повідомлення реєстрації
+        data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        contact_message_id = data.get("contact_message_id")
+        
+        # Видалити повідомлення "Крок 2/2"
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
+        
+        # Видалити повідомлення "👇 Натисніть кнопку"
+        if contact_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, contact_message_id)
+            except:
+                pass
+        
+        # Видалити повідомлення користувача з контактом
+        try:
+            await message.delete()
+        except:
+            pass
+        
         await state.clear()
         
         # Перевірка чи це адмін
@@ -287,11 +313,12 @@ def create_registration_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"✅ <b>Реєстрація завершена!</b>\n\n"
-            f"👤 {cleaned_name}\n"
-            f"📍 {city}\n"
-            f"📱 {cleaned_phone}\n\n"
-            "Тепер ви можете замовити таксі! 🚖",
-            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+            f"🎉 Ласкаво просимо, {cleaned_name}!\n\n"
+            f"📱 Телефон: {cleaned_phone}\n"
+            f"📍 Місто: {city}\n\n"
+            "Тепер ви можете замовити таксі через меню внизу 👇",
+            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin),
+            parse_mode="HTML"
         )
         logger.info(f"User {message.from_user.id} registered in {city} with phone {cleaned_phone}")
     

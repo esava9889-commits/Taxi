@@ -994,7 +994,8 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        await message.answer(
+        # Відправити повідомлення і зберегти його ID для подальшого видалення
+        pending_msg = await message.answer(
             f"✅ <b>Заявку успішно подано!</b>\n\n"
             f"📋 Номер заявки: #{driver_id}\n"
             f"📝 ПІБ: {data.get('full_name')}\n"
