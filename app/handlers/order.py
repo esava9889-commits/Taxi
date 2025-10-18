@@ -710,8 +710,6 @@ def create_router(config: AppConfig) -> Router:
                             surge_percent = int((surge_mult - 1) * 100)
                             surge_text = f" {surge_emoji} +{surge_percent}%" if surge_percent > 0 else f" {surge_emoji} {surge_percent}%"
                             distance_info += f"💰 Вартість ({class_name}{surge_text}): {estimated_fare:.0f} грн\n"
-                            if surge_reason:
-                                distance_info += f"<i>{surge_reason}</i>\n"
                         else:
                             distance_info += f"💰 Вартість ({class_name}): {estimated_fare:.0f} грн\n"
                         

@@ -382,14 +382,16 @@ def create_router(config: AppConfig) -> Router:
                     reply_markup=kb_client
                 )
             else:
-            await call.bot.send_message(
+                await call.bot.send_message(
                     order.user_id,
-                f"✅ <b>Водій прийняв замовлення!</b>\n\n"
-                    f"🚗 {driver.full_name}\n"
-                    f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
-                    f"📱 <code>{driver.phone}</code>\n\n"
-                f"💵 Оплата готівкою\n\n"
-                f"🚗 Водій уже в дорозі. Очікуйте!"
+                    (
+                        f"✅ <b>Водій прийняв замовлення!</b>\n\n"
+                        f"🚗 {driver.full_name}\n"
+                        f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
+                        f"📱 <code>{driver.phone}</code>\n\n"
+                        f"💵 Оплата готівкою\n\n"
+                        f"🚗 Водій уже в дорозі. Очікуйте!"
+                    )
                 )
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
