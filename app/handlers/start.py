@@ -636,13 +636,13 @@ def create_router(config: AppConfig) -> Router:
         if not call.from_user:
             return
         
-        await call.answer()
+        await call.answer("🚗 Відкриваю панель водія...")
         
         from app.storage.db import get_driver_by_tg_user_id
         driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
         
         if not driver or driver.status != "approved":
-            await call.message.answer("❌ Ви не є підтвердженим водієм.")
+            await call.answer("❌ Ви не є підтвердженим водієм.", show_alert=True)
             return
         
         from app.storage.db import get_driver_earnings_today, get_driver_unpaid_commission
@@ -654,14 +654,15 @@ def create_router(config: AppConfig) -> Router:
         
         text = (
             f"🚗 <b>Панель водія</b>\n\n"
-            f"Статус: {online_status}\n"
-            f"ПІБ: {driver.full_name}\n"
+            f"👤 {driver.full_name}\n"
             f"🏙 Місто: {driver.city or 'Не вказано'}\n"
             f"🚙 Авто: {driver.car_make} {driver.car_model}\n"
             f"🔢 Номер: {driver.car_plate}\n\n"
-            f"💰 Заробіток сьогодні: {earnings:.2f} грн\n"
-            f"💸 Комісія до сплати: {commission_owed:.2f} грн\n"
-            f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
+            f"📊 <b>Статистика сьогодні:</b>\n"
+            f"💰 Заробіток: {earnings:.2f} грн\n"
+            f"💸 Комісія: {commission_owed:.2f} грн\n"
+            f"💵 Чистий: {net_earnings:.2f} грн\n\n"
+            f"Статус: {online_status}\n\n"
             "ℹ️ Замовлення надходять у групу водіїв.\n"
             "Прийміть замовлення першим, щоб його отримати!"
         )
@@ -669,8 +670,16 @@ def create_router(config: AppConfig) -> Router:
         # Перевірка чи це адмін
         is_admin = call.from_user.id in config.bot.admin_ids
         
+        # Спробувати редагувати попереднє повідомлення
+        try:
+            await call.message.edit_text(text)
+        except:
+            pass
+        
+        # Відправити клавіатуру
         await call.message.answer(
-            text,
+            "✅ <b>Панель водія готова!</b>\n\n"
+            "Використовуйте меню внизу для керування.",
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
         )
 

@@ -903,6 +903,7 @@ def create_router(config: AppConfig) -> Router:
         )
 
     # Admin moderation callbacks
+    # Обробник "open_driver_panel" знаходиться в start.py
     @router.callback_query(F.data.startswith("drv:"))
     async def on_driver_callback(call: CallbackQuery) -> None:
         data = (call.data or "").split(":")
@@ -922,10 +923,19 @@ def create_router(config: AppConfig) -> Router:
 
         if action == "approve":
             await update_driver_status(config.database_path, driver_id, "approved")
-            await call.answer("Водія підтверджено")
+            await call.answer("✅ Водія підтверджено!", show_alert=True)
             drv = await get_driver_by_id(config.database_path, driver_id)
             if drv:
                 try:
+                    from app.handlers.keyboards import main_menu_keyboard
+                    
+                    # Inline кнопка для швидкого доступу
+                    kb = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="🚗 Відкрити панель водія", callback_data="open_driver_panel")]
+                        ]
+                    )
+                    
                     # Формуємо текст повідомлення з посиланням на групу
                     welcome_text = (
                         "🎉 <b>Вітаємо!</b>\n\n"
@@ -945,14 +955,42 @@ def create_router(config: AppConfig) -> Router:
                             "Обов'язково приєднайтесь!\n\n"
                         )
                     
-                    welcome_text += "Натисніть /start для відкриття панелі водія"
+                    welcome_text += "Натисніть кнопку нижче або напишіть боту /start"
                     
+                    # Відправити повідомлення з inline кнопкою
                     await call.message.bot.send_message(
                         drv.tg_user_id,
                         welcome_text,
+                        reply_markup=kb
                     )
-                except Exception:
-                    pass
+                    
+                    # Відправити панель водія з ReplyKeyboardMarkup
+                    is_driver_admin = drv.tg_user_id in config.bot.admin_ids
+                    await call.message.bot.send_message(
+                        drv.tg_user_id,
+                        "🚗 <b>Панель водія активована!</b>\n\n"
+                        "Тепер ви можете:\n"
+                        "• Отримувати замовлення в групі водіїв\n"
+                        "• Переглядати свій заробіток\n"
+                        "• Відстежувати статистику\n\n"
+                        "Оберіть дію з меню нижче:",
+                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin)
+                    )
+                    
+                    logger.info(f"✅ Driver {driver_id} approved, notification sent to {drv.tg_user_id}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to notify driver {drv.tg_user_id}: {e}")
+            
+            # Оновити повідомлення адміна
+            try:
+                await call.message.edit_text(
+                    f"✅ <b>Заявку #{driver_id} СХВАЛЕНО</b>\n\n"
+                    f"👤 ПІБ: {drv.full_name if drv else 'N/A'}\n"
+                    f"📱 Телефон: {drv.phone if drv else 'N/A'}\n"
+                    f"🚗 Авто: {drv.car_make if drv else ''} {drv.car_model if drv else ''} ({drv.car_plate if drv else ''})"
+                )
+            except Exception:
+                pass
         elif action == "reject":
             await update_driver_status(config.database_path, driver_id, "rejected")
             await call.answer("Заявку відхилено")
