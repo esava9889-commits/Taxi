@@ -546,19 +546,37 @@ def create_router(config: AppConfig) -> Router:
     @router.message(DriverRegStates.name)
     async def take_name(message: Message, state: FSMContext) -> None:
         full_name = message.text.strip() if message.text else ""
+        
+        # Спочатку ЗАВЖДИ видаляємо попереднє повідомлення "Крок 1/8"
+        data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
+        
+        # Видалити повідомлення користувача з ПІБ
+        try:
+            await message.delete()
+        except:
+            pass
+        
         if len(full_name) < 3:
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
                 ]
             )
-            await message.answer(
+            msg = await message.answer(
                 "❌ <b>Невірний формат</b>\n\n"
                 "ПІБ має містити мінімум 3 символи.\n\n"
                 "Спробуйте ще раз:",
                 reply_markup=kb
             )
+            await state.update_data(reg_message_id=msg.message_id)
             return
+            
         await state.update_data(full_name=full_name)
         await state.set_state(DriverRegStates.phone)
         
@@ -568,20 +586,6 @@ def create_router(config: AppConfig) -> Router:
                 [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")]
             ]
         )
-        
-        # Видалити попереднє повідомлення та повідомлення користувача
-        data = await state.get_data()
-        reg_message_id = data.get("reg_message_id")
-        if reg_message_id:
-            try:
-                await message.bot.delete_message(message.chat.id, reg_message_id)
-            except:
-                pass
-        
-        try:
-            await message.delete()
-        except:
-            pass
         
         msg = await message.answer(
             f"✅ <b>ПІБ:</b> {full_name}\n\n"
