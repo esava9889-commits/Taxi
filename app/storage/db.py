@@ -175,7 +175,9 @@ async def init_db(db_path: str) -> None:
     
     # SQLite для локальної розробки
     logger.info(f"📁 Ініціалізація SQLite: {db_path}")
-    async with aiosqlite.connect(db_path) as db:
+    
+    try:
+        async with aiosqlite.connect(db_path) as db:
         # Збережені адреси
         await db.execute(
             """
