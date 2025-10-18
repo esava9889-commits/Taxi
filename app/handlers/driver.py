@@ -1087,11 +1087,38 @@ def create_router(config: AppConfig) -> Router:
                         "Обов'язково приєднайтесь!\n\n"
                     )
                 
-                welcome_text += "Натисніть /start для відкриття панелі водія"
+                welcome_text += "Натисніть кнопку нижче або напишіть боту /start"
                 
-                await message.bot.send_message(drv.tg_user_id, welcome_text)
-            except Exception:
-                pass
+                # Inline кнопка для швидкого доступу
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🚗 Відкрити панель водія", callback_data="open_driver_panel")]
+                    ]
+                )
+                
+                await message.bot.send_message(
+                    drv.tg_user_id,
+                    welcome_text,
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
+                
+                # Відправити панель водія з ReplyKeyboardMarkup
+                from app.handlers.keyboards import main_menu_keyboard
+                is_driver_admin = drv.tg_user_id in config.bot.admin_ids
+                await message.bot.send_message(
+                    drv.tg_user_id,
+                    "🚗 <b>Панель водія активована!</b>\n\n"
+                    "Тепер ви можете:\n"
+                    "• Отримувати замовлення в групі водіїв\n"
+                    "• Переглядати свій заробіток\n"
+                    "• Відстежувати статистику\n\n"
+                    "Оберіть дію з меню нижче:",
+                    reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin),
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to notify driver via /approve_driver: {e}")
 
     @router.message(Command("reject_driver"))
     async def reject_driver_cmd(message: Message) -> None:
