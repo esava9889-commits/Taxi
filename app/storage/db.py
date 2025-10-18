@@ -15,6 +15,9 @@ try:
 except ImportError:
     HAS_ASYNCPG = False
 
+# Імпорт connection manager
+from app.storage.db_connection import db_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -123,7 +126,7 @@ async def ensure_driver_columns(db_path: str) -> None:
     import logging
     logger = logging.getLogger(__name__)
     
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Перевірити чи таблиця drivers існує
         async with db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='drivers'"
@@ -177,7 +180,7 @@ async def init_db(db_path: str) -> None:
     logger.info(f"📁 Ініціалізація SQLite: {db_path}")
     
     try:
-        async with aiosqlite.connect(db_path) as db:
+        async with db_manager.connect(db_path) as db:
             # Збережені адреси
             await db.execute(
             """
@@ -381,7 +384,7 @@ async def init_db(db_path: str) -> None:
     try:
         await ensure_driver_columns(db_path)
         # Міграція: додати commission_percent у tariffs якщо відсутнє
-        async with aiosqlite.connect(db_path) as db:
+        async with db_manager.connect(db_path) as db:
             async with db.execute("PRAGMA table_info(tariffs)") as cur:
                 cols = await cur.fetchall()
                 col_names = [c[1] for c in cols]
@@ -399,7 +402,7 @@ async def init_db(db_path: str) -> None:
 
 
 async def insert_order(db_path: str, order: Order) -> int:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO orders (
@@ -441,7 +444,7 @@ async def insert_order(db_path: str, order: Order) -> int:
 
 async def update_order_group_message(db_path: str, order_id: int, message_id: int) -> bool:
     """Оновити ID повідомлення в групі водіїв"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET group_message_id = ? WHERE id = ?",
             (message_id, order_id),
@@ -452,7 +455,7 @@ async def update_order_group_message(db_path: str, order_id: int, message_id: in
 
 async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> bool:
     """Скасувати замовлення клієнтом (тільки якщо pending)"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET status = 'cancelled', finished_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'",
             (datetime.now(timezone.utc).isoformat(), order_id, user_id),
@@ -465,7 +468,7 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
 
 async def save_address(db_path: str, address: SavedAddress) -> int:
     """Зберегти адресу користувача"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             """
             INSERT INTO saved_addresses (user_id, name, emoji, address, lat, lon, created_at)
@@ -487,7 +490,7 @@ async def save_address(db_path: str, address: SavedAddress) -> int:
 
 async def get_user_saved_addresses(db_path: str, user_id: int) -> List[SavedAddress]:
     """Отримати всі збережені адреси користувача"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, user_id, name, emoji, address, lat, lon, created_at
@@ -516,7 +519,7 @@ async def get_user_saved_addresses(db_path: str, user_id: int) -> List[SavedAddr
 
 async def get_saved_address_by_id(db_path: str, address_id: int, user_id: int) -> Optional[SavedAddress]:
     """Отримати збережену адресу за ID"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, user_id, name, emoji, address, lat, lon, created_at
@@ -543,7 +546,7 @@ async def get_saved_address_by_id(db_path: str, address_id: int, user_id: int) -
 
 async def delete_saved_address(db_path: str, address_id: int, user_id: int) -> bool:
     """Видалити збережену адресу"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "DELETE FROM saved_addresses WHERE id = ? AND user_id = ?",
             (address_id, user_id)
@@ -554,7 +557,7 @@ async def delete_saved_address(db_path: str, address_id: int, user_id: int) -> b
 
 async def update_saved_address(db_path: str, address_id: int, user_id: int, name: str, emoji: str) -> bool:
     """Оновити назву та емодзі збереженої адреси"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE saved_addresses SET name = ?, emoji = ? WHERE id = ? AND user_id = ?",
             (name, emoji, address_id, user_id)
@@ -567,7 +570,7 @@ async def update_saved_address(db_path: str, address_id: int, user_id: int, name
 
 async def set_driver_online_status(db_path: str, driver_id: int, online: bool) -> bool:
     """Змінити онлайн статус водія"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE drivers SET online = ?, last_seen_at = ? WHERE id = ?",
             (1 if online else 0, datetime.now(timezone.utc).isoformat(), driver_id)
@@ -578,7 +581,7 @@ async def set_driver_online_status(db_path: str, driver_id: int, online: bool) -
 
 async def get_online_drivers_count(db_path: str, city: Optional[str] = None) -> int:
     """Підрахунок онлайн водіїв"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         if city:
             async with db.execute(
                 "SELECT COUNT(*) FROM drivers WHERE online = 1 AND status = 'approved' AND city = ?",
@@ -594,7 +597,7 @@ async def get_online_drivers_count(db_path: str, city: Optional[str] = None) -> 
 
 async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[Driver]:
     """Отримати список онлайн водіїв"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         if city:
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
@@ -647,7 +650,7 @@ async def get_user_active_order(db_path: str, user_id: int) -> Optional[Order]:
     """
     Отримати активне замовлення користувача (pending, accepted або in_progress)
     """
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
@@ -694,7 +697,7 @@ async def get_user_active_order(db_path: str, user_id: int) -> Optional[Order]:
 
 
 async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
@@ -746,7 +749,7 @@ async def get_pending_orders(db_path: str, city: Optional[str] = None) -> List[O
     """
     Отримати всі очікуючі замовлення (pending)
     """
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         query = """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
                    pickup_lat, pickup_lon, dest_lat, dest_lon,
@@ -811,7 +814,7 @@ async def upsert_user(db_path: str, user: User) -> None:
     """
     Insert or replace a user profile. Uses user_id as a stable primary key.
     """
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             """
             INSERT INTO users (user_id, full_name, phone, role, city, language, created_at)
@@ -837,7 +840,7 @@ async def upsert_user(db_path: str, user: User) -> None:
 
 
 async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT user_id, full_name, phone, role, city, language, created_at FROM users WHERE user_id = ?",
             (user_id,),
@@ -858,7 +861,7 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
 
 async def delete_user(db_path: str, user_id: int) -> bool:
     """Видалити користувача з БД (коли стає водієм)"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             "DELETE FROM users WHERE user_id = ?",
             (user_id,)
@@ -892,7 +895,7 @@ class Driver:
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO drivers (
@@ -919,7 +922,7 @@ async def create_driver_application(db_path: str, driver: Driver) -> int:
 
 async def update_driver_status(db_path: str, driver_id: int, status: str) -> None:
     now = datetime.now(timezone.utc)
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             "UPDATE drivers SET status = ?, updated_at = ? WHERE id = ?",
             (status, now.isoformat(), driver_id),
@@ -928,7 +931,7 @@ async def update_driver_status(db_path: str, driver_id: int, status: str) -> Non
 
 
 async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
@@ -969,7 +972,7 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
 
 
 async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
@@ -1004,7 +1007,7 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
 
 
 async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Driver]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
@@ -1040,7 +1043,7 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
 
 async def set_driver_online(db_path: str, tg_user_id: int, online: bool) -> None:
     now = datetime.now(timezone.utc)
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             "UPDATE drivers SET online = ?, last_seen_at = ? WHERE tg_user_id = ? AND status = 'approved'",
             (1 if online else 0, now.isoformat(), tg_user_id),
@@ -1050,7 +1053,7 @@ async def set_driver_online(db_path: str, tg_user_id: int, online: bool) -> None
 
 async def update_driver_location(db_path: str, tg_user_id: int, lat: float, lon: float) -> None:
     now = datetime.now(timezone.utc)
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             "UPDATE drivers SET last_lat = ?, last_lon = ?, last_seen_at = ? WHERE tg_user_id = ? AND status = 'approved'",
             (lat, lon, now.isoformat(), tg_user_id),
@@ -1059,7 +1062,7 @@ async def update_driver_location(db_path: str, tg_user_id: int, lat: float, lon:
 
 
 async def offer_order_to_driver(db_path: str, order_id: int, driver_id: int) -> bool:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET driver_id = ?, status = 'offered' WHERE id = ? AND status = 'pending'",
             (driver_id, order_id),
@@ -1070,7 +1073,7 @@ async def offer_order_to_driver(db_path: str, order_id: int, driver_id: int) -> 
 
 async def accept_order(db_path: str, order_id: int, driver_id: int) -> bool:
     """Accept order from group - set driver and status to accepted"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Нова логіка: замовлення має status='pending' і driver_id=NULL
         # Перший водій хто клікне - отримує замовлення
         cur = await db.execute(
@@ -1083,7 +1086,7 @@ async def accept_order(db_path: str, order_id: int, driver_id: int) -> bool:
 
 async def reject_order(db_path: str, order_id: int) -> bool:
     """Reject order by driver - set status back to pending"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET status = 'pending', driver_id = NULL WHERE id = ? AND status = 'offered'",
             (order_id,),
@@ -1095,7 +1098,7 @@ async def reject_order(db_path: str, order_id: int) -> bool:
 async def add_rejected_driver(db_path: str, order_id: int, driver_db_id: int) -> None:
     """Add driver to rejected list for this order (stored as JSON in a new table or field)"""
     # For simplicity, we'll create a simple rejected_offers table
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             "CREATE TABLE IF NOT EXISTS rejected_offers (order_id INTEGER, driver_id INTEGER, rejected_at TEXT)"
         )
@@ -1108,7 +1111,7 @@ async def add_rejected_driver(db_path: str, order_id: int, driver_db_id: int) ->
 
 async def get_rejected_drivers_for_order(db_path: str, order_id: int) -> List[int]:
     """Get list of driver IDs who rejected this order"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             "CREATE TABLE IF NOT EXISTS rejected_offers (order_id INTEGER, driver_id INTEGER, rejected_at TEXT)"
         )
@@ -1122,7 +1125,7 @@ async def get_rejected_drivers_for_order(db_path: str, order_id: int) -> List[in
 
 async def start_order(db_path: str, order_id: int, driver_id: int) -> bool:
     now = datetime.now(timezone.utc)
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET status = 'in_progress', started_at = ? WHERE id = ? AND driver_id = ? AND status = 'accepted'",
             (now.isoformat(), order_id, driver_id),
@@ -1141,7 +1144,7 @@ async def complete_order(
     commission: float,
 ) -> bool:
     now = datetime.now(timezone.utc)
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             """
             UPDATE orders
@@ -1155,7 +1158,7 @@ async def complete_order(
 
 
 async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
@@ -1198,7 +1201,7 @@ async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
 
 
 async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
@@ -1261,7 +1264,7 @@ class ClientRating:
 
 
 async def insert_rating(db_path: str, rating: Rating) -> int:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO ratings (order_id, from_user_id, to_user_id, rating, comment, created_at)
@@ -1274,7 +1277,7 @@ async def insert_rating(db_path: str, rating: Rating) -> int:
 
 
 async def get_driver_average_rating(db_path: str, driver_user_id: int) -> Optional[float]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT AVG(rating) FROM ratings WHERE to_user_id = ?",
             (driver_user_id,),
@@ -1286,7 +1289,7 @@ async def get_driver_average_rating(db_path: str, driver_user_id: int) -> Option
 # --- Client Ratings ---
 
 async def insert_client_rating(db_path: str, rating: ClientRating) -> int:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO client_ratings (order_id, client_id, driver_id, rating, created_at)
@@ -1299,7 +1302,7 @@ async def insert_client_rating(db_path: str, rating: ClientRating) -> int:
 
 
 async def get_client_average_rating(db_path: str, client_id: int) -> Optional[float]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT AVG(rating) FROM client_ratings WHERE client_id = ?",
             (client_id,),
@@ -1311,7 +1314,7 @@ async def get_client_average_rating(db_path: str, client_id: int) -> Optional[fl
 # --- Tips ---
 
 async def add_tip_to_order(db_path: str, order_id: int, amount: float) -> bool:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         try:
             await db.execute(
                 "INSERT INTO tips (order_id, amount, created_at) VALUES (?, ?, ?)",
@@ -1325,7 +1328,7 @@ async def add_tip_to_order(db_path: str, order_id: int, amount: float) -> bool:
 
 async def get_driver_tips_total(db_path: str, driver_tg_id: int) -> float:
     """Отримати загальну суму чайових водія"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Get driver DB id
         async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ?", (driver_tg_id,)) as cur:
             row = await cur.fetchone()
@@ -1348,7 +1351,7 @@ async def get_driver_tips_total(db_path: str, driver_tg_id: int) -> float:
 # --- Referral Program ---
 
 async def create_referral_code(db_path: str, user_id: int, code: str) -> None:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             "INSERT INTO referrals (referrer_id, referred_id, referral_code, created_at) VALUES (?, 0, ?, ?)",
             (user_id, code, datetime.now(timezone.utc).isoformat())
@@ -1357,7 +1360,7 @@ async def create_referral_code(db_path: str, user_id: int, code: str) -> None:
 
 
 async def get_referral_code(db_path: str, user_id: int) -> Optional[str]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT referral_code FROM referrals WHERE referrer_id = ? AND referred_id = 0 LIMIT 1",
             (user_id,)
@@ -1367,7 +1370,7 @@ async def get_referral_code(db_path: str, user_id: int) -> Optional[str]:
 
 
 async def apply_referral_code(db_path: str, new_user_id: int, code: str) -> bool:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Знайти власника коду
         async with db.execute(
             "SELECT referrer_id FROM referrals WHERE referral_code = ? AND referred_id = 0",
@@ -1393,7 +1396,7 @@ async def apply_referral_code(db_path: str, new_user_id: int, code: str) -> bool
 
 
 async def get_user_referral_stats(db_path: str, user_id: int) -> dict:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Кількість запрошених
         async with db.execute(
             "SELECT COUNT(*), SUM(referrer_bonus) FROM referrals WHERE referrer_id = ? AND referred_id != 0",
@@ -1423,7 +1426,7 @@ class Payment:
 
 
 async def insert_payment(db_path: str, payment: Payment) -> int:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO payments (order_id, driver_id, amount, commission, commission_paid, payment_method, created_at, commission_paid_at)
@@ -1437,7 +1440,7 @@ async def insert_payment(db_path: str, payment: Payment) -> int:
 
 async def mark_commission_paid(db_path: str, driver_tg_id: int) -> None:
     now = datetime.now(timezone.utc)
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Get driver's DB id
         async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:
             row = await cur.fetchone()
@@ -1453,7 +1456,7 @@ async def mark_commission_paid(db_path: str, driver_tg_id: int) -> None:
 
 async def get_driver_earnings_today(db_path: str, driver_tg_id: int) -> Tuple[float, float]:
     """Returns (total_earned, total_commission_owed) for today"""
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:
             row = await cur.fetchone()
         if not row:
@@ -1474,7 +1477,7 @@ async def get_driver_earnings_today(db_path: str, driver_tg_id: int) -> Tuple[fl
 
 
 async def get_driver_unpaid_commission(db_path: str, driver_tg_id: int) -> float:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:
             row = await cur.fetchone()
         if not row:
@@ -1491,7 +1494,7 @@ async def get_driver_unpaid_commission(db_path: str, driver_tg_id: int) -> float
 # --- Order History ---
 
 async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) -> List[Order]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
@@ -1540,7 +1543,7 @@ async def get_user_order_history(db_path: str, user_id: int, limit: int = 10) ->
 
 
 async def get_driver_order_history(db_path: str, driver_tg_id: int, limit: int = 10) -> List[Order]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         # Get driver DB id
         async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ?", (driver_tg_id,)) as cur:
             row = await cur.fetchone()
@@ -1672,7 +1675,7 @@ class Tariff:
 
 
 async def insert_tariff(db_path: str, t: Tariff) -> int:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, commission_percent, created_at)
@@ -1685,7 +1688,7 @@ async def insert_tariff(db_path: str, t: Tariff) -> int:
 
 
 async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT id, base_fare, per_km, per_minute, minimum, commission_percent, created_at FROM tariffs ORDER BY id DESC LIMIT 1"
         ) as cursor:
