@@ -41,7 +41,7 @@ def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="👥 Модерація водіїв")],
-            [KeyboardButton(text="💰 Тарифи"), KeyboardButton(text="📋 Замовлення")],
+            [KeyboardButton(text="💰 Тарифи"), KeyboardButton(text="🚗 Водії")],
             [KeyboardButton(text="📢 Розсилка"), KeyboardButton(text="⚙️ Налаштування")],
         ],
         resize_keyboard=True,
@@ -300,38 +300,113 @@ def create_router(config: AppConfig) -> Router:
         await state.clear()
         await message.answer("✅ Тарифи успішно оновлено!", reply_markup=admin_menu_keyboard())
 
-    @router.message(F.text == "📋 Замовлення")
-    async def show_recent_orders(message: Message) -> None:
+    @router.message(F.text == "🚗 Водії")
+    async def show_drivers_list(message: Message) -> None:
+        """Показати список всіх водіїв"""
         if not message.from_user or not is_admin(message.from_user.id):
             return
         
-        orders = await fetch_recent_orders(config.database_path, limit=10)
-        if not orders:
-            await message.answer("Замовлень поки немає.", reply_markup=admin_menu_keyboard())
+        import aiosqlite
+        
+        async with aiosqlite.connect(config.database_path) as db:
+            # Отримати всіх водіїв
+            async with db.execute(
+                """
+                SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, 
+                       car_class, status, city, online, created_at
+                FROM drivers
+                ORDER BY 
+                    CASE status
+                        WHEN 'approved' THEN 1
+                        WHEN 'pending' THEN 2
+                        WHEN 'rejected' THEN 3
+                        ELSE 4
+                    END,
+                    created_at DESC
+                """
+            ) as cur:
+                drivers = await cur.fetchall()
+        
+        if not drivers:
+            await message.answer(
+                "👥 <b>Водіїв немає</b>\n\n"
+                "Поки що жоден водій не зареєструвався.",
+                reply_markup=admin_menu_keyboard(),
+                parse_mode="HTML"
+            )
             return
         
-        text = "<b>📋 Останні замовлення:</b>\n\n"
-        for o in orders:
-            status_emoji = {
-                "pending": "⏳",
-                "offered": "📤",
-                "accepted": "✅",
-                "in_progress": "🚗",
-                "completed": "✔️",
-                "cancelled": "❌"
-            }.get(o.status, "❓")
-            
-            text += (
-                f"{status_emoji} <b>№{o.id}</b> ({o.status})\n"
-                f"Клієнт: {o.name} ({o.phone})\n"
-                f"Маршрут: {o.pickup_address[:30]}... → {o.destination_address[:30]}...\n"
-                f"Створено: {o.created_at.strftime('%Y-%m-%d %H:%M')}\n"
-            )
-            if o.fare_amount:
-                text += f"Вартість: {o.fare_amount:.2f} грн\n"
-            text += "\n"
+        # Розділити за статусами
+        approved_drivers = [d for d in drivers if d[8] == "approved"]
+        pending_drivers = [d for d in drivers if d[8] == "pending"]
+        rejected_drivers = [d for d in drivers if d[8] == "rejected"]
         
-        await message.answer(text, reply_markup=admin_menu_keyboard())
+        # Відправити кожну категорію окремо
+        if approved_drivers:
+            await message.answer(
+                f"✅ <b>Активні водії ({len(approved_drivers)})</b>\n\n"
+                "Натисніть на водія для управління:",
+                parse_mode="HTML"
+            )
+            for d in approved_drivers:
+                driver_id, tg_user_id, full_name, phone, car_make, car_model, car_plate, \
+                    car_class, status, city, online, created_at = d
+                
+                online_status = "🟢 Онлайн" if online else "🔴 Офлайн"
+                
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="🚫 Заблокувати", callback_data=f"admin_driver:block:{driver_id}"),
+                            InlineKeyboardButton(text="💬 Написати", url=f"tg://user?id={tg_user_id}")
+                        ],
+                        [InlineKeyboardButton(text="📊 Статистика", callback_data=f"admin_driver:stats:{driver_id}")],
+                        [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"admin_driver:delete:{driver_id}")]
+                    ]
+                )
+                
+                text = (
+                    f"👤 <b>{full_name}</b> {online_status}\n"
+                    f"📱 {phone}\n"
+                    f"🏙️ {city or 'Не вказано'}\n"
+                    f"🚗 {car_make} {car_model} ({car_plate})\n"
+                    f"🎯 Клас: {car_class}\n"
+                    f"🆔 ID: {driver_id}"
+                )
+                
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        
+        if pending_drivers:
+            await message.answer(
+                f"⏳ <b>На модерації ({len(pending_drivers)})</b>\n\n"
+                "Використовуйте '👥 Модерація водіїв' для схвалення",
+                parse_mode="HTML"
+            )
+        
+        if rejected_drivers:
+            await message.answer(
+                f"❌ <b>Відхилені ({len(rejected_drivers)})</b>",
+                parse_mode="HTML"
+            )
+            for d in rejected_drivers:
+                driver_id, tg_user_id, full_name, phone, car_make, car_model, car_plate, \
+                    car_class, status, city, online, created_at = d
+                
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"admin_driver:delete:{driver_id}")]
+                    ]
+                )
+                
+                text = (
+                    f"👤 <b>{full_name}</b>\n"
+                    f"📱 {phone}\n"
+                    f"🆔 ID: {driver_id}"
+                )
+                
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        
+        await message.answer("🔙 Головне меню:", reply_markup=admin_menu_keyboard())
 
     # Обробник для модерації водіїв (approve/reject)
     @router.callback_query(F.data.startswith("drv:"))
@@ -529,6 +604,176 @@ def create_router(config: AppConfig) -> Router:
             logger.error(f"Error in broadcast: {e}")
             await message.answer("❌ Помилка при розсилці", reply_markup=admin_menu_keyboard())
 
+    # Обробники для управління водіями
+    @router.callback_query(F.data.startswith("admin_driver:"))
+    async def handle_driver_management(call: CallbackQuery) -> None:
+        """Управління водіями з адмін-панелі"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        parts = call.data.split(":")
+        if len(parts) < 3:
+            await call.answer("❌ Невірний формат", show_alert=True)
+            return
+        
+        action = parts[1]
+        driver_id = int(parts[2])
+        
+        try:
+            driver = await get_driver_by_id(config.database_path, driver_id)
+            if not driver:
+                await call.answer("❌ Водія не знайдено", show_alert=True)
+                return
+            
+            if action == "block":
+                # Заблокувати водія (змінити статус на rejected)
+                await update_driver_status(config.database_path, driver_id, "rejected")
+                await call.answer("🚫 Водія заблоковано", show_alert=True)
+                
+                # Повідомити водія
+                try:
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        "🚫 <b>Ваш акаунт заблоковано</b>\n\n"
+                        "Адміністратор заблокував ваш доступ до системи.\n"
+                        "Зверніться до підтримки для з'ясування причин.",
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify driver about block: {e}")
+                
+                # Оновити повідомлення
+                await call.message.edit_text(
+                    f"🚫 <b>Водій заблокований</b>\n\n"
+                    f"👤 {driver.full_name}\n"
+                    f"📱 {driver.phone}\n"
+                    f"🚗 {driver.car_make} {driver.car_model}\n\n"
+                    f"Статус змінено на: rejected",
+                    parse_mode="HTML"
+                )
+                
+                logger.info(f"Admin {call.from_user.id} blocked driver {driver_id}")
+            
+            elif action == "unblock":
+                # Розблокувати водія (змінити статус на approved)
+                await update_driver_status(config.database_path, driver_id, "approved")
+                await call.answer("✅ Водія розблоковано", show_alert=True)
+                
+                # Повідомити водія
+                try:
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        "✅ <b>Ваш акаунт розблоковано</b>\n\n"
+                        "Адміністратор відновив ваш доступ до системи.\n"
+                        "Ви можете продовжити роботу.",
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify driver about unblock: {e}")
+                
+                await call.message.edit_text(
+                    f"✅ <b>Водій розблокований</b>\n\n"
+                    f"👤 {driver.full_name}\n"
+                    f"📱 {driver.phone}",
+                    parse_mode="HTML"
+                )
+                
+                logger.info(f"Admin {call.from_user.id} unblocked driver {driver_id}")
+            
+            elif action == "stats":
+                # Показати статистику водія
+                import aiosqlite
+                
+                async with aiosqlite.connect(config.database_path) as db:
+                    # Загальна кількість замовлень
+                    async with db.execute(
+                        "SELECT COUNT(*) FROM orders WHERE driver_id = ? AND status = 'completed'",
+                        (driver_id,)
+                    ) as cur:
+                        completed_orders = (await cur.fetchone())[0]
+                    
+                    # Загальний заробіток
+                    async with db.execute(
+                        "SELECT SUM(fare_amount), SUM(commission) FROM orders WHERE driver_id = ? AND status = 'completed'",
+                        (driver_id,)
+                    ) as cur:
+                        row = await cur.fetchone()
+                        total_earnings = row[0] if row[0] else 0.0
+                        total_commission = row[1] if row[1] else 0.0
+                    
+                    net_earnings = total_earnings - total_commission
+                
+                stats_text = (
+                    f"📊 <b>Статистика водія</b>\n\n"
+                    f"👤 {driver.full_name}\n"
+                    f"📱 {driver.phone}\n"
+                    f"🚗 {driver.car_make} {driver.car_model}\n\n"
+                    f"✅ Виконано замовлень: {completed_orders}\n"
+                    f"💰 Загальний заробіток: {total_earnings:.2f} грн\n"
+                    f"💸 Комісія сплачена: {total_commission:.2f} грн\n"
+                    f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
+                    f"🏙️ Місто: {driver.city or 'Не вказано'}\n"
+                    f"🎯 Клас авто: {driver.car_class}\n"
+                    f"📅 Реєстрація: {driver.created_at.strftime('%Y-%m-%d')}"
+                )
+                
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🔙 Назад", callback_data="close_stats")]
+                    ]
+                )
+                
+                await call.message.edit_text(stats_text, reply_markup=kb, parse_mode="HTML")
+            
+            elif action == "delete":
+                # Показати підтвердження видалення
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="✅ Так, видалити", callback_data=f"admin_driver:confirm_delete:{driver_id}"),
+                            InlineKeyboardButton(text="❌ Скасувати", callback_data="close_stats")
+                        ]
+                    ]
+                )
+                
+                await call.message.edit_text(
+                    f"⚠️ <b>Підтвердження видалення</b>\n\n"
+                    f"Ви дійсно хочете видалити водія?\n\n"
+                    f"👤 {driver.full_name}\n"
+                    f"📱 {driver.phone}\n"
+                    f"🚗 {driver.car_make} {driver.car_model}\n\n"
+                    f"❗️ Цю дію не можна скасувати!",
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
+            
+            elif action == "confirm_delete":
+                # Видалити водія з БД
+                import aiosqlite
+                
+                async with aiosqlite.connect(config.database_path) as db:
+                    await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
+                    await db.commit()
+                
+                await call.answer("🗑️ Водія видалено", show_alert=True)
+                await call.message.edit_text(
+                    f"🗑️ <b>Водій видалений</b>\n\n"
+                    f"Водія {driver.full_name} видалено з системи.",
+                    parse_mode="HTML"
+                )
+                
+                logger.info(f"Admin {call.from_user.id} deleted driver {driver_id}")
+        
+        except Exception as e:
+            logger.error(f"Error in driver management: {e}")
+            await call.answer("❌ Помилка при обробці", show_alert=True)
+    
+    @router.callback_query(F.data == "close_stats")
+    async def close_stats(call: CallbackQuery) -> None:
+        """Закрити вікно статистики"""
+        await call.message.delete()
+    
     @router.message(F.text == "⚙️ Налаштування")
     async def show_settings(message: Message) -> None:
         """Налаштування системи"""
@@ -538,64 +783,99 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db import get_online_drivers_count
         online_count = await get_online_drivers_count(config.database_path)
         
+        # Отримати кількість водіїв за статусами
+        import aiosqlite
+        async with aiosqlite.connect(config.database_path) as db:
+            async with db.execute("SELECT status, COUNT(*) FROM drivers GROUP BY status") as cur:
+                status_counts = dict(await cur.fetchall())
+            
+            # Загальна кількість користувачів
+            async with db.execute("SELECT COUNT(*) FROM users") as cur:
+                users_count = (await cur.fetchone())[0]
+            
+            # Загальна кількість замовлень
+            async with db.execute("SELECT COUNT(*) FROM orders") as cur:
+                orders_count = (await cur.fetchone())[0]
+        
+        approved_count = status_counts.get("approved", 0)
+        pending_count = status_counts.get("pending", 0)
+        rejected_count = status_counts.get("rejected", 0)
+        
         text = (
             "⚙️ <b>Налаштування системи</b>\n\n"
-            f"🌐 Місто роботи: {', '.join(AVAILABLE_CITIES)}\n"
-            f"🚗 Водіїв онлайн: {online_count}\n"
-            f"💳 Картка для оплати: {config.payment_card or 'Не вказано'}\n"
-            f"👥 Група водіїв: {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
-            f"🗺️ Google Maps API: {'Підключено' if config.google_maps_api_key else 'Не підключено'}\n\n"
-            "💡 Для зміни налаштувань використовуйте змінні середовища на Render"
+            f"📊 <b>Статистика:</b>\n"
+            f"   👥 Користувачів: {users_count}\n"
+            f"   📦 Замовлень: {orders_count}\n\n"
+            f"🚗 <b>Водії:</b>\n"
+            f"   ✅ Активні: {approved_count}\n"
+            f"   ⏳ На модерації: {pending_count}\n"
+            f"   ❌ Заблоковані: {rejected_count}\n"
+            f"   🟢 Онлайн: {online_count}\n\n"
+            f"🌐 <b>Міста:</b> {', '.join(AVAILABLE_CITIES)}\n"
+            f"💳 <b>Картка:</b> {config.payment_card or 'Не налаштована'}\n"
+            f"👥 <b>Група:</b> {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
+            f"🗺️ <b>Google Maps:</b> {'Підключено ✅' if config.google_maps_api_key else 'Не підключено ❌'}\n\n"
+            f"💡 Для зміни налаштувань використовуйте ENV змінні на Render"
         )
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Оновити дані", callback_data="settings:refresh")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")]
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
             ]
         )
         
-        await message.answer(text, reply_markup=kb)
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
     
     @router.callback_query(F.data == "settings:refresh")
     async def refresh_settings(call: CallbackQuery) -> None:
         """Оновити налаштування"""
         if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
             return
         
         from app.storage.db import get_online_drivers_count
         online_count = await get_online_drivers_count(config.database_path)
         
+        # Отримати кількість водіїв за статусами
+        import aiosqlite
+        async with aiosqlite.connect(config.database_path) as db:
+            async with db.execute("SELECT status, COUNT(*) FROM drivers GROUP BY status") as cur:
+                status_counts = dict(await cur.fetchall())
+            
+            async with db.execute("SELECT COUNT(*) FROM users") as cur:
+                users_count = (await cur.fetchone())[0]
+            
+            async with db.execute("SELECT COUNT(*) FROM orders") as cur:
+                orders_count = (await cur.fetchone())[0]
+        
+        approved_count = status_counts.get("approved", 0)
+        pending_count = status_counts.get("pending", 0)
+        rejected_count = status_counts.get("rejected", 0)
+        
         text = (
             "⚙️ <b>Налаштування системи</b>\n\n"
-            f"🌐 Місто роботи: {', '.join(AVAILABLE_CITIES)}\n"
-            f"🚗 Водіїв онлайн: {online_count}\n"
-            f"💳 Картка для оплати: {config.payment_card or 'Не вказано'}\n"
-            f"👥 Група водіїв: {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
-            f"🗺️ Google Maps API: {'Підключено' if config.google_maps_api_key else 'Не підключено'}\n\n"
-            "💡 Для зміни налаштувань використовуйте змінні середовища на Render"
+            f"📊 <b>Статистика:</b>\n"
+            f"   👥 Користувачів: {users_count}\n"
+            f"   📦 Замовлень: {orders_count}\n\n"
+            f"🚗 <b>Водії:</b>\n"
+            f"   ✅ Активні: {approved_count}\n"
+            f"   ⏳ На модерації: {pending_count}\n"
+            f"   ❌ Заблоковані: {rejected_count}\n"
+            f"   🟢 Онлайн: {online_count}\n\n"
+            f"🌐 <b>Міста:</b> {', '.join(AVAILABLE_CITIES)}\n"
+            f"💳 <b>Картка:</b> {config.payment_card or 'Не налаштована'}\n"
+            f"👥 <b>Група:</b> {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
+            f"🗺️ <b>Google Maps:</b> {'Підключено ✅' if config.google_maps_api_key else 'Не підключено ❌'}\n\n"
+            f"💡 Для зміни налаштувань використовуйте ENV змінні на Render"
         )
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Оновити дані", callback_data="settings:refresh")],
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back")]
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
             ]
         )
         
         await call.answer("✅ Оновлено")
-        await call.message.edit_text(text, reply_markup=kb)
-    
-    @router.callback_query(F.data == "admin:back")
-    async def back_to_admin(call: CallbackQuery) -> None:
-        """Повернутись до адмін-панелі"""
-        if not call.from_user or not is_admin(call.from_user.id):
-            return
-        
-        await call.answer()
-        await call.message.answer(
-            "🔐 <b>Адмін-панель</b>\n\nОберіть дію:",
-            reply_markup=admin_menu_keyboard()
-        )
+        await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     
     return router
