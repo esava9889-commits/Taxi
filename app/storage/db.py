@@ -145,6 +145,7 @@ async def init_db(db_path: str) -> None:
                 per_km REAL NOT NULL,
                 per_minute REAL NOT NULL,
                 minimum REAL NOT NULL,
+                commission_percent REAL NOT NULL DEFAULT 0.02,
                 created_at TEXT NOT NULL
             )
             """
@@ -283,6 +284,14 @@ async def init_db(db_path: str) -> None:
     
     # Виконати міграції ПІСЛЯ створення всіх таблиць
     await ensure_driver_columns(db_path)
+    # Міграція: додати commission_percent у tariffs якщо відсутнє
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("PRAGMA table_info(tariffs)") as cur:
+            cols = await cur.fetchall()
+            col_names = [c[1] for c in cols]
+        if 'commission_percent' not in col_names:
+            await db.execute("ALTER TABLE tariffs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0.02")
+            await db.commit()
 
 
 async def insert_order(db_path: str, order: Order) -> int:
@@ -1478,6 +1487,7 @@ class Tariff:
     per_km: float
     per_minute: float
     minimum: float
+    commission_percent: float  # e.g., 0.02 for 2%
     created_at: datetime
 
 
@@ -1485,10 +1495,10 @@ async def insert_tariff(db_path: str, t: Tariff) -> int:
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
             """
-            INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, commission_percent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (t.base_fare, t.per_km, t.per_minute, t.minimum, t.created_at.isoformat()),
+            (t.base_fare, t.per_km, t.per_minute, t.minimum, t.commission_percent, t.created_at.isoformat()),
         )
         await db.commit()
         return cursor.lastrowid
@@ -1497,7 +1507,7 @@ async def insert_tariff(db_path: str, t: Tariff) -> int:
 async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
-            "SELECT id, base_fare, per_km, per_minute, minimum, created_at FROM tariffs ORDER BY id DESC LIMIT 1"
+            "SELECT id, base_fare, per_km, per_minute, minimum, commission_percent, created_at FROM tariffs ORDER BY id DESC LIMIT 1"
         ) as cursor:
             row = await cursor.fetchone()
     if not row:
@@ -1508,5 +1518,6 @@ async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
         per_km=row[2],
         per_minute=row[3],
         minimum=row[4],
-        created_at=datetime.fromisoformat(row[5]),
+        commission_percent=row[5] if row[5] is not None else 0.02,
+        created_at=datetime.fromisoformat(row[6]),
     )

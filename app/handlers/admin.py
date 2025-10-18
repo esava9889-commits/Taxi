@@ -186,7 +186,8 @@ def create_router(config: AppConfig) -> Router:
                 f"Базова ціна: {tariff.base_fare:.2f} грн\n"
                 f"Ціна за км: {tariff.per_km:.2f} грн\n"
                 f"Ціна за хвилину: {tariff.per_minute:.2f} грн\n"
-                f"Мінімальна сума: {tariff.minimum:.2f} грн\n\n"
+                f"Мінімальна сума: {tariff.minimum:.2f} грн\n"
+                f"Комісія сервісу: {tariff.commission_percent*100:.1f}%\n\n"
                 f"Встановлено: {tariff.created_at.strftime('%Y-%m-%d %H:%M')}"
             )
         else:
@@ -268,20 +269,45 @@ def create_router(config: AppConfig) -> Router:
             return
         
         data = await state.get_data()
+        # Запит комісії після мінімальної суми
+        await state.update_data(minimum=minimum)
+        await state.set_state(TariffStates.minimum)  # тимчасово залишимо стан
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="➡️ Далі: Комісія (%)", callback_data="tariff:commission")]]
+        )
+        await message.answer("Введення мінімальної суми збережено.", reply_markup=kb)
+
+    @router.callback_query(F.data == "tariff:commission")
+    async def ask_commission(call: CallbackQuery, state: FSMContext) -> None:
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        await call.answer()
+        # Використаємо існуючий стан minimum як проміжний, щоб не додавати новий
+        await call.message.answer("Введіть комісію сервісу у відсотках (наприклад, 2 або 2.5):", reply_markup=cancel_keyboard())
+
+    @router.message(TariffStates.minimum)
+    async def set_commission_percent(message: Message, state: FSMContext) -> None:
+        # Перевикористання стану для вводу комісії після мінімальної суми
+        try:
+            commission_percent = float(message.text.strip())
+            if commission_percent < 0 or commission_percent > 50:
+                raise ValueError()
+        except ValueError:
+            await message.answer("Введіть коректний відсоток (0-50), напр. 2.0")
+            return
+        data = await state.get_data()
         tariff = Tariff(
             id=None,
             base_fare=data["base_fare"],
             per_km=data["per_km"],
             per_minute=data["per_minute"],
-            minimum=minimum,
+            minimum=data["minimum"],
+            commission_percent=commission_percent / 100.0,
             created_at=datetime.now(timezone.utc)
         )
         await insert_tariff(config.database_path, tariff)
         await state.clear()
-        await message.answer(
-            "✅ Тарифи успішно оновлено!", 
-            reply_markup=admin_menu_keyboard()
-        )
+        await message.answer("✅ Тарифи успішно оновлено!", reply_markup=admin_menu_keyboard())
 
     @router.message(F.text == "📋 Замовлення")
     async def show_recent_orders(message: Message) -> None:

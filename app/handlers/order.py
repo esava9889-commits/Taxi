@@ -123,11 +123,22 @@ def create_router(config: AppConfig) -> Router:
         if base_fare < tariff.minimum:
             base_fare = tariff.minimum
         
-        # Розрахувати ціни для КОЖНОГО класу
+        # Розрахувати ЦІНУ З УРАХУВАННЯМ ДИНАМІКИ для КОЖНОГО класу
         car_class_prices = {}
+        car_class_explanations = {}
+        from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
+        from app.storage.db import get_online_drivers_count
+        city = data.get('city', 'Київ') or 'Київ'
+        online_count = await get_online_drivers_count(config.database_path, city)
+        pending_orders_estimate = 5
         for class_key in ["economy", "standard", "comfort", "business"]:
             class_fare = calculate_fare_with_class(base_fare, class_key)
-            car_class_prices[class_key] = round(class_fare, 2)
+            final_price, explanation, total_mult = await calculate_dynamic_price(
+                class_fare, city, online_count, pending_orders_estimate
+            )
+            car_class_prices[class_key] = round(final_price, 2)
+            emoji = get_surge_emoji(total_mult)
+            car_class_explanations[class_key] = (emoji, explanation)
         
         # Створити кнопки з цінами для кожного класу
         buttons = []
@@ -137,7 +148,8 @@ def create_router(config: AppConfig) -> Router:
             class_price = car_class_prices[class_key]
             class_desc = class_info["description_uk"]
             
-            button_text = f"{class_name} - {class_price:.0f} грн"
+            emoji, explanation = car_class_explanations[class_key]
+            button_text = f"{class_name} - {class_price:.0f} грн {emoji}"
             buttons.append([InlineKeyboardButton(
                 text=button_text,
                 callback_data=f"select_car_class:{class_key}"
@@ -153,7 +165,9 @@ def create_router(config: AppConfig) -> Router:
             f"📏 <b>Розрахунок маршруту:</b>\n\n"
             f"📍 Відстань: <b>{distance_km:.1f} км</b>\n"
             f"⏱ Час в дорозі: <b>~{duration_minutes:.0f} хв</b>\n\n"
-            f"💰 <b>Оберіть клас авто:</b>\n"
+            f"💰 <b>Оберіть клас авто:</b>\n\n"
+            f"ℹ️ Ціни вже включають динамічні націнки/знижки (нічний тариф, попит).\n"
+            f"Натисніть клас, ціна буде зафіксована."
         )
         
         await state.set_state(OrderStates.car_class)
@@ -284,11 +298,30 @@ def create_router(config: AppConfig) -> Router:
         # Отримати назву обраного класу
         from app.handlers.car_classes import get_car_class_name
         class_name = get_car_class_name(car_class)
-        
+        # Зафіксувати обрану суму (перерахунок як при відображенні)
+        data = await state.get_data()
+        tariff = await get_latest_tariff(config.database_path)
+        distance_km = data.get("distance_km", 5.0)
+        duration_minutes = data.get("duration_minutes", 15.0)
+        base_fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
+        if base_fare < tariff.minimum:
+            base_fare = tariff.minimum
+        from app.handlers.dynamic_pricing import calculate_dynamic_price
+        from app.storage.db import get_online_drivers_count
+        city = data.get('city', 'Київ') or 'Київ'
+        online_count = await get_online_drivers_count(config.database_path, city)
+        class_fare = calculate_fare_with_class(base_fare, car_class)
+        final_price, explanation, total_mult = await calculate_dynamic_price(
+            class_fare, city, online_count, 5
+        )
+        await state.update_data(estimated_fare=final_price, fare_explanation=explanation)
+
         # Перейти до коментаря
         await state.set_state(OrderStates.comment)
         await call.message.answer(
-            f"✅ Обрано: <b>{class_name}</b>\n\n"
+            f"✅ Обрано: <b>{class_name}</b>\n"
+            f"💰 Вартість: <b>{final_price:.0f} грн</b>\n"
+            f"Причини: \n{explanation if explanation else 'Базовий тариф'}\n\n"
             "💬 <b>Додайте коментар до замовлення</b> (опціонально):\n\n"
             "Наприклад: під'їзд 3, поверх 5, код домофону 123\n\n"
             "Або натисніть 'Пропустити'",
@@ -544,7 +577,7 @@ def create_router(config: AppConfig) -> Router:
                         dest_lat=dest_lat, dest_lon=dest_lon
                     )
         
-        # Якщо є координати - розрахувати відстань
+        # Якщо є координати - розрахувати відстань (ціна вже зафіксована в estimated_fare)
         if pickup_lat and pickup_lon and dest_lat and dest_lon:
             if config.google_maps_api_key:
                 logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
@@ -563,46 +596,8 @@ def create_router(config: AppConfig) -> Router:
                     distance_text = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n\n"
                     logger.info(f"✅ Розраховано відстань: {km:.1f} км, {int(minutes)} хв")
                     
-                    # Розрахунок орієнтовної вартості з урахуванням класу
-                    tariff = await get_latest_tariff(config.database_path)
-                    if tariff:
-                        base_fare = max(
-                            tariff.minimum,
-                            tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
-                        )
-                        
-                        # Застосувати множник класу авто
-                        from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
-                        car_class = data.get('car_class', 'economy')
-                        class_fare = calculate_fare_with_class(base_fare, car_class)
-                        
-                        # Динамічне ціноутворення
-                        from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
-                        from app.storage.db import get_online_drivers_count
-                        
-                        city = data.get('city', 'Київ')
-                        online_count = await get_online_drivers_count(config.database_path, city)
-                        
-                        estimated_fare, surge_reason, surge_mult = await calculate_dynamic_price(
-                            class_fare, city, online_count, 5  # 5 pending orders (приблизно)
-                        )
-                        
-                        class_name = get_car_class_name(car_class)
-                        surge_emoji = get_surge_emoji(surge_mult)
-                        
-                        if surge_mult != 1.0:
-                            surge_percent = int((surge_mult - 1) * 100)
-                            surge_text = f" {surge_emoji} +{surge_percent}%" if surge_percent > 0 else f" {surge_emoji} {surge_percent}%"
-                            fare_estimate = f"💰 Орієнтовна вартість ({class_name}{surge_text}): {estimated_fare:.0f} грн\n"
-                            if surge_reason:
-                                fare_estimate += f"<i>{surge_reason}</i>\n\n"
-                        else:
-                            fare_estimate = f"💰 Орієнтовна вартість ({class_name}): {estimated_fare:.0f} грн\n\n"
-                        
-                        logger.info(f"💰 Розрахована вартість: {estimated_fare:.0f} грн (клас: {car_class}, surge: {surge_mult})")
-                        
-                        # Зберегти в FSM для використання при створенні замовлення
-                        await state.update_data(estimated_fare=estimated_fare)
+                        # Ціну вже було зафіксовано при виборі класу, не перераховуємо
+                        pass
                 else:
                     logger.warning(f"❌ Google Maps Distance Matrix API не повернув результат")
             else:
@@ -623,7 +618,7 @@ def create_router(config: AppConfig) -> Router:
             f"📍 Куди: {data.get('destination')}\n"
             f"💬 Коментар: {data.get('comment') or '—'}\n\n"
             f"{distance_text}"
-            f"{fare_estimate}"
+            f"💰 Вартість: {data.get('estimated_fare', 0):.0f} грн\n\n"
             "Все вірно?"
         )
         
@@ -706,9 +701,9 @@ def create_router(config: AppConfig) -> Router:
                         city = data.get('city', 'Київ')
                         online_count = await get_online_drivers_count(config.database_path, city)
                         
-                        estimated_fare, surge_reason, surge_mult = await calculate_dynamic_price(
-                            class_fare, city, online_count, 5
-                        )
+                        # НЕ перераховуємо ціну — беремо зафіксовану
+                        estimated_fare = data.get('estimated_fare') or class_fare
+                        surge_mult = 1.0
                         
                         class_name = get_car_class_name(car_class)
                         surge_emoji = get_surge_emoji(surge_mult)

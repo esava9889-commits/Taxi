@@ -382,13 +382,14 @@ def create_router(config: AppConfig) -> Router:
                     reply_markup=kb_client
                 )
             else:
-                await call.bot.send_message(
+            await call.bot.send_message(
                     order.user_id,
-                    f"✅ <b>Водій прийняв замовлення!</b>\n\n"
+                f"✅ <b>Водій прийняв замовлення!</b>\n\n"
                     f"🚗 {driver.full_name}\n"
                     f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                     f"📱 <code>{driver.phone}</code>\n\n"
-                    f"💵 Оплата готівкою"
+                f"💵 Оплата готівкою\n\n"
+                f"🚗 Водій уже в дорозі. Очікуйте!"
                 )
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
@@ -544,11 +545,15 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Водія не знайдено", show_alert=True)
             return
         
-        # Розрахунок вартості з БД (якщо є) або базова
+        # Розрахунок вартості: використовуємо збережену, інакше мінімум 100
         fare = order.fare_amount if order.fare_amount else 100.0
         distance_m = order.distance_m if order.distance_m else 0
         duration_s = order.duration_s if order.duration_s else 0
-        commission = fare * 0.02  # 2%
+        # Отримати поточний тариф для комісії
+        from app.storage.db import get_latest_tariff, insert_payment, Payment
+        tariff = await get_latest_tariff(config.database_path)
+        commission_rate = tariff.commission_percent if tariff else 0.02
+        commission = fare * commission_rate
         
         await complete_order(
             config.database_path,
@@ -559,6 +564,18 @@ def create_router(config: AppConfig) -> Router:
             duration_s,
             commission
         )
+        # Запис у payments для обліку комісії
+        payment = Payment(
+            id=None,
+            order_id=order_id,
+            driver_id=driver.id,
+            amount=fare,
+            commission=commission,
+            commission_paid=False,
+            payment_method=order.payment_method or 'cash',
+            created_at=datetime.now(timezone.utc),
+        )
+        await insert_payment(config.database_path, payment)
         
         await call.answer(f"✅ Завершено! {fare:.0f} грн", show_alert=True)
         
