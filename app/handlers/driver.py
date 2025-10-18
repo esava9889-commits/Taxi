@@ -577,11 +577,15 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        # Зберегти message_id для видалення
+        # Видалити попереднє повідомлення та повідомлення користувача
         data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
         
-        # Видалити повідомлення користувача з ПІБ
         try:
             await message.delete()
         except:
@@ -594,8 +598,7 @@ def create_router(config: AppConfig) -> Router:
             "Приклад: +380 67 123 45 67",
             reply_markup=kb
         )
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.message(DriverRegStates.phone)
     async def take_phone(message: Message, state: FSMContext) -> None:
@@ -620,9 +623,14 @@ def create_router(config: AppConfig) -> Router:
         from app.handlers.keyboards import driver_city_selection_keyboard
         await state.set_state(DriverRegStates.city)
         
-        # Зберегти message_id та видалити повідомлення користувача
+        # Видалити попереднє та поточне повідомлення користувача
         data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
         
         try:
             await message.delete()
@@ -635,8 +643,7 @@ def create_router(config: AppConfig) -> Router:
             "Оберіть місто, в якому ви будете працювати:",
             reply_markup=driver_city_selection_keyboard()
         )
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.callback_query(F.data.startswith("driver_city:"), DriverRegStates.city)
     async def take_city(call: CallbackQuery, state: FSMContext) -> None:
@@ -690,9 +697,14 @@ def create_router(config: AppConfig) -> Router:
         await state.update_data(car_make=car_make)
         await state.set_state(DriverRegStates.car_model)
         
-        # Зберегти message_id та видалити повідомлення користувача
+        # Видалити попереднє та поточне повідомлення користувача
         data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
         
         try:
             await message.delete()
@@ -713,8 +725,7 @@ def create_router(config: AppConfig) -> Router:
             "Приклад: Camry, Passat, X5",
             reply_markup=kb
         )
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.message(DriverRegStates.car_model)
     async def take_car_model(message: Message, state: FSMContext) -> None:
@@ -799,9 +810,15 @@ def create_router(config: AppConfig) -> Router:
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        # Видалити повідомлення користувача та зберегти ID
-        messages_to_delete = data.get("messages_to_delete", [])
+        # Видалити попереднє повідомлення
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
         
+        # Видалити повідомлення користувача
         try:
             await message.delete()
         except:
@@ -818,8 +835,7 @@ def create_router(config: AppConfig) -> Router:
             "Це вплине на вартість поїздок та ваш заробіток.",
             reply_markup=kb
         )
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.callback_query(F.data.startswith("driver_car_class:"))
     async def save_driver_car_class(call: CallbackQuery, state: FSMContext) -> None:
@@ -840,28 +856,23 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        # Зберегти message_id
+        # Видалити попереднє повідомлення
         data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, reg_message_id)
+            except:
+                pass
         
-        try:
-            await call.message.edit_text(
-                f"✅ <b>Клас авто:</b> {class_name}\n\n"
-                "📸 <b>Крок 8/8: Фото посвідчення водія</b>\n\n"
-                "Надішліть фото посвідчення водія або пропустіть цей крок.\n\n"
-                "💡 Фото допоможе адміну швидше розглянути заявку.",
-                reply_markup=kb
-            )
-        except:
-            msg = await call.message.answer(
-                f"✅ <b>Клас авто:</b> {class_name}\n\n"
-                "📸 <b>Крок 8/8: Фото посвідчення водія</b>\n\n"
-                "Надішліть фото посвідчення водія або пропустіть цей крок.\n\n"
-                "💡 Фото допоможе адміну швидше розглянути заявку.",
-                reply_markup=kb
-            )
-            messages_to_delete.append(msg.message_id)
-            await state.update_data(messages_to_delete=messages_to_delete)
+        msg = await call.message.answer(
+            f"✅ <b>Клас авто:</b> {class_name}\n\n"
+            "📸 <b>Крок 8/8: Фото посвідчення водія</b>\n\n"
+            "Надішліть фото посвідчення водія або пропустіть цей крок.\n\n"
+            "💡 Фото допоможе адміну швидше розглянути заявку.",
+            reply_markup=kb
+        )
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.callback_query(F.data == "driver:skip_photo", DriverRegStates.license_photo)
     async def skip_license_callback(call: CallbackQuery, state: FSMContext) -> None:
@@ -887,16 +898,21 @@ def create_router(config: AppConfig) -> Router:
             return
         file_id = message.photo[-1].file_id  # biggest size
         
-        # Видалити фото користувача після збереження
+        # Видалити попереднє повідомлення та фото користувача
         data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
         
         try:
             await message.delete()
         except:
             pass
         
-        await state.update_data(license_photo_file_id=file_id, messages_to_delete=messages_to_delete)
+        await state.update_data(license_photo_file_id=file_id)
         await finalize_application(message, state, message.from_user.id)
 
     async def finalize_application(message: Message, state: FSMContext, user_id: int) -> None:
@@ -966,11 +982,11 @@ def create_router(config: AppConfig) -> Router:
                 # Ignore delivery errors to some admins
                 pass
 
-        # Видалити всі повідомлення реєстрації
-        messages_to_delete = data.get("messages_to_delete", [])
-        for msg_id in messages_to_delete:
+        # Видалити попереднє повідомлення якщо є
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
             try:
-                await message.bot.delete_message(message.chat.id, msg_id)
+                await message.bot.delete_message(message.chat.id, reg_message_id)
             except:
                 pass
         

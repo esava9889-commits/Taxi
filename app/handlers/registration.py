@@ -84,7 +84,15 @@ def create_registration_router(config: AppConfig) -> Router:
         await state.update_data(city=city)
         await call.answer(f"✅ {city}")
         
-        # Редагувати попереднє повідомлення
+        # Видалити попереднє повідомлення
+        data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, reg_message_id)
+            except:
+                pass
+        
         text = (
             f"✅ <b>Місто обрано:</b> {city}\n\n"
             "📱 <b>Крок 2/2: Надайте номер телефону</b>\n\n"
@@ -104,28 +112,37 @@ def create_registration_router(config: AppConfig) -> Router:
         
         await state.set_state(ClientRegStates.phone)
         
-        try:
-            await call.message.edit_text(text, reply_markup=kb)
-        except:
-            await call.message.answer(text, reply_markup=kb)
+        msg = await call.message.answer(text, reply_markup=kb)
+        await state.update_data(reg_message_id=msg.message_id)
         
-        # Зберегти message_id та надіслати contact keyboard
-        data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
-        
-        msg = await call.message.answer(
-            "👇 Або поділіться контактом:",
+        # Надіслати contact keyboard
+        contact_msg = await call.message.answer(
+            "👇 Натисніть кнопку нижче:",
             reply_markup=contact_keyboard()
         )
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        await state.update_data(contact_message_id=contact_msg.message_id)
     
     @router.callback_query(F.data == "phone:manual", ClientRegStates.phone)
     async def phone_manual_entry(call: CallbackQuery, state: FSMContext) -> None:
         """Ручне введення номеру"""
         await call.answer()
         
+        # Видалити попередні повідомлення
         data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        contact_message_id = data.get("contact_message_id")
+        
+        if reg_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, reg_message_id)
+            except:
+                pass
+        if contact_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, contact_message_id)
+            except:
+                pass
+        
         city = data.get("city", "Місто")
         
         text = (
@@ -143,39 +160,55 @@ def create_registration_router(config: AppConfig) -> Router:
             ]
         )
         
-        try:
-            await call.message.edit_text(text, reply_markup=kb)
-        except:
-            await call.message.answer(text, reply_markup=kb)
+        msg = await call.message.answer(text, reply_markup=kb)
+        await state.update_data(reg_message_id=msg.message_id, contact_message_id=None)
         
-        # Прибрати contact keyboard та зберегти message_id
-        data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
-        
-        msg = await call.message.answer("✍️ Введіть номер:", reply_markup=ReplyKeyboardRemove())
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        # Прибрати contact keyboard
+        await call.message.answer("✍️ Введіть номер:", reply_markup=ReplyKeyboardRemove())
     
     @router.callback_query(F.data == "register:back_to_city", ClientRegStates.phone)
     async def back_to_city(call: CallbackQuery, state: FSMContext) -> None:
         """Повернутися до вибору міста"""
         await call.answer()
+        
+        # Видалити попередні повідомлення
+        data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        contact_message_id = data.get("contact_message_id")
+        
+        if reg_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, reg_message_id)
+            except:
+                pass
+        if contact_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, contact_message_id)
+            except:
+                pass
+        
         await state.set_state(ClientRegStates.city)
         
         text = "📍 <b>Крок 1/2: Оберіть ваше місто</b>\n\nВиберіть місто, в якому ви плануєте користуватися таксі:"
         kb = city_selection_keyboard()
         
-        try:
-            await call.message.edit_text(text, reply_markup=kb)
-        except:
-            await call.message.answer(text, reply_markup=kb)
+        msg = await call.message.answer(text, reply_markup=kb)
+        await state.update_data(reg_message_id=msg.message_id, contact_message_id=None)
     
     @router.callback_query(F.data == "register:back_to_phone")
     async def back_to_phone_choice(call: CallbackQuery, state: FSMContext) -> None:
         """Повернутися до вибору способу введення телефону"""
         await call.answer()
         
+        # Видалити попереднє повідомлення
         data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        if reg_message_id:
+            try:
+                await call.message.bot.delete_message(call.message.chat.id, reg_message_id)
+            except:
+                pass
+        
         city = data.get("city", "Місто")
         
         text = (
@@ -194,21 +227,15 @@ def create_registration_router(config: AppConfig) -> Router:
             ]
         )
         
-        try:
-            await call.message.edit_text(text, reply_markup=kb)
-        except:
-            await call.message.answer(text, reply_markup=kb)
+        msg = await call.message.answer(text, reply_markup=kb)
+        await state.update_data(reg_message_id=msg.message_id)
         
-        # Повернути contact keyboard та зберегти message_id
-        data = await state.get_data()
-        messages_to_delete = data.get("messages_to_delete", [])
-        
-        msg = await call.message.answer(
+        # Повернути contact keyboard
+        contact_msg = await call.message.answer(
             "👇 Або поділіться контактом:",
             reply_markup=contact_keyboard()
         )
-        messages_to_delete.append(msg.message_id)
-        await state.update_data(messages_to_delete=messages_to_delete)
+        await state.update_data(contact_message_id=contact_msg.message_id)
     
     @router.message(ClientRegStates.phone, F.contact)
     async def save_phone_contact(message: Message, state: FSMContext) -> None:
@@ -316,6 +343,29 @@ def create_registration_router(config: AppConfig) -> Router:
             created_at=datetime.now(timezone.utc),
         )
         await upsert_user(config.database_path, user)
+        
+        # Видалити всі повідомлення реєстрації
+        data = await state.get_data()
+        reg_message_id = data.get("reg_message_id")
+        contact_message_id = data.get("contact_message_id")
+        
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
+        if contact_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, contact_message_id)
+            except:
+                pass
+        
+        # Видалити повідомлення користувача з номером
+        try:
+            await message.delete()
+        except:
+            pass
+        
         await state.clear()
         
         # Перевірка чи це адмін
@@ -323,11 +373,12 @@ def create_registration_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"✅ <b>Реєстрація завершена!</b>\n\n"
-            f"👤 {cleaned_name}\n"
-            f"📍 {city}\n"
-            f"📱 {cleaned_phone}\n\n"
-            "Тепер ви можете замовити таксі! 🚖",
-            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+            f"🎉 Ласкаво просимо, {cleaned_name}!\n\n"
+            f"📱 Телефон: {cleaned_phone}\n"
+            f"📍 Місто: {city}\n\n"
+            "Тепер ви можете замовити таксі через меню внизу 👇",
+            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin),
+            parse_mode="HTML"
         )
         logger.info(f"User {message.from_user.id} registered in {city} with phone {cleaned_phone}")
     
