@@ -20,7 +20,7 @@ from aiogram.types import (
 
 logger = logging.getLogger(__name__)
 
-from app.config.config import AppConfig
+from app.config.config import AppConfig, AVAILABLE_CITIES
 from app.storage.db import (
     Tariff,
     get_latest_tariff,
@@ -508,7 +508,7 @@ def create_router(config: AppConfig) -> Router:
         
         text = (
             "⚙️ <b>Налаштування системи</b>\n\n"
-            f"🌐 Місто роботи: {', '.join(config.available_cities)}\n"
+            f"🌐 Місто роботи: {', '.join(AVAILABLE_CITIES)}\n"
             f"🚗 Водіїв онлайн: {online_count}\n"
             f"💳 Картка для оплати: {config.payment_card or 'Не вказано'}\n"
             f"👥 Група водіїв: {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
@@ -536,7 +536,7 @@ def create_router(config: AppConfig) -> Router:
         
         text = (
             "⚙️ <b>Налаштування системи</b>\n\n"
-            f"🌐 Місто роботи: {', '.join(config.available_cities)}\n"
+            f"🌐 Місто роботи: {', '.join(AVAILABLE_CITIES)}\n"
             f"🚗 Водіїв онлайн: {online_count}\n"
             f"💳 Картка для оплати: {config.payment_card or 'Не вказано'}\n"
             f"👥 Група водіїв: {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"

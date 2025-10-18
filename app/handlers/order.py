@@ -606,6 +606,10 @@ def create_router(config: AppConfig) -> Router:
         from app.handlers.car_classes import get_car_class_name
         car_class_name = get_car_class_name(data.get('car_class', 'economy'))
         
+        # Відобразити спосіб оплати, якщо вибрано
+        payment_method = data.get('payment_method')
+        payment_text = "💵 Готівка" if payment_method == "cash" else ("💳 Картка" if payment_method == "card" else None)
+
         text = (
             "📋 <b>Перевірте дані замовлення:</b>\n\n"
             f"👤 Клієнт: {data.get('name')}\n"
@@ -617,7 +621,8 @@ def create_router(config: AppConfig) -> Router:
             f"💬 Коментар: {data.get('comment') or '—'}\n\n"
             f"{distance_text}"
             f"💰 Вартість: {data.get('estimated_fare', 0):.0f} грн\n\n"
-            "Все вірно?"
+            + (f"💳 Оплата: {payment_text}\n\n" if payment_text else "")
+            + "Все вірно?"
         )
         
         await state.set_state(OrderStates.confirm)
@@ -630,7 +635,7 @@ def create_router(config: AppConfig) -> Router:
         
         data = await state.get_data()
         
-        # Створення замовлення з координатами, відстанню та класом авто
+        # Створення замовлення з координатами, відстанню, класом авто, ціною та способом оплати
         order = Order(
             id=None,
             user_id=message.from_user.id,
@@ -646,7 +651,9 @@ def create_router(config: AppConfig) -> Router:
             dest_lon=data.get("dest_lon"),
             distance_m=data.get("distance_m"),
             duration_s=data.get("duration_s"),
+            fare_amount=float(data.get("estimated_fare")) if data.get("estimated_fare") is not None else None,
             car_class=data.get("car_class", "economy"),
+            payment_method=str(data.get("payment_method")) if data.get("payment_method") else "cash",
         )
         
         order_id = await insert_order(config.database_path, order)

@@ -611,7 +611,7 @@ async def fetch_recent_orders(db_path: str, limit: int = 10) -> List[Order]:
             rows = await cursor.fetchall()
 
     orders: List[Order] = []
-        for row in rows:
+    for row in rows:
             orders.append(
                 Order(
                     id=row[0],
