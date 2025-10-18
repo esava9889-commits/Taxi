@@ -109,11 +109,16 @@ def create_registration_router(config: AppConfig) -> Router:
         except:
             await call.message.answer(text, reply_markup=kb)
         
-        # Надіслати contact keyboard окремо
-        await call.message.answer(
+        # Зберегти message_id та надіслати contact keyboard
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        msg = await call.message.answer(
             "👇 Або поділіться контактом:",
             reply_markup=contact_keyboard()
         )
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
     
     @router.callback_query(F.data == "phone:manual", ClientRegStates.phone)
     async def phone_manual_entry(call: CallbackQuery, state: FSMContext) -> None:
@@ -143,8 +148,13 @@ def create_registration_router(config: AppConfig) -> Router:
         except:
             await call.message.answer(text, reply_markup=kb)
         
-        # Прибрати contact keyboard
-        await call.message.answer("✍️ Введіть номер:", reply_markup=ReplyKeyboardRemove())
+        # Прибрати contact keyboard та зберегти message_id
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        msg = await call.message.answer("✍️ Введіть номер:", reply_markup=ReplyKeyboardRemove())
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
     
     @router.callback_query(F.data == "register:back_to_city", ClientRegStates.phone)
     async def back_to_city(call: CallbackQuery, state: FSMContext) -> None:
@@ -189,11 +199,16 @@ def create_registration_router(config: AppConfig) -> Router:
         except:
             await call.message.answer(text, reply_markup=kb)
         
-        # Повернути contact keyboard
-        await call.message.answer(
+        # Повернути contact keyboard та зберегти message_id
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        msg = await call.message.answer(
             "👇 Або поділіться контактом:",
             reply_markup=contact_keyboard()
         )
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
     
     @router.message(ClientRegStates.phone, F.contact)
     async def save_phone_contact(message: Message, state: FSMContext) -> None:

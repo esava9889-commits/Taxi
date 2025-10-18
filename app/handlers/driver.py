@@ -577,13 +577,25 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        await message.answer(
+        # Зберегти message_id для видалення
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        # Видалити повідомлення користувача з ПІБ
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        msg = await message.answer(
             f"✅ <b>ПІБ:</b> {full_name}\n\n"
             "📱 <b>Крок 2/8: Номер телефону</b>\n\n"
             "Введіть ваш номер телефону:\n\n"
             "Приклад: +380 67 123 45 67",
             reply_markup=kb
         )
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
 
     @router.message(DriverRegStates.phone)
     async def take_phone(message: Message, state: FSMContext) -> None:
@@ -607,12 +619,24 @@ def create_router(config: AppConfig) -> Router:
         # City selection with inline buttons
         from app.handlers.keyboards import driver_city_selection_keyboard
         await state.set_state(DriverRegStates.city)
-        await message.answer(
+        
+        # Зберегти message_id та видалити повідомлення користувача
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        msg = await message.answer(
             f"✅ <b>Телефон:</b> {phone}\n\n"
             "🏙 <b>Крок 3/8: Місто роботи</b>\n\n"
             "Оберіть місто, в якому ви будете працювати:",
             reply_markup=driver_city_selection_keyboard()
         )
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
 
     @router.callback_query(F.data.startswith("driver_city:"), DriverRegStates.city)
     async def take_city(call: CallbackQuery, state: FSMContext) -> None:
@@ -666,6 +690,15 @@ def create_router(config: AppConfig) -> Router:
         await state.update_data(car_make=car_make)
         await state.set_state(DriverRegStates.car_model)
         
+        # Зберегти message_id та видалити повідомлення користувача
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        try:
+            await message.delete()
+        except:
+            pass
+        
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад до міста", callback_data="driver:back_to_city")],
@@ -673,13 +706,15 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
-        await message.answer(
+        msg = await message.answer(
             f"✅ <b>Марка:</b> {car_make}\n\n"
             "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
             "Введіть модель вашого авто:\n\n"
             "Приклад: Camry, Passat, X5",
             reply_markup=kb
         )
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
 
     @router.message(DriverRegStates.car_model)
     async def take_car_model(message: Message, state: FSMContext) -> None:
@@ -764,7 +799,15 @@ def create_router(config: AppConfig) -> Router:
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await message.answer(
+        # Видалити повідомлення користувача та зберегти ID
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        msg = await message.answer(
             f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n\n"
             "🚗 <b>Крок 7/8: Клас автомобіля</b>\n\n"
             "Оберіть клас вашого авто:\n\n"
@@ -775,6 +818,8 @@ def create_router(config: AppConfig) -> Router:
             "Це вплине на вартість поїздок та ваш заробіток.",
             reply_markup=kb
         )
+        messages_to_delete.append(msg.message_id)
+        await state.update_data(messages_to_delete=messages_to_delete)
 
     @router.callback_query(F.data.startswith("driver_car_class:"))
     async def save_driver_car_class(call: CallbackQuery, state: FSMContext) -> None:
@@ -795,6 +840,10 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
+        # Зберегти message_id
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
         try:
             await call.message.edit_text(
                 f"✅ <b>Клас авто:</b> {class_name}\n\n"
@@ -804,13 +853,15 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=kb
             )
         except:
-            await call.message.answer(
+            msg = await call.message.answer(
                 f"✅ <b>Клас авто:</b> {class_name}\n\n"
                 "📸 <b>Крок 8/8: Фото посвідчення водія</b>\n\n"
                 "Надішліть фото посвідчення водія або пропустіть цей крок.\n\n"
                 "💡 Фото допоможе адміну швидше розглянути заявку.",
                 reply_markup=kb
             )
+            messages_to_delete.append(msg.message_id)
+            await state.update_data(messages_to_delete=messages_to_delete)
 
     @router.callback_query(F.data == "driver:skip_photo", DriverRegStates.license_photo)
     async def skip_license_callback(call: CallbackQuery, state: FSMContext) -> None:
@@ -835,7 +886,17 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         file_id = message.photo[-1].file_id  # biggest size
-        await state.update_data(license_photo_file_id=file_id)
+        
+        # Видалити фото користувача після збереження
+        data = await state.get_data()
+        messages_to_delete = data.get("messages_to_delete", [])
+        
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        await state.update_data(license_photo_file_id=file_id, messages_to_delete=messages_to_delete)
         await finalize_application(message, state, message.from_user.id)
 
     async def finalize_application(message: Message, state: FSMContext, user_id: int) -> None:
@@ -905,6 +966,14 @@ def create_router(config: AppConfig) -> Router:
                 # Ignore delivery errors to some admins
                 pass
 
+        # Видалити всі повідомлення реєстрації
+        messages_to_delete = data.get("messages_to_delete", [])
+        for msg_id in messages_to_delete:
+            try:
+                await message.bot.delete_message(message.chat.id, msg_id)
+            except:
+                pass
+        
         from app.handlers.keyboards import main_menu_keyboard
         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
         # Показати статус "на розгляді"
