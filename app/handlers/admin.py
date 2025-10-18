@@ -392,7 +392,8 @@ def create_router(config: AppConfig) -> Router:
                     await call.bot.send_message(
                         driver.tg_user_id,
                         welcome_text,
-                        reply_markup=kb
+                        reply_markup=kb,
+                        parse_mode="HTML"
                     )
                     
                     # Відправимо панель водія з ReplyKeyboardMarkup
@@ -408,7 +409,8 @@ def create_router(config: AppConfig) -> Router:
                         "• Переглядати свій заробіток\n"
                         "• Відстежувати статистику\n\n"
                         "Оберіть дію з меню нижче:",
-                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin)
+                        reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_driver_admin),
+                        parse_mode="HTML"
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify driver {driver.tg_user_id}: {e}")
