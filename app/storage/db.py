@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import os
 import logging
 
@@ -22,6 +22,21 @@ logger = logging.getLogger(__name__)
 
 
 # === HELPER ФУНКЦІЇ ДЛЯ ОБОХ БД ===
+
+def _parse_datetime(value: Union[str, datetime, None]) -> Optional[datetime]:
+    """
+    Безпечна конвертація datetime з БД.
+    - Якщо вже datetime об'єкт (PostgreSQL) - повернути як є
+    - Якщо рядок (SQLite) - конвертувати через fromisoformat()
+    - Якщо None - повернути None
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return value
 
 def _is_postgres() -> bool:
     """Перевірити чи використовується PostgreSQL"""
