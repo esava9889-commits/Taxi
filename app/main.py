@@ -103,58 +103,27 @@ async def main() -> None:
     
     logging.info("🚀 Bot started successfully!")
 
-    # Видалити webhook і очистити pending updates
+    # Видалити webhook і очистити pending updates перед запуском
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         logging.info("✅ Webhook видалено, pending updates очищено")
+        await asyncio.sleep(2)  # Почекати поки Telegram обробить
     except Exception as e:
         logging.warning(f"⚠️ Не вдалося видалити webhook: {e}")
     
-    # Обробник graceful shutdown
-    shutdown_event = asyncio.Event()
-    
-    def signal_handler(sig, frame):
-        logging.info(f"📥 Отримано сигнал {sig}, graceful shutdown...")
-        shutdown_event.set()
-    
-    # Реєстрація обробників сигналів
-    if sys.platform != 'win32':
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-    
-    # Запустити polling з обробкою конфліктів
+    # Простий запуск polling БЕЗ складної логіки
     try:
         logging.info("🔄 Запуск polling...")
-        
-        # Polling task
-        polling_task = asyncio.create_task(dp.start_polling(bot, allowed_updates=None))
-        
-        # Чекаємо або завершення polling або shutdown
-        done, pending = await asyncio.wait(
-            [polling_task, asyncio.create_task(shutdown_event.wait())],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        
-        # Якщо shutdown - зупиняємо polling
-        if shutdown_event.is_set():
-            logging.info("🛑 Зупинка polling...")
-            await dp.stop_polling()
-            try:
-                await bot.session.close()
-            except Exception:
-                pass
-            logging.info("✅ Graceful shutdown завершено")
+        await dp.start_polling(bot, allowed_updates=None)
         
     except Exception as e:
         if "Conflict" in str(e):
             logging.error(
-                "🔴 КОНФЛІКТ: Інший інстанс бота вже запущений!\n"
-                "Зупиніть всі інші процеси бота:\n"
-                "  - Локальні запуски (на вашому комп'ютері)\n"
-                "  - Інші деплої на Render/Railway/інших платформах\n"
-                "Telegram дозволяє тільки ОДИН активний інстанс бота.\n\n"
-                "💡 Рішення: Render Dashboard → Settings → тип 'Background Worker' замість 'Web Service'"
+                "🔴 КОНФЛІКТ: Старий процес ще працює!\n"
+                "⏳ Зачекайте 30 секунд і спробуйте Manual Deploy заново.\n"
+                "Або: Render Dashboard → View Logs → перевір чи старий процес завершився."
             )
+        logging.error(f"❌ Помилка: {e}")
         raise
     finally:
         # Cleanup
