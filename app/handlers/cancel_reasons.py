@@ -9,6 +9,7 @@ from app.config.config import AppConfig
 from app.storage.db import (
     get_order_by_id,
     cancel_order_by_client,
+    get_user_by_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,6 @@ def create_router(config: AppConfig) -> Router:
             order = await get_order_by_id(config.database_path, order_id)
             if order and order.group_message_id:
                 try:
-                    from app.storage.db import get_user_by_id
                     from app.config.config import get_city_group_id
                     
                     user = await get_user_by_id(config.database_path, order.user_id)

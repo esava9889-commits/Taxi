@@ -1496,7 +1496,6 @@ def create_router(config: AppConfig) -> Router:
             # Повідомити в групу водіїв (групу міста клієнта)
             if order.group_message_id:
                 try:
-                    from app.storage.db import get_user_by_id
                     from app.config.config import get_city_group_id
                     
                     user = await get_user_by_id(config.database_path, order.user_id)
