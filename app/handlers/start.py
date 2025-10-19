@@ -162,6 +162,15 @@ def create_router(config: AppConfig) -> Router:
     # Реєстрація тепер в окремому модулі registration.py
     # Тут залишаємо тільки базову навігацію
 
+    @router.callback_query(F.data == "help:close")
+    async def close_help(call: CallbackQuery) -> None:
+        """Закрити довідку"""
+        await call.answer()
+        try:
+            await call.message.delete()
+        except:
+            await call.message.edit_text("✅ Закрито")
+    
     @router.callback_query(F.data == "help:show")
     @router.message(F.text == "ℹ️ Допомога")
     async def show_help(event) -> None:
@@ -200,11 +209,18 @@ def create_router(config: AppConfig) -> Router:
         else:
             help_text += "📞 <b>Підтримка:</b> Напишіть адміністратору"
         
+        # Інлайн кнопка "Зрозуміло"
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Зрозуміло", callback_data="help:close")]
+            ]
+        )
+        
         if isinstance(event, CallbackQuery):
             await event.answer()
-            await event.message.answer(help_text)
+            await event.message.answer(help_text, reply_markup=kb)
         else:
-            await event.answer(help_text)
+            await event.answer(help_text, reply_markup=kb)
 
     @router.message(F.text == "👤 Мій профіль")
     async def show_profile(message: Message) -> None:

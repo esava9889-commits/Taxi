@@ -984,6 +984,11 @@ def create_router(config: AppConfig) -> Router:
         from app.handlers.car_classes import get_car_class_name
         car_class = data.get("car_class", "economy")
         
+        # Отримати місто з користувача
+        from app.storage.db import get_user_by_id
+        user = await get_user_by_id(config.database_path, user_id)
+        city = user.city if user and user.city else None
+        
         driver = Driver(
             id=None,
             tg_user_id=user_id,  # ✅ Використовуємо переданий user_id
@@ -994,6 +999,7 @@ def create_router(config: AppConfig) -> Router:
             car_plate=str(data.get("car_plate")),
             car_class=car_class,
             license_photo_file_id=(data.get("license_photo_file_id") or None),
+            city=city,  # ✅ Додано місто з користувача
             status="pending",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
