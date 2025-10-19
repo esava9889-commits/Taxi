@@ -491,13 +491,28 @@ def create_router(config: AppConfig) -> Router:
                         "• Переглядати історію поїздок\n\n"
                     )
                     
-                    # Додати посилання на групу водіїв, якщо воно є
-                    if config.driver_group_invite_link:
+                    # ⭐ НОВА ЛОГІКА: Посилання на групу ВІДПОВІДНОГО МІСТА
+                    driver_city = driver.city
+                    city_invite_link = None
+                    
+                    if driver_city and driver_city in config.city_invite_links:
+                        city_invite_link = config.city_invite_links[driver_city]
+                    
+                    # Fallback на стару групу якщо немає city-specific
+                    if not city_invite_link and config.driver_group_invite_link:
+                        city_invite_link = config.driver_group_invite_link
+                    
+                    if city_invite_link:
                         welcome_text += (
-                            f"📱 <b>Долучайтесь до групи водіїв:</b>\n"
-                            f"{config.driver_group_invite_link}\n\n"
-                            "⚠️ Всі замовлення публікуються в цій групі. "
+                            f"📱 <b>Долучайтесь до групи водіїв міста {driver_city}:</b>\n"
+                            f"{city_invite_link}\n\n"
+                            "⚠️ Всі замовлення вашого міста публікуються в цій групі. "
                             "Обов'язково приєднайтесь!\n\n"
+                        )
+                    else:
+                        welcome_text += (
+                            f"⚠️ <b>Група для міста {driver_city} ще не налаштована.</b>\n"
+                            f"Зверніться до адміністратора.\n\n"
                         )
                     
                     welcome_text += "Натисніть кнопку нижче або напишіть боту /start"

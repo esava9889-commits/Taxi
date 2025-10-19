@@ -21,15 +21,33 @@ class AppConfig:
     driver_group_invite_link: Optional[str]
     admin_username: Optional[str]
     
-# Список доступних міст
+# Список доступних міст (тільки 5 міст)
 AVAILABLE_CITIES = [
-    "Кривий Ріг",
     "Київ",
     "Дніпро",
+    "Кривий Ріг",
     "Харків",
     "Одеса",
-    "Львів",
 ]
+
+# Маппінг міста → ID групи водіїв
+# Кожне місто має свою окрему групу для замовлень
+CITY_GROUP_CHATS = {
+    "Київ": None,           # Буде заповнено через ENV: KYIV_GROUP_CHAT_ID
+    "Дніпро": None,         # DNIPRO_GROUP_CHAT_ID
+    "Кривий Ріг": None,     # KRYVYI_RIH_GROUP_CHAT_ID
+    "Харків": None,         # KHARKIV_GROUP_CHAT_ID
+    "Одеса": None,          # ODESA_GROUP_CHAT_ID
+}
+
+# Маппінг міста → посилання на групу (для запрошення водіїв)
+CITY_GROUP_INVITE_LINKS = {
+    "Київ": None,
+    "Дніпро": None,
+    "Кривий Ріг": None,
+    "Харків": None,
+    "Одеса": None,
+}
 
 
 def _parse_admin_ids(raw: str) -> List[int]:
@@ -89,6 +107,24 @@ def load_config() -> AppConfig:
     
     # Admin username for support (optional)
     admin_username = os.getenv("ADMIN_USERNAME") or None
+    
+    # City-specific group chats (нові ENV змінні)
+    city_groups = {
+        "Київ": int(os.getenv("KYIV_GROUP_CHAT_ID")) if os.getenv("KYIV_GROUP_CHAT_ID") else None,
+        "Дніпро": int(os.getenv("DNIPRO_GROUP_CHAT_ID")) if os.getenv("DNIPRO_GROUP_CHAT_ID") else None,
+        "Кривий Ріг": int(os.getenv("KRYVYI_RIH_GROUP_CHAT_ID")) if os.getenv("KRYVYI_RIH_GROUP_CHAT_ID") else None,
+        "Харків": int(os.getenv("KHARKIV_GROUP_CHAT_ID")) if os.getenv("KHARKIV_GROUP_CHAT_ID") else None,
+        "Одеса": int(os.getenv("ODESA_GROUP_CHAT_ID")) if os.getenv("ODESA_GROUP_CHAT_ID") else None,
+    }
+    
+    # City-specific invite links
+    city_invite_links = {
+        "Київ": os.getenv("KYIV_GROUP_INVITE_LINK") or None,
+        "Дніпро": os.getenv("DNIPRO_GROUP_INVITE_LINK") or None,
+        "Кривий Ріг": os.getenv("KRYVYI_RIH_GROUP_INVITE_LINK") or None,
+        "Харків": os.getenv("KHARKIV_GROUP_INVITE_LINK") or None,
+        "Одеса": os.getenv("ODESA_GROUP_INVITE_LINK") or None,
+    }
 
     # Ensure the parent directory exists (if not /tmp)
     db_dir = os.path.dirname(db_path)
@@ -100,7 +136,28 @@ def load_config() -> AppConfig:
         database_path=db_path,
         google_maps_api_key=google_maps_api_key,
         payment_card=payment_card,
-        driver_group_chat_id=driver_group_chat_id,
-        driver_group_invite_link=driver_group_invite_link,
+        driver_group_chat_id=driver_group_chat_id,  # Backward compatibility
+        driver_group_invite_link=driver_group_invite_link,  # Backward compatibility
         admin_username=admin_username,
+        city_groups=city_groups,
+        city_invite_links=city_invite_links,
     )
+
+
+def get_city_group_id(config: AppConfig, city: Optional[str]) -> Optional[int]:
+    """
+    Отримати ID групи для заданого міста.
+    
+    Якщо група для міста не налаштована, повертає загальну групу (fallback).
+    """
+    if not city:
+        return config.driver_group_chat_id
+    
+    # Спробувати знайти city-specific групу
+    city_group_id = config.city_groups.get(city)
+    
+    # Fallback на загальну групу
+    if not city_group_id:
+        return config.driver_group_chat_id
+    
+    return city_group_id

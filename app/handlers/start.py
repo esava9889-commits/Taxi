@@ -406,15 +406,23 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("✅ Замовлення скасовано", show_alert=True)
             await call.message.answer("✅ <b>Замовлення скасовано</b>\n\nВи можете створити нове замовлення будь-коли.")
             
-            # Повідомити в групу водіїв
-            if order.group_message_id and config.driver_group_chat_id:
+            # Повідомити в групу водіїв (групу міста клієнта)
+            if order.group_message_id:
                 try:
-                    await call.bot.edit_message_text(
-                        chat_id=config.driver_group_chat_id,
-                        message_id=order.group_message_id,
-                        text=f"❌ <b>ЗАМОВЛЕННЯ #{order.id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
-                             f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
-                    )
+                    from app.storage.db import get_user_by_id
+                    from app.config.config import get_city_group_id
+                    
+                    user = await get_user_by_id(config.database_path, order.user_id)
+                    client_city = user.city if user and user.city else None
+                    group_id = get_city_group_id(config, client_city)
+                    
+                    if group_id:
+                        await call.bot.edit_message_text(
+                            chat_id=group_id,
+                            message_id=order.group_message_id,
+                            text=f"❌ <b>ЗАМОВЛЕННЯ #{order.id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                                 f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
+                        )
                 except Exception as e:
                     logger.error(f"Failed to update group message: {e}")
         else:

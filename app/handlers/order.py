@@ -1231,8 +1231,23 @@ def create_router(config: AppConfig) -> Router:
         order_id = await insert_order(config.database_path, order)
         await state.clear()
         
-        # Відправка замовлення у групу водіїв
-        if config.driver_group_chat_id:
+        # ⭐ НОВА ЛОГІКА: Відправка замовлення у групу МІСТА КЛІЄНТА
+        # Отримати місто клієнта
+        from app.storage.db import get_user_by_id
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        client_city = user.city if user and user.city else None
+        
+        # Знайти групу для цього міста
+        city_group_id = None
+        if client_city and client_city in config.city_groups:
+            city_group_id = config.city_groups[client_city]
+        
+        # Fallback на стару групу якщо немає city-specific
+        if not city_group_id and config.driver_group_chat_id:
+            city_group_id = config.driver_group_chat_id
+            logger.warning(f"⚠️ Група для міста '{client_city}' не налаштована. Використовую загальну групу.")
+        
+        if city_group_id:
             try:
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
@@ -1354,7 +1369,7 @@ def create_router(config: AppConfig) -> Router:
                 )
                 
                 sent_message = await message.bot.send_message(
-                    config.driver_group_chat_id,
+                    city_group_id,
                     group_message,
                     reply_markup=kb,
                     disable_web_page_preview=True
@@ -1363,14 +1378,14 @@ def create_router(config: AppConfig) -> Router:
                 # Зберегти ID повідомлення в БД
                 await update_order_group_message(config.database_path, order_id, sent_message.message_id)
                 
-                logger.info(f"Order {order_id} sent to driver group {config.driver_group_chat_id}")
+                logger.info(f"✅ Замовлення {order_id} відправлено в групу міста '{client_city}' (ID: {city_group_id})")
                 
                 # ЗАПУСТИТИ ТАЙМЕР: Якщо замовлення не прийнято за 3 хв - перепропонувати
                 await start_order_timeout(
                     message.bot,
                     order_id,
                     config.database_path,
-                    config.driver_group_chat_id,
+                    city_group_id,  # ⭐ Використовуємо city_group_id
                     sent_message.message_id
                 )
                 logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
@@ -1478,16 +1493,24 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=main_menu_keyboard(is_registered=is_registered, is_admin=is_admin)
             )
             
-            # Повідомити в групу водіїв
-            if config.driver_group_chat_id and order.group_message_id:
+            # Повідомити в групу водіїв (групу міста клієнта)
+            if order.group_message_id:
                 try:
-                    await call.bot.edit_message_text(
-                        "❌ <b>ЗАМОВЛЕННЯ СКАСОВАНО КЛІЄНТОМ</b>\n\n"
-                        f"Замовлення #{order_id} скасовано клієнтом.",
-                        chat_id=config.driver_group_chat_id,
-                        message_id=order.group_message_id
-                    )
-                    logger.info(f"Order #{order_id} cancellation sent to group")
+                    from app.storage.db import get_user_by_id
+                    from app.config.config import get_city_group_id
+                    
+                    user = await get_user_by_id(config.database_path, order.user_id)
+                    client_city = user.city if user and user.city else None
+                    group_id = get_city_group_id(config, client_city)
+                    
+                    if group_id:
+                        await call.bot.edit_message_text(
+                            "❌ <b>ЗАМОВЛЕННЯ СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                            f"Замовлення #{order_id} скасовано клієнтом.",
+                            chat_id=group_id,
+                            message_id=order.group_message_id
+                        )
+                        logger.info(f"Order #{order_id} cancellation sent to group (city: {client_city})")
                 except Exception as e:
                     logger.error(f"Failed to update group message about cancellation: {e}")
             
