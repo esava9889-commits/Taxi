@@ -17,6 +17,86 @@ async def init_postgres_db(database_url: str) -> None:
     try:
         logger.info("🐘 Створюю таблиці в PostgreSQL...")
         
+        # === МІГРАЦІЇ для існуючих таблиць ===
+        logger.info("🔄 Перевіряю необхідність міграцій...")
+        
+        # Міграція 1: ratings - перейменувати driver_user_id на from_user_id і додати to_user_id
+        try:
+            # Перевірити чи існує таблиця ratings
+            check = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'ratings'
+                )
+            """)
+            
+            if check:
+                # Перевірити чи є стара колонка driver_user_id
+                has_old_column = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'ratings' AND column_name = 'driver_user_id'
+                    )
+                """)
+                
+                has_from_user = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'ratings' AND column_name = 'from_user_id'
+                    )
+                """)
+                
+                has_to_user = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'ratings' AND column_name = 'to_user_id'
+                    )
+                """)
+                
+                if has_old_column:
+                    logger.info("🔄 Міграція ratings: перейменування driver_user_id...")
+                    # Перейменувати driver_user_id на to_user_id
+                    await conn.execute("ALTER TABLE ratings RENAME COLUMN driver_user_id TO to_user_id")
+                    logger.info("✅ Колонка driver_user_id перейменована на to_user_id")
+                
+                if not has_from_user:
+                    logger.info("🔄 Міграція ratings: додавання from_user_id...")
+                    await conn.execute("ALTER TABLE ratings ADD COLUMN from_user_id BIGINT")
+                    # Скопіювати дані з to_user_id (якщо потрібно)
+                    await conn.execute("UPDATE ratings SET from_user_id = to_user_id WHERE from_user_id IS NULL")
+                    await conn.execute("ALTER TABLE ratings ALTER COLUMN from_user_id SET NOT NULL")
+                    logger.info("✅ Колонка from_user_id додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції ratings: {e}")
+        
+        # Міграція 2: client_ratings - додати driver_id якщо немає
+        try:
+            check = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'client_ratings'
+                )
+            """)
+            
+            if check:
+                has_driver_id = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'client_ratings' AND column_name = 'driver_id'
+                    )
+                """)
+                
+                if not has_driver_id:
+                    logger.info("🔄 Міграція client_ratings: додавання driver_id...")
+                    await conn.execute("ALTER TABLE client_ratings ADD COLUMN driver_id INTEGER")
+                    logger.info("✅ Колонка driver_id додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції client_ratings: {e}")
+        
+        logger.info("✅ Міграції завершено!")
+        
+        # === СТВОРЕННЯ ТАБЛИЦЬ ===
+        
         # Збережені адреси
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS saved_addresses (
@@ -242,24 +322,45 @@ async def init_postgres_db(database_url: str) -> None:
             )
         """)
         
-        # Індекси для оптимізації
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user_id ON drivers(tg_user_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_saved_addresses_user ON saved_addresses(user_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_client_ratings ON client_ratings(client_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver ON payments(driver_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(referral_code)")
+        # Індекси для оптимізації (з перевіркою існування колонок)
+        logger.info("🔍 Створюю індекси...")
         
-        logger.info("✅ Всі таблиці PostgreSQL створено!")
+        # Функція для безпечного створення індексу
+        async def create_index_safe(index_name: str, table: str, column: str):
+            try:
+                # Перевірити чи існує колонка
+                exists = await conn.fetchval(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = '{table}' AND column_name = '{column}'
+                    )
+                """)
+                if exists:
+                    await conn.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table}({column})")
+                    logger.debug(f"✅ Індекс {index_name} створено")
+                else:
+                    logger.warning(f"⚠️ Колонка {table}.{column} не існує, пропускаю індекс {index_name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Не вдалося створити індекс {index_name}: {e}")
+        
+        # Створити всі індекси
+        await create_index_safe("idx_orders_user_id", "orders", "user_id")
+        await create_index_safe("idx_orders_created_at", "orders", "created_at")
+        await create_index_safe("idx_orders_status", "orders", "status")
+        await create_index_safe("idx_orders_driver_id", "orders", "driver_id")
+        await create_index_safe("idx_drivers_status", "drivers", "status")
+        await create_index_safe("idx_drivers_online", "drivers", "online")
+        await create_index_safe("idx_drivers_tg_user_id", "drivers", "tg_user_id")
+        await create_index_safe("idx_users_user_id", "users", "user_id")
+        await create_index_safe("idx_saved_addresses_user", "saved_addresses", "user_id")
+        await create_index_safe("idx_ratings_to_user", "ratings", "to_user_id")
+        await create_index_safe("idx_client_ratings", "client_ratings", "client_id")
+        await create_index_safe("idx_payments_driver", "payments", "driver_id")
+        await create_index_safe("idx_payments_commission_paid", "payments", "commission_paid")
+        await create_index_safe("idx_referrals_referrer", "referrals", "referrer_id")
+        await create_index_safe("idx_referrals_code", "referrals", "referral_code")
+        
+        logger.info("✅ Всі таблиці та індекси PostgreSQL створено!")
         
     finally:
         await conn.close()
