@@ -1591,8 +1591,9 @@ def create_router(config: AppConfig) -> Router:
             driver_id=driver.id,
             amount=fare,
             commission=commission,
-            created_at=datetime.now(timezone.utc),
-            commission_paid=False
+            commission_paid=False,
+            payment_method=order.payment_method or 'cash',  # ✅ ДОДАНО
+            created_at=datetime.now(timezone.utc)
         )
         await insert_payment(config.database_path, payment)
         
