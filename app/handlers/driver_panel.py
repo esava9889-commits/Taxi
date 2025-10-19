@@ -480,7 +480,7 @@ def create_router(config: AppConfig) -> Router:
                         f"💳 <b>ЗАПИТ НА ПІДТВЕРДЖЕННЯ ОПЛАТИ КОМІСІЇ</b>\n\n"
                         f"👤 Водій: {driver.full_name}\n"
                         f"📱 Телефон: {driver.phone}\n"
-                        f"🚗 Авто: {driver.car_model} ({driver.car_number})\n"
+                        f"🚗 Авто: {driver.car_model} ({driver.car_plate})\n"
                         f"💳 Сума комісії: <b>{unpaid:.2f} грн</b>\n\n"
                         f"📋 Реквізити (куди мав переказати):\n"
                         f"💳 {config.payment_card or '4149499901234567'}\n\n"
