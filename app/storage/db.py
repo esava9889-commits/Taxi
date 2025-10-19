@@ -1050,6 +1050,57 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
     )
 
 
+async def delete_driver_account(db_path: str, tg_user_id: int) -> bool:
+    """Видалити акаунт водія (повністю з усіх таблиць)"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            # Отримати ID водія перед видаленням
+            cursor = await db.execute(
+                "SELECT id FROM drivers WHERE tg_user_id = ?",
+                (tg_user_id,)
+            )
+            row = await cursor.fetchone()
+            
+            if not row:
+                return False
+            
+            driver_id = row[0]
+            
+            # Видалити всі пов'язані дані
+            # 1. Payments
+            await db.execute("DELETE FROM payments WHERE driver_id = ?", (driver_id,))
+            
+            # 2. Orders (де водій був призначений)
+            await db.execute(
+                "UPDATE orders SET driver_id = NULL, status = 'cancelled' WHERE driver_id = ? AND status NOT IN ('completed', 'cancelled')",
+                (driver_id,)
+            )
+            
+            # 3. Ratings (як водія)
+            await db.execute("DELETE FROM ratings WHERE to_user_id = ?", (tg_user_id,))
+            
+            # 4. Client ratings
+            await db.execute("DELETE FROM client_ratings WHERE driver_id = ?", (driver_id,))
+            
+            # 5. Driver applications (якщо є таблиця)
+            try:
+                await db.execute("DELETE FROM driver_applications WHERE tg_user_id = ?", (tg_user_id,))
+            except:
+                pass
+            
+            # 6. Сам запис водія
+            await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
+            
+            await db.commit()
+            
+            logger.info(f"✅ Видалено акаунт водія {driver_id} (tg_user_id: {tg_user_id})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка видалення акаунта водія {tg_user_id}: {e}")
+            return False
+
+
 async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Driver]:
     async with db_manager.connect(db_path) as db:
         async with db.execute(

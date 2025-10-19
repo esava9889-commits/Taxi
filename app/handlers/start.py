@@ -837,6 +837,100 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=True, is_admin=is_admin)
         )
     
+    @router.callback_query(F.data == "driver_to_client:confirm")
+    async def confirm_driver_to_client(call: CallbackQuery, state: FSMContext) -> None:
+        """Підтвердити видалення акаунта водія та перехід до клієнта"""
+        if not call.from_user:
+            return
+        
+        await call.answer()
+        
+        # Видалити акаунт водія з БД
+        from app.storage.db import delete_driver_account
+        success = await delete_driver_account(config.database_path, call.from_user.id)
+        
+        if not success:
+            await call.message.edit_text(
+                "❌ Помилка видалення акаунта водія.\n\n"
+                "Зверніться до адміністратора."
+            )
+            return
+        
+        # Видалити повідомлення з попередженням
+        try:
+            await call.message.delete()
+        except:
+            pass
+        
+        # Очистити FSM state
+        await state.clear()
+        
+        # Очистити чат (видалити останні 50 повідомлень)
+        try:
+            for i in range(50):
+                try:
+                    await call.bot.delete_message(
+                        chat_id=call.from_user.id,
+                        message_id=call.message.message_id - i
+                    )
+                except:
+                    pass
+        except:
+            pass
+        
+        # Показати початкове меню (як для нового користувача)
+        from app.handlers.keyboards import main_menu_keyboard
+        
+        # Перевірити чи є базова реєстрація
+        user = await get_user_by_id(config.database_path, call.from_user.id)
+        
+        if not user or not user.phone or not user.city:
+            # Немає базової реєстрації - показати меню реєстрації
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📱 Зареєструватись", callback_data="register:start")]
+                ]
+            )
+            
+            await call.bot.send_message(
+                chat_id=call.from_user.id,
+                text=(
+                    "👋 <b>Вітаємо в боті таксі!</b>\n\n"
+                    "✅ Ваш акаунт водія успішно видалено.\n\n"
+                    "Тепер ви можете користуватися ботом як клієнт.\n\n"
+                    "Для замовлення таксі необхідно завершити реєстрацію:"
+                ),
+                reply_markup=kb
+            )
+        else:
+            # Є базова реєстрація - показати головне меню клієнта
+            await call.bot.send_message(
+                chat_id=call.from_user.id,
+                text=(
+                    "✅ <b>Акаунт водія успішно видалено!</b>\n\n"
+                    f"👤 Ім'я: {user.full_name}\n"
+                    f"📱 Телефон: {user.phone}\n"
+                    f"🏙 Місто: {user.city}\n\n"
+                    "Тепер ви можете користуватися ботом як клієнт.\n\n"
+                    "🚖 Натисніть кнопку нижче для замовлення таксі!"
+                ),
+                reply_markup=main_menu_keyboard(is_registered=True, is_driver=False, is_admin=False)
+            )
+    
+    @router.callback_query(F.data == "driver_to_client:cancel")
+    async def cancel_driver_to_client(call: CallbackQuery) -> None:
+        """Скасувати перехід до клієнта"""
+        if not call.from_user:
+            return
+        
+        await call.answer("Скасовано", show_alert=False)
+        
+        # Видалити повідомлення з попередженням
+        try:
+            await call.message.delete()
+        except:
+            await call.message.edit_text("Операцію скасовано.")
+    
     @router.message(Command("client"))
     @router.message(F.text == "👤 Кабінет клієнта")
     async def quick_client_panel(message: Message) -> None:
@@ -850,6 +944,37 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
         
+        # Перевірка чи водій
+        from app.storage.db import get_driver_by_tg_user_id
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        
+        # ЯКЩО ЦЕ ВОДІЙ - ПОКАЗАТИ ПОПЕРЕДЖЕННЯ
+        if driver and driver.status == "approved":
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Підтвердити", callback_data="driver_to_client:confirm")],
+                    [InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_to_client:cancel")]
+                ]
+            )
+            
+            await message.answer(
+                "⚠️ <b>УВАГА!</b>\n\n"
+                "Ви зареєстровані як водій.\n\n"
+                "Якщо ви бажаєте перейти до <b>кабінету клієнта</b>,\n"
+                "ваш <b>акаунт водія буде ВИДАЛЕНО</b> з бази даних.\n\n"
+                "Це означає:\n"
+                "• Видалення всіх даних водія\n"
+                "• Видалення історії поїздок\n"
+                "• Видалення заробітку\n"
+                "• Неможливо буде відновити\n\n"
+                "⚠️ <b>Ця дія НЕЗВОРОТНА!</b>\n\n"
+                "Бажаєте продовжити?\n\n"
+                "<i>З повагою, Адміністрація бота</i> 🤝",
+                reply_markup=kb
+            )
+            return
+        
+        # ЯКЩО НЕ ВОДІЙ - ПОКАЗАТИ КАБІНЕТ КЛІЄНТА ЯК ЗАРАЗ
         user = await get_user_by_id(config.database_path, message.from_user.id)
         if not user or not user.phone or not user.city:
             await message.answer("❌ Завершіть реєстрацію для доступу до кабінету клієнта.\n\nНатисніть 📱 Зареєструватись")
@@ -857,11 +982,7 @@ def create_router(config: AppConfig) -> Router:
         
         # Перевірка чи адмін
         is_admin = message.from_user.id in config.bot.admin_ids
-        
-        # Перевірка чи водій
-        from app.storage.db import get_driver_by_tg_user_id
-        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
-        is_driver = driver is not None and driver.status == "approved"
+        is_driver = False
         
         await message.answer(
             f"👤 <b>Кабінет клієнта</b>\n\n"
