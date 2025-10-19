@@ -99,24 +99,24 @@ def create_router(config: AppConfig) -> Router:
                 # Total orders
                 async with db.execute("SELECT COUNT(*) FROM orders") as cur:
                     total_orders = (await cur.fetchone())[0]
-            
-            # Completed orders
-            async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'") as cur:
-                completed_orders = (await cur.fetchone())[0]
-            
-            # Active drivers
-            async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'approved'") as cur:
-                active_drivers = (await cur.fetchone())[0]
-            
-            # Pending driver applications
-            async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'pending'") as cur:
-                pending_drivers = (await cur.fetchone())[0]
-            
-            # Total revenue
-            async with db.execute("SELECT SUM(fare_amount) FROM orders WHERE status = 'completed'") as cur:
-                row = await cur.fetchone()
-                total_revenue = row[0] if row[0] else 0.0
-            
+                
+                # Completed orders
+                async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'") as cur:
+                    completed_orders = (await cur.fetchone())[0]
+                
+                # Active drivers
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'approved'") as cur:
+                    active_drivers = (await cur.fetchone())[0]
+                
+                # Pending driver applications
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'pending'") as cur:
+                    pending_drivers = (await cur.fetchone())[0]
+                
+                # Total revenue
+                async with db.execute("SELECT SUM(fare_amount) FROM orders WHERE status = 'completed'") as cur:
+                    row = await cur.fetchone()
+                    total_revenue = row[0] if row[0] else 0.0
+                
                 # Total commission
                 async with db.execute("SELECT SUM(commission) FROM orders WHERE status = 'completed'") as cur:
                     row = await cur.fetchone()
@@ -130,20 +130,20 @@ def create_router(config: AppConfig) -> Router:
                 # Total users
                 async with db.execute("SELECT COUNT(*) FROM users") as cur:
                     total_users = (await cur.fetchone())[0]
-            
-            text = (
-            "📊 <b>Статистика системи</b>\n\n"
-            f"📦 Всього замовлень: {total_orders}\n"
-            f"✅ Виконано: {completed_orders}\n"
-            f"🚗 Активних водіїв: {active_drivers}\n"
-            f"⏳ Водіїв на модерації: {pending_drivers}\n\n"
-            f"💵 Загальний дохід: {total_revenue:.2f} грн\n"
-            f"💰 Загальна комісія: {total_commission:.2f} грн\n"
-            f"⚠️ Несплачена комісія: {unpaid_commission:.2f} грн\n"
-            f"👥 Всього користувачів: {total_users}"
-            )
-            
-            await message.answer(text, reply_markup=admin_menu_keyboard())
+                
+                text = (
+                    "📊 <b>Статистика системи</b>\n\n"
+                    f"📦 Всього замовлень: {total_orders}\n"
+                    f"✅ Виконано: {completed_orders}\n"
+                    f"🚗 Активних водіїв: {active_drivers}\n"
+                    f"⏳ Водіїв на модерації: {pending_drivers}\n\n"
+                    f"💵 Загальний дохід: {total_revenue:.2f} грн\n"
+                    f"💰 Загальна комісія: {total_commission:.2f} грн\n"
+                    f"⚠️ Несплачена комісія: {unpaid_commission:.2f} грн\n"
+                    f"👥 Всього користувачів: {total_users}"
+                )
+                
+                await message.answer(text, reply_markup=admin_menu_keyboard())
         
         except Exception as e:
             logger.error(f"❌ Помилка отримання статистики: {e}")
