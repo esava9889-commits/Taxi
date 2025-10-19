@@ -25,6 +25,12 @@ from app.handlers.keyboards import main_menu_keyboard
 logger = logging.getLogger(__name__)
 
 
+class ProfileEditStates(StatesGroup):
+    """Стани для редагування профілю"""
+    edit_city = State()
+    edit_phone = State()
+
+
 def create_router(config: AppConfig) -> Router:
     router = Router(name="start")
 
@@ -228,8 +234,10 @@ def create_router(config: AppConfig) -> Router:
                 buttons.append([InlineKeyboardButton(text="🔍 Статус замовлення", callback_data=f"order:status:{active_order.id}")])
         
         # Загальні кнопки
-        buttons.append([InlineKeyboardButton(text="📍 Збережені адреси", callback_data="profile:saved_addresses")])
-        buttons.append([InlineKeyboardButton(text="📜 Історія замовлень", callback_data="profile:history")])
+        buttons.append([
+            InlineKeyboardButton(text="📍 Збережені адреси", callback_data="profile:saved_addresses"),
+            InlineKeyboardButton(text="📜 Історія замовлень", callback_data="profile:history")
+        ])
         buttons.append([
             InlineKeyboardButton(text="✏️ Змінити місто", callback_data="profile:edit:city"),
             InlineKeyboardButton(text="📱 Змінити телефон", callback_data="profile:edit:phone")
@@ -486,8 +494,11 @@ def create_router(config: AppConfig) -> Router:
         orders = await get_user_order_history(config.database_path, call.from_user.id, limit=10)
         
         if not orders:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Повернутися", callback_data="profile:back")]
+            ])
             await call.answer()
-            await call.message.answer("📜 У вас поки немає замовлень.")
+            await call.message.edit_text("📜 У вас поки немає замовлень.", reply_markup=kb)
             return
         
         text = "📜 <b>Ваші останні замовлення:</b>\n\n"
@@ -511,8 +522,62 @@ def create_router(config: AppConfig) -> Router:
                 text += f"💰 {o.fare_amount:.0f} грн\n"
             text += "\n"
         
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Повернутися", callback_data="profile:back")]
+        ])
+        
         await call.answer()
-        await call.message.answer(text)
+        await call.message.edit_text(text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "profile:back")
+    async def back_to_profile(call: CallbackQuery) -> None:
+        """Повернутися до профілю"""
+        if not call.from_user:
+            return
+        
+        # Перезавантажити профіль
+        user = await get_user_by_id(config.database_path, call.from_user.id)
+        if not user:
+            await call.answer("❌ Профіль не знайдено", show_alert=True)
+            return
+        
+        from app.storage.db import get_user_active_order
+        active_order = await get_user_active_order(config.database_path, call.from_user.id)
+        
+        buttons = []
+        
+        if active_order and active_order.status in ("accepted", "in_progress"):
+            buttons.append([
+                InlineKeyboardButton(text="🚗 Відстежити водія", callback_data=f"order:track:{active_order.id}"),
+                InlineKeyboardButton(text="📞 Зв'язатись з водієм", callback_data=f"order:contact:{active_order.id}")
+            ])
+        
+        buttons.extend([
+            [
+                InlineKeyboardButton(text="📍 Збережені адреси", callback_data="profile:saved_addresses"),
+                InlineKeyboardButton(text="📜 Історія замовлень", callback_data="profile:history")
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Змінити місто", callback_data="profile:edit:city"),
+                InlineKeyboardButton(text="📱 Змінити телефон", callback_data="profile:edit:phone")
+            ]
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        profile_text = (
+            f"👤 <b>Ваш профіль</b>\n\n"
+            f"Ім'я: {user.full_name}\n"
+            f"📍 Місто: {user.city or 'Не вказано'}\n"
+            f"📱 Телефон: {user.phone or 'Не вказано'}\n"
+            f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}"
+        )
+        
+        await call.answer()
+        try:
+            await call.message.edit_text(profile_text, reply_markup=kb)
+        except:
+            await call.message.answer(profile_text, reply_markup=kb)
     
     @router.callback_query(F.data == "profile:saved_addresses")
     async def show_saved_addresses(call: CallbackQuery) -> None:
@@ -526,16 +591,25 @@ def create_router(config: AppConfig) -> Router:
         if not addresses:
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")]
+                    [InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")],
+                    [InlineKeyboardButton(text="⬅️ Повернутися", callback_data="profile:back")]
                 ]
             )
             await call.answer()
-            await call.message.answer(
-                "📍 <b>Збережені адреси</b>\n\n"
-                "У вас поки немає збережених адрес.\n"
-                "Додайте часто використовувані місця для швидкого замовлення!",
-                reply_markup=kb
-            )
+            try:
+                await call.message.edit_text(
+                    "📍 <b>Збережені адреси</b>\n\n"
+                    "У вас поки немає збережених адрес.\n"
+                    "Додайте часто використовувані місця для швидкого замовлення!",
+                    reply_markup=kb
+                )
+            except:
+                await call.message.answer(
+                    "📍 <b>Збережені адреси</b>\n\n"
+                    "У вас поки немає збережених адрес.\n"
+                    "Додайте часто використовувані місця для швидкого замовлення!",
+                    reply_markup=kb
+                )
             return
         
         buttons = []
@@ -546,15 +620,23 @@ def create_router(config: AppConfig) -> Router:
             )])
         
         buttons.append([InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")])
+        buttons.append([InlineKeyboardButton(text="⬅️ Повернутися", callback_data="profile:back")])
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         await call.answer()
-        await call.message.answer(
-            f"📍 <b>Збережені адреси ({len(addresses)}/10)</b>\n\n"
-            "Оберіть адресу для перегляду або додайте нову:",
-            reply_markup=kb
-        )
+        try:
+            await call.message.edit_text(
+                f"📍 <b>Збережені адреси ({len(addresses)}/10)</b>\n\n"
+                "Оберіть адресу для перегляду або додайте нову:",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"📍 <b>Збережені адреси ({len(addresses)}/10)</b>\n\n"
+                "Оберіть адресу для перегляду або додайте нову:",
+                reply_markup=kb
+            )
     
     @router.callback_query(F.data.startswith("address:view:"))
     async def view_saved_address(call: CallbackQuery) -> None:
@@ -799,4 +881,227 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=main_menu_keyboard(is_registered=is_registered, is_driver=is_driver, is_admin=is_admin)
         )
 
+    # Обробники редагування профілю
+    @router.callback_query(F.data == "profile:edit:city")
+    async def edit_city_start(call: CallbackQuery, state: FSMContext) -> None:
+        """Почати редагування міста"""
+        if not call.from_user:
+            return
+        
+        from app.config.config import AVAILABLE_CITIES
+        
+        buttons = []
+        for city in AVAILABLE_CITIES:
+            buttons.append([InlineKeyboardButton(text=city, callback_data=f"city:select:{city}")])
+        
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="profile:back")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await state.set_state(ProfileEditStates.edit_city)
+        await call.answer()
+        try:
+            await call.message.edit_text(
+                "🏙 <b>Оберіть ваше місто:</b>\n\n"
+                "Місто необхідне для пошуку водіїв у вашому регіоні.",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                "🏙 <b>Оберіть ваше місто:</b>\n\n"
+                "Місто необхідне для пошуку водіїв у вашому регіоні.",
+                reply_markup=kb
+            )
+    
+    @router.callback_query(F.data.startswith("city:select:"), ProfileEditStates.edit_city)
+    async def save_new_city(call: CallbackQuery, state: FSMContext) -> None:
+        """Зберегти нове місто"""
+        if not call.from_user:
+            return
+        
+        city = call.data.split("city:select:")[-1]
+        
+        user = await get_user_by_id(config.database_path, call.from_user.id)
+        if not user:
+            await call.answer("❌ Помилка", show_alert=True)
+            await state.clear()
+            return
+        
+        # Оновити місто
+        updated_user = User(
+            user_id=user.user_id,
+            full_name=user.full_name,
+            phone=user.phone,
+            role=user.role,
+            city=city,
+            language=user.language,
+            created_at=user.created_at
+        )
+        
+        await upsert_user(config.database_path, updated_user)
+        await state.clear()
+        
+        await call.answer(f"✅ Місто змінено на {city}")
+        
+        # Повернутися до профілю
+        await back_to_profile(call)
+    
+    @router.callback_query(F.data == "profile:edit:phone")
+    async def edit_phone_start(call: CallbackQuery, state: FSMContext) -> None:
+        """Почати редагування телефону"""
+        if not call.from_user:
+            return
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="profile:back")]
+        ])
+        
+        await state.set_state(ProfileEditStates.edit_phone)
+        await call.answer()
+        try:
+            await call.message.edit_text(
+                "📱 <b>Введіть новий номер телефону:</b>\n\n"
+                "Формат: +380XXXXXXXXX\n"
+                "Наприклад: +380501234567",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                "📱 <b>Введіть новий номер телефону:</b>\n\n"
+                "Формат: +380XXXXXXXXX\n"
+                "Наприклад: +380501234567",
+                reply_markup=kb
+            )
+    
+    @router.message(ProfileEditStates.edit_phone)
+    async def save_new_phone(message: Message, state: FSMContext) -> None:
+        """Зберегти новий телефон"""
+        if not message.from_user or not message.text:
+            return
+        
+        phone = message.text.strip()
+        
+        # Валідація телефону
+        if not re.match(r'^\+380\d{9}$', phone):
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="profile:back")]
+            ])
+            await message.answer(
+                "❌ <b>Невірний формат!</b>\n\n"
+                "Введіть номер у форматі: +380XXXXXXXXX\n"
+                "Спробуйте ще раз:",
+                reply_markup=kb
+            )
+            return
+        
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        if not user:
+            await message.answer("❌ Помилка оновлення профілю")
+            await state.clear()
+            return
+        
+        # Оновити телефон
+        updated_user = User(
+            user_id=user.user_id,
+            full_name=user.full_name,
+            phone=phone,
+            role=user.role,
+            city=user.city,
+            language=user.language,
+            created_at=user.created_at
+        )
+        
+        await upsert_user(config.database_path, updated_user)
+        await state.clear()
+        
+        await message.answer(f"✅ Телефон змінено на {phone}")
+        
+        # Показати оновлений профіль
+        from app.storage.db import get_user_active_order
+        active_order = await get_user_active_order(config.database_path, message.from_user.id)
+        
+        buttons = []
+        if active_order and active_order.status in ("accepted", "in_progress"):
+            buttons.append([
+                InlineKeyboardButton(text="🚗 Відстежити водія", callback_data=f"order:track:{active_order.id}"),
+                InlineKeyboardButton(text="📞 Зв'язатись з водієм", callback_data=f"order:contact:{active_order.id}")
+            ])
+        
+        buttons.extend([
+            [
+                InlineKeyboardButton(text="📍 Збережені адреси", callback_data="profile:saved_addresses"),
+                InlineKeyboardButton(text="📜 Історія замовлень", callback_data="profile:history")
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Змінити місто", callback_data="profile:edit:city"),
+                InlineKeyboardButton(text="📱 Змінити телефон", callback_data="profile:edit:phone")
+            ]
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        profile_text = (
+            f"👤 <b>Ваш профіль</b>\n\n"
+            f"Ім'я: {updated_user.full_name}\n"
+            f"📍 Місто: {updated_user.city or 'Не вказано'}\n"
+            f"📱 Телефон: {updated_user.phone}\n"
+            f"📅 Дата реєстрації: {updated_user.created_at.strftime('%d.%m.%Y')}"
+        )
+        
+        await message.answer(profile_text, reply_markup=kb)
+    
+    # Обробник оплати поїздки
+    @router.callback_query(F.data.startswith("pay:"))
+    async def show_payment_info(call: CallbackQuery) -> None:
+        """Показати інформацію для оплати поїздки"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[-1])
+        
+        from app.storage.db import get_order_by_id, get_driver_by_id
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if not order.driver_id:
+            await call.answer("❌ Водія ще не призначено", show_alert=True)
+            return
+        
+        driver = await get_driver_by_id(config.database_path, order.driver_id)
+        
+        if not driver:
+            await call.answer("❌ Інформація про водія недоступна", show_alert=True)
+            return
+        
+        payment_text = (
+            f"💳 <b>Оплата поїздки #{order.id}</b>\n\n"
+            f"💰 Вартість: {order.fare_amount:.0f} грн\n\n"
+        )
+        
+        if order.payment_method == "card":
+            if driver.card_number:
+                payment_text += (
+                    f"💳 <b>Картка водія:</b>\n"
+                    f"<code>{driver.card_number}</code>\n\n"
+                    f"👤 {driver.full_name}\n\n"
+                    f"ℹ️ Натисніть на номер картки щоб скопіювати"
+                )
+            else:
+                payment_text += (
+                    f"⚠️ <b>Водій не вказав картку</b>\n\n"
+                    f"Зв'яжіться з водієм для уточнення реквізитів:\n"
+                    f"📱 {driver.phone}"
+                )
+        else:
+            payment_text += (
+                f"💵 <b>Оплата готівкою</b>\n\n"
+                f"Розрахуйтесь з водієм після завершення поїздки."
+            )
+        
+        await call.answer()
+        await call.message.answer(payment_text)
+    
     return router
