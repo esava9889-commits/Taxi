@@ -75,11 +75,11 @@ class SQLiteAdapter:
         self.conn = conn
         self.is_postgres = False
     
-    async def execute(self, query: str, params=None):
-        """Виконати запит"""
+    def execute(self, query: str, params=None):
+        """Виконати запит - повертає async context manager"""
         if params:
-            return await self.conn.execute(query, params)
-        return await self.conn.execute(query)
+            return self.conn.execute(query, params)
+        return self.conn.execute(query)
     
     async def commit(self):
         """Зберегти зміни"""
@@ -94,6 +94,36 @@ class SQLiteAdapter:
         """Отримати всі рядки"""
         async with self.conn.execute(query, params or ()) as cur:
             return await cur.fetchall()
+
+
+class PostgresCursor:
+    """Емуляція cursor для PostgreSQL з async context manager"""
+    
+    def __init__(self, adapter, query, params):
+        self.adapter = adapter
+        self.query = adapter._convert_query(query)
+        self.params = params
+        self._result = None
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return False
+    
+    async def fetchone(self):
+        """Отримати один рядок"""
+        if self.params:
+            return await self.adapter.conn.fetchrow(self.query, *self.params)
+        return await self.adapter.conn.fetchrow(self.query)
+    
+    async def fetchall(self):
+        """Отримати всі рядки"""
+        if self.params:
+            rows = await self.adapter.conn.fetch(self.query, *self.params)
+        else:
+            rows = await self.adapter.conn.fetch(self.query)
+        return [tuple(row.values()) for row in rows] if rows else []
 
 
 class PostgresAdapter:
@@ -117,34 +147,10 @@ class PostgresAdapter:
         
         return result
     
-    async def execute(self, query: str, params=None):
-        """Виконати запит"""
-        query_original = query
-        query = self._convert_query(query)
-        
-        # Автоматично додати RETURNING id для INSERT
-        if query_original.strip().upper().startswith("INSERT") and "RETURNING" not in query.upper():
-            query = query.rstrip().rstrip(';') + " RETURNING id"
-            # Виконати з RETURNING
-            if params:
-                row = await self.conn.fetchrow(query, *params)
-            else:
-                row = await self.conn.fetchrow(query)
-            
-            # Зберегти lastrowid
-            self._last_insert_id = row[0] if row else None
-            self._last_cursor = f"INSERT 0 1"
-            return self
-        
-        # Звичайний запит
-        if params:
-            result = await self.conn.execute(query, *params)
-        else:
-            result = await self.conn.execute(query)
-        
-        self._last_cursor = result
-        self._last_insert_id = None
-        return self
+    def execute(self, query: str, params=None):
+        """Виконати запит - повертає async context manager (cursor)"""
+        # Повертаємо PostgresCursor який підтримує async with
+        return PostgresCursor(self, query, params)
     
     async def commit(self):
         """PostgreSQL не потребує явного commit"""
@@ -159,7 +165,6 @@ class PostgresAdapter:
     def rowcount(self):
         """Кількість змінених рядків"""
         if self._last_cursor:
-            # Парсити результат типу "UPDATE 1"
             try:
                 return int(self._last_cursor.split()[-1])
             except:
