@@ -12,6 +12,7 @@ from aiogram.types import Message
 import aiosqlite
 
 from app.config.config import AppConfig
+from app.storage.db import _parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +90,8 @@ async def get_promocode(db_path: str, code: str) -> Optional[Promocode]:
         discount_amount=row[3],
         max_uses=row[4],
         uses_count=row[5],
-        valid_until=datetime.fromisoformat(row[6]) if row[6] else None,
-        created_at=datetime.fromisoformat(row[7]),
+        valid_until=_parse_datetime(row[6]) if row[6] else None,
+        created_at=_parse_datetime(row[7]),
         active=bool(row[8])
     )
 

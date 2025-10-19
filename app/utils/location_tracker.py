@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from aiogram import Bot
 
+from app.storage.db import _parse_datetime
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,7 +67,7 @@ async def location_reminder_task(bot, db_path: str) -> None:
                         continue
                     
                     # Перевірити чи не застаріла локація
-                    last_seen = datetime.fromisoformat(last_seen_str)
+                    last_seen = _parse_datetime(last_seen_str)
                     time_diff = (now - last_seen).total_seconds() / 60  # в хвилинах
                     
                     # Якщо локація старіша за 20 хвилин - перевести в офлайн
@@ -143,7 +145,7 @@ async def check_driver_location_status(db_path: str, tg_user_id: int) -> dict:
     if not last_seen_str or not last_lat or not last_lon:
         return {'has_location': False, 'age_minutes': 0, 'status': 'none'}
     
-    last_seen = datetime.fromisoformat(last_seen_str)
+    last_seen = _parse_datetime(last_seen_str)
     now = datetime.now(timezone.utc)
     age_minutes = int((now - last_seen).total_seconds() / 60)
     
