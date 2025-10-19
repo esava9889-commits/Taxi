@@ -805,7 +805,28 @@ def create_router(config: AppConfig) -> Router:
             return
         
         loc = message.location
-        pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+        
+        # ⭐ REVERSE GEOCODING: Координати → Текстова адреса
+        pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
+        
+        if config.google_maps_api_key:
+            try:
+                from app.utils.maps import reverse_geocode
+                readable_address = await reverse_geocode(
+                    config.google_maps_api_key,
+                    loc.latitude,
+                    loc.longitude
+                )
+                if readable_address:
+                    pickup = readable_address
+                    logger.info(f"✅ Reverse geocoded pickup: {pickup}")
+                else:
+                    logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+            except Exception as e:
+                logger.error(f"❌ Помилка reverse geocoding: {e}")
+        else:
+            logger.warning("⚠️ Google Maps API ключ відсутній, зберігаю координати")
+        
         await state.update_data(pickup=pickup, pickup_lat=loc.latitude, pickup_lon=loc.longitude)
         
         await state.set_state(OrderStates.destination)
@@ -881,7 +902,28 @@ def create_router(config: AppConfig) -> Router:
             return
         
         loc = message.location
-        destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+        
+        # ⭐ REVERSE GEOCODING: Координати → Текстова адреса
+        destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
+        
+        if config.google_maps_api_key:
+            try:
+                from app.utils.maps import reverse_geocode
+                readable_address = await reverse_geocode(
+                    config.google_maps_api_key,
+                    loc.latitude,
+                    loc.longitude
+                )
+                if readable_address:
+                    destination = readable_address
+                    logger.info(f"✅ Reverse geocoded destination: {destination}")
+                else:
+                    logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+            except Exception as e:
+                logger.error(f"❌ Помилка reverse geocoding: {e}")
+        else:
+            logger.warning("⚠️ Google Maps API ключ відсутній, зберігаю координати")
+        
         await state.update_data(
             destination=destination,
             dest_lat=loc.latitude,
