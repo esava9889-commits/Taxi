@@ -62,7 +62,7 @@ async def main() -> None:
 
     # Затримка при запуску щоб старий процес встиг завершитись
     if os.getenv('RENDER'):
-        startup_delay = 3
+        startup_delay = 15  # Збільшено до 15 секунд!
         logging.info(f"⏳ Затримка запуску {startup_delay}s для graceful shutdown старого процесу...")
         await asyncio.sleep(startup_delay)
 
