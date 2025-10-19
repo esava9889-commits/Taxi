@@ -30,23 +30,28 @@ class DatabaseConnection:
             self.db_type = "sqlite"
             logger.info(f"📁 Database: SQLite")
     
-    @asynccontextmanager
-    async def connect(self, db_path: str):
+    def connect(self, db_path: str):
         """Отримати connection (автоматично SQLite або PostgreSQL)"""
-        if self.db_type == "postgres":
-            import asyncpg
-            conn = await asyncpg.connect(self.db_url)
-            try:
-                yield PostgresAdapter(conn)
-            finally:
-                await conn.close()
-        else:
-            import aiosqlite
-            conn = await aiosqlite.connect(db_path)
-            try:
-                yield SQLiteAdapter(conn)
-            finally:
-                await conn.close()
+        return _connection_context(self, db_path)
+
+
+@asynccontextmanager
+async def _connection_context(manager: DatabaseConnection, db_path: str):
+    """Async context manager для підключення"""
+    if manager.db_type == "postgres":
+        import asyncpg
+        conn = await asyncpg.connect(manager.db_url)
+        try:
+            yield PostgresAdapter(conn)
+        finally:
+            await conn.close()
+    else:
+        import aiosqlite
+        conn = await aiosqlite.connect(db_path)
+        try:
+            yield SQLiteAdapter(conn)
+        finally:
+            await conn.close()
 
 
 class SQLiteAdapter:
