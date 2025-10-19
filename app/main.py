@@ -62,10 +62,10 @@ async def main() -> None:
 
     # Затримка при запуску щоб старий процес встиг завершитись
     if os.getenv('RENDER'):
-        startup_delay = 30  # Збільшено до 30 секунд!
+        startup_delay = 45  # Збільшено до 45 секунд для PostgreSQL!
         logging.info(f"⏳ Затримка запуску {startup_delay}s для graceful shutdown старого процесу...")
         for i in range(startup_delay):
-            if i % 5 == 0:
+            if i % 10 == 0:
                 logging.info(f"⏳ Очікування... {startup_delay - i}s залишилось")
             await asyncio.sleep(1)
 

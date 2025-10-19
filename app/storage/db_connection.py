@@ -97,19 +97,83 @@ class SQLiteAdapter:
 
 
 class PostgresCursor:
-    """Емуляція cursor для PostgreSQL з async context manager"""
+    """Емуляція cursor для PostgreSQL з async context manager та awaitable"""
     
     def __init__(self, adapter, query, params):
         self.adapter = adapter
         self.query = adapter._convert_query(query)
         self.params = params
         self._result = None
+        self._lastrowid = None
+        self._rowcount = 0
+        self._executed = False
     
     async def __aenter__(self):
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return False
+    
+    def __await__(self):
+        """Зробити cursor awaitable для INSERT/UPDATE/DELETE операцій"""
+        return self._execute_and_return_self().__await__()
+    
+    async def _execute_and_return_self(self):
+        """Виконати запит і повернути self"""
+        if not self._executed:
+            await self._execute()
+        return self
+    
+    async def _execute(self):
+        """Виконати запит для INSERT/UPDATE/DELETE"""
+        if self._executed:
+            return
+        
+        self._executed = True
+        
+        # Визначити тип запиту
+        query_upper = self.query.strip().upper()
+        
+        if query_upper.startswith('INSERT'):
+            # Для INSERT додати RETURNING id
+            if 'RETURNING' not in query_upper:
+                returning_query = self.query.rstrip(';') + ' RETURNING id'
+            else:
+                returning_query = self.query
+            
+            if self.params:
+                result = await self.adapter.conn.fetchrow(returning_query, *self.params)
+            else:
+                result = await self.adapter.conn.fetchrow(returning_query)
+            
+            if result:
+                self._lastrowid = result['id']
+                self._rowcount = 1
+        else:
+            # Для UPDATE/DELETE
+            if self.params:
+                result = await self.adapter.conn.execute(self.query, *self.params)
+            else:
+                result = await self.adapter.conn.execute(self.query)
+            
+            # Отримати rowcount з результату (format: "UPDATE 5")
+            if result:
+                try:
+                    parts = result.split()
+                    if len(parts) >= 2:
+                        self._rowcount = int(parts[-1])
+                except:
+                    self._rowcount = 0
+    
+    @property
+    def lastrowid(self):
+        """Отримати ID останнього вставленого рядка"""
+        return self._lastrowid
+    
+    @property
+    def rowcount(self):
+        """Кількість змінених рядків"""
+        return self._rowcount
     
     async def fetchone(self):
         """Отримати один рядок"""
