@@ -28,6 +28,7 @@ from app.storage.db import (
     cancel_order_by_client,
     get_order_by_id,
     get_user_active_order,
+    increase_order_fare,
 )
 from app.utils.maps import get_distance_and_duration, geocode_address
 from app.utils.privacy import mask_phone_number
@@ -1192,7 +1193,9 @@ def create_router(config: AppConfig) -> Router:
         )
         
         await state.set_state(OrderStates.confirm)
-        await message.answer(text, reply_markup=confirm_kb)
+        # Зберегти message_id для подальшого видалення
+        confirmation_msg = await message.answer(text, reply_markup=confirm_kb)
+        await state.update_data(confirmation_message_id=confirmation_msg.message_id)
 
     @router.callback_query(F.data == "order:back_to_payment")
     async def back_to_payment(call: CallbackQuery, state: FSMContext) -> None:
@@ -1229,11 +1232,11 @@ def create_router(config: AppConfig) -> Router:
         """Підтвердження замовлення (inline кнопка)"""
         await call.answer("✅ Створюємо замовлення...")
         
-        # Видалити кнопки підтвердження
+        # ⭐ Видалити повідомлення про перевірку даних
         try:
-            await call.message.edit_reply_markup(reply_markup=None)
-        except:
-            pass
+            await call.message.delete()
+        except Exception as e:
+            logger.warning(f"Не вдалося видалити повідомлення підтвердження: {e}")
         
         # Викликати основну логіку
         await process_order_confirmation(call.message, state, call.from_user.id, config)
@@ -1432,15 +1435,22 @@ def create_router(config: AppConfig) -> Router:
                 )
                 logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
                 
-                # Відповідь клієнту
+                # ⭐ Відповідь клієнту (зберегти message_id для підвищення ціни)
                 from app.handlers.keyboards import main_menu_keyboard
                 is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
-                await message.answer(
+                client_message = await message.answer(
                     f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
                     "🔍 Шукаємо водія...\n\n"
                     "Ваше замовлення надіслано водіям.\n"
                     "Очікуйте підтвердження! ⏱",
                     reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+                )
+                
+                # Зберегти message_id для пізнішого оновлення (пропозиція підняти ціну)
+                await state.update_data(
+                    client_waiting_message_id=client_message.message_id,
+                    order_id=order_id,
+                    fare_increase=0  # Скільки грн додано до ціни
                 )
                 
             except Exception as e:
@@ -1558,5 +1568,194 @@ def create_router(config: AppConfig) -> Router:
             logger.info(f"Order #{order_id} cancelled by client {call.from_user.id}")
         else:
             await call.answer("❌ Не вдалося скасувати замовлення", show_alert=True)
+    
+    @router.callback_query(F.data.startswith("increase_price:"))
+    async def increase_price_handler(call: CallbackQuery) -> None:
+        """Підвищити ціну замовлення"""
+        if not call.from_user:
+            return
+        
+        # Парсинг даних: increase_price:{order_id}:{amount}
+        parts = call.data.split(":")
+        order_id = int(parts[1])
+        increase_amount = float(parts[2])
+        
+        # Отримати замовлення
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        # Перевірити що це замовлення цього користувача
+        if order.user_id != call.from_user.id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        # Перевірити що замовлення ще в статусі pending
+        if order.status != "pending":
+            await call.answer("✅ Водій вже прийняв замовлення!", show_alert=True)
+            # Видалити повідомлення з пропозицією
+            try:
+                await call.message.delete()
+            except:
+                pass
+            return
+        
+        # Підвищити ціну в БД
+        success = await increase_order_fare(config.database_path, order_id, increase_amount)
+        
+        if not success:
+            await call.answer("❌ Помилка оновлення ціни", show_alert=True)
+            return
+        
+        # Отримати оновлене замовлення
+        order = await get_order_by_id(config.database_path, order_id)
+        new_fare = order.fare_amount if order else 0
+        
+        await call.answer(f"✅ Ціна підвищена на +{increase_amount:.0f} грн!", show_alert=True)
+        
+        # ⭐ Видалити повідомлення з пропозицією підняти ціну
+        try:
+            await call.message.delete()
+        except Exception as e:
+            logger.warning(f"Не вдалося видалити повідомлення: {e}")
+        
+        # ⭐ Оновити повідомлення в групі водіїв з НОВОЮ ЦІНОЮ
+        if order.group_message_id:
+            try:
+                from app.config.config import get_city_group_id
+                user = await get_user_by_id(config.database_path, order.user_id)
+                client_city = user.city if user and user.city else None
+                group_id = get_city_group_id(config, client_city)
+                
+                if group_id:
+                    from app.handlers.car_classes import get_car_class_name
+                    car_class_name = get_car_class_name(order.car_class or 'economy')
+                    
+                    # Створити посилання на Google Maps якщо є координати
+                    pickup_link = ""
+                    dest_link = ""
+                    
+                    if order.pickup_lat and order.pickup_lon:
+                        pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>Геолокація подачі</a>"
+                    
+                    if order.dest_lat and order.dest_lon:
+                        dest_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Геолокація прибуття</a>"
+                    
+                    distance_info = ""
+                    if order.distance_m:
+                        km = order.distance_m / 1000.0
+                        distance_info = f"📏 Відстань: {km:.1f} км\n"
+                    
+                    masked_phone = mask_phone_number(order.phone, show_last_digits=2)
+                    
+                    kb = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(
+                                text="✅ Прийняти замовлення",
+                                callback_data=f"accept_order:{order_id}"
+                            )]
+                        ]
+                    )
+                    
+                    await call.bot.edit_message_text(
+                        chat_id=group_id,
+                        message_id=order.group_message_id,
+                        text=(
+                            f"💰 <b>ЦІНУ ПІДВИЩЕНО! ЗАМОВЛЕННЯ #{order_id}</b>\n"
+                            f"⬆️ <b>+{increase_amount:.0f} грн до ціни!</b>\n\n"
+                            f"🏙 Місто: {client_city}\n"
+                            f"🚗 Клас: {car_class_name}\n"
+                            f"👤 Клієнт: {order.name}\n"
+                            f"📱 Телефон: <code>{masked_phone}</code> 🔒\n\n"
+                            f"📍 Звідки: {order.pickup_address}{pickup_link}\n"
+                            f"📍 Куди: {order.destination_address}{dest_link}\n"
+                            f"{distance_info}\n"
+                            f"💰 <b>Нова вартість: {new_fare:.0f} грн</b> 💰\n"
+                            f"💬 Коментар: {order.comment or '—'}\n\n"
+                            f"⚠️ <b>Клієнт готовий платити більше!</b>\n"
+                            f"ℹ️ <i>Повний номер після прийняття</i>"
+                        ),
+                        reply_markup=kb,
+                        disable_web_page_preview=True
+                    )
+                    logger.info(f"📤 Повідомлення в групі оновлено: нова ціна {new_fare:.0f} грн для замовлення #{order_id}")
+            except Exception as e:
+                logger.error(f"❌ Не вдалося оновити повідомлення в групі: {e}")
+        
+        # Відправити клієнту підтвердження
+        try:
+            await call.bot.send_message(
+                call.from_user.id,
+                f"✅ <b>Ціну підвищено!</b>\n\n"
+                f"💰 Нова вартість: <b>{new_fare:.0f} грн</b>\n\n"
+                f"🔍 Продовжуємо пошук водія з новою ціною..."
+            )
+        except Exception as e:
+            logger.warning(f"Не вдалося надіслати підтвердження клієнту: {e}")
+    
+    @router.callback_query(F.data.startswith("cancel_waiting_order:"))
+    async def cancel_waiting_order_handler(call: CallbackQuery) -> None:
+        """Скасувати замовлення під час очікування"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[1])
+        
+        # Отримати замовлення
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        # Перевірити що це замовлення цього користувача
+        if order.user_id != call.from_user.id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        # Скасувати замовлення
+        success = await cancel_order_by_client(config.database_path, order_id)
+        
+        if success:
+            # Скасувати таймер
+            from app.utils.order_timeout import cancel_order_timeout
+            cancel_order_timeout(order_id)
+            
+            await call.answer("✅ Замовлення скасовано", show_alert=True)
+            
+            # Видалити повідомлення з пропозицією
+            try:
+                await call.message.delete()
+            except:
+                pass
+            
+            # Повідомити в групу
+            if order.group_message_id:
+                try:
+                    from app.config.config import get_city_group_id
+                    user = await get_user_by_id(config.database_path, order.user_id)
+                    client_city = user.city if user and user.city else None
+                    group_id = get_city_group_id(config, client_city)
+                    
+                    if group_id:
+                        await call.bot.edit_message_text(
+                            chat_id=group_id,
+                            message_id=order.group_message_id,
+                            text=f"❌ <b>ЗАМОВЛЕННЯ #{order_id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                                 f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to update group message: {e}")
+            
+            # Відправити підтвердження
+            await call.bot.send_message(
+                call.from_user.id,
+                "✅ <b>Замовлення скасовано</b>\n\n"
+                "Ви можете створити нове замовлення будь-коли."
+            )
+        else:
+            await call.answer("❌ Не вдалося скасувати", show_alert=True)
     
     return router

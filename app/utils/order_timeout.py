@@ -1,10 +1,11 @@
-"""Система таймаутів для замовлень - автоматична перепропозиція"""
+"""Система таймаутів для замовлень - автоматична перепропозиція та підвищення ціни"""
 import asyncio
 import logging
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
 from aiogram import Bot
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class OrderTimeoutManager:
     def __init__(self):
         self._timers: Dict[int, asyncio.Task] = {}  # {order_id: task}
         self._timeout_seconds = 180  # 3 хвилини
+        self._timeout_count: Dict[int, int] = {}  # {order_id: скільки разів спрацював таймер}
     
     async def start_timeout(
         self,
@@ -67,6 +69,10 @@ class OrderTimeoutManager:
             self._timers[order_id].cancel()
             del self._timers[order_id]
             logger.info(f"✅ Таймер скасовано для замовлення #{order_id}")
+        
+        # Видалити лічильник
+        if order_id in self._timeout_count:
+            del self._timeout_count[order_id]
     
     async def _timeout_handler(
         self,
@@ -98,13 +104,47 @@ class OrderTimeoutManager:
                 logger.info(f"✅ Замовлення #{order_id} вже прийнято, таймаут скасовано")
                 return
             
-            logger.warning(f"⏰ TIMEOUT: Замовлення #{order_id} не прийнято за 3 хв!")
+            # Підрахувати скільки разів спрацював таймер
+            if order_id not in self._timeout_count:
+                self._timeout_count[order_id] = 0
+            self._timeout_count[order_id] += 1
+            
+            timeout_count = self._timeout_count[order_id]
+            logger.warning(f"⏰ TIMEOUT #{timeout_count}: Замовлення #{order_id} не прийнято за {timeout_count * 3} хв!")
+            
+            # ⭐ НОВА ЛОГІКА: Пропозиція підняти ціну клієнту
+            try:
+                # Безпечне форматування суми
+                current_fare = order.fare_amount if order.fare_amount else 100.0
+                
+                # Inline кнопки для підвищення ціни
+                kb_price_increase = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="💵 +15 грн", callback_data=f"increase_price:{order_id}:15"),
+                            InlineKeyboardButton(text="💵 +30 грн", callback_data=f"increase_price:{order_id}:30"),
+                        ],
+                        [InlineKeyboardButton(text="💵 +50 грн", callback_data=f"increase_price:{order_id}:50")],
+                        [InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data=f"cancel_waiting_order:{order_id}")]
+                    ]
+                )
+                
+                await bot.send_message(
+                    order.user_id,
+                    f"⏰ <b>Шукаємо водія вже {timeout_count * 3} хвилин...</b>\n\n"
+                    f"На жаль, всі водії зараз зайняті.\n\n"
+                    f"💰 <b>Поточна ціна:</b> {current_fare:.0f} грн\n\n"
+                    f"💡 <b>Підвищте ціну щоб швидше знайти водія:</b>\n\n"
+                    f"Водії частіше приймають замовлення з вищою ціною.",
+                    reply_markup=kb_price_increase
+                )
+                logger.info(f"📨 Клієнту #{order.user_id} запропоновано підняти ціну (спроба #{timeout_count})")
+            except Exception as e:
+                logger.error(f"❌ Не вдалося запропонувати підняти ціну: {e}")
             
             # Оновити повідомлення в групі з позначкою "ТЕРМІНОВЕ"
             if group_message_id:
                 try:
-                    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-                    
                     kb = InlineKeyboardMarkup(
                         inline_keyboard=[
                             [InlineKeyboardButton(
@@ -122,7 +162,7 @@ class OrderTimeoutManager:
                         message_id=group_message_id,
                         text=(
                             f"🔴 <b>ТЕРМІНОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n"
-                            f"⚠️ <b>Вже чекає 3+ хвилини!</b>\n\n"
+                            f"⚠️ <b>Вже чекає {timeout_count * 3}+ хвилин!</b>\n\n"
                             f"📍 Звідки: {order.pickup_address or 'Не вказано'}\n"
                             f"📍 Куди: {order.destination_address or 'Не вказано'}\n\n"
                             f"💰 Вартість: {fare_text}\n\n"
@@ -130,26 +170,10 @@ class OrderTimeoutManager:
                         ),
                         reply_markup=kb
                     )
-                    logger.info(f"📤 Повідомлення в групі оновлено: ТЕРМІНОВЕ #{order_id}")
+                    logger.info(f"📤 Повідомлення в групі оновлено: ТЕРМІНОВЕ #{order_id} ({timeout_count * 3} хв)")
                 except Exception as e:
-                    # Ігноруємо помилку "message is not modified" - це нормально
-                    if "message is not modified" in str(e):
-                        logger.info(f"ℹ️ Повідомлення #{order_id} вже оновлене (не змінилось)")
-                    else:
+                    if "message is not modified" not in str(e):
                         logger.error(f"❌ Не вдалося оновити повідомлення в групі: {e}")
-            
-            # Повідомити клієнта про затримку
-            try:
-                await bot.send_message(
-                    order.user_id,
-                    "⏰ <b>Шукаємо водія...</b>\n\n"
-                    "На жаль, всі водії зараз зайняті.\n"
-                    "Продовжуємо пошук! Зачекайте будь ласка.\n\n"
-                    "ℹ️ Зазвичай це займає до 5 хвилин."
-                )
-                logger.info(f"📨 Клієнта #{order.user_id} повідомлено про затримку")
-            except Exception as e:
-                logger.error(f"❌ Не вдалося повідомити клієнта: {e}")
             
             # Перезапустити таймер на ще 3 хвилини
             await self.start_timeout(

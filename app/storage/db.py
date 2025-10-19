@@ -497,6 +497,43 @@ async def update_order_group_message(db_path: str, order_id: int, message_id: in
         return cur.rowcount > 0
 
 
+async def increase_order_fare(db_path: str, order_id: int, increase_amount: float) -> bool:
+    """
+    Підвищити ціну замовлення на вказану суму.
+    
+    Args:
+        db_path: Шлях до БД
+        order_id: ID замовлення
+        increase_amount: Сума підвищення (грн)
+    
+    Returns:
+        True якщо оновлено успішно
+    """
+    async with db_manager.connect(db_path) as db:
+        # Отримати поточну ціну
+        cur = await db.execute(
+            "SELECT fare_amount FROM orders WHERE id = ?",
+            (order_id,)
+        )
+        row = await cur.fetchone()
+        
+        if not row:
+            return False
+        
+        current_fare = row[0] if row[0] else 100.0
+        new_fare = current_fare + increase_amount
+        
+        # Оновити ціну
+        cur = await db.execute(
+            "UPDATE orders SET fare_amount = ? WHERE id = ?",
+            (new_fare, order_id),
+        )
+        await db.commit()
+        
+        logger.info(f"💰 Ціна замовлення #{order_id} підвищена: {current_fare:.0f} → {new_fare:.0f} грн (+{increase_amount:.0f})")
+        return cur.rowcount > 0
+
+
 async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> bool:
     """Скасувати замовлення клієнтом (тільки якщо pending)"""
     async with db_manager.connect(db_path) as db:
