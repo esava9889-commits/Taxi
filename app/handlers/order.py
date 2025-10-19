@@ -1629,6 +1629,8 @@ def create_router(config: AppConfig) -> Router:
                 client_city = user.city if user and user.city else None
                 group_id = get_city_group_id(config, client_city)
                 
+                logger.info(f"🔍 Оновлення ціни: order_id={order_id}, group_message_id={order.group_message_id}, group_id={group_id}, city={client_city}")
+                
                 if group_id:
                     from app.handlers.car_classes import get_car_class_name
                     car_class_name = get_car_class_name(order.car_class or 'economy')
@@ -1659,18 +1661,23 @@ def create_router(config: AppConfig) -> Router:
                         ]
                     )
                     
+                    # Очистити адреси від Plus Codes для кращої читабельності
+                    from app.handlers.driver_panel import clean_address
+                    clean_pickup = clean_address(order.pickup_address)
+                    clean_destination = clean_address(order.destination_address)
+                    
                     await call.bot.edit_message_text(
                         chat_id=group_id,
                         message_id=order.group_message_id,
                         text=(
                             f"💰 <b>ЦІНУ ПІДВИЩЕНО! ЗАМОВЛЕННЯ #{order_id}</b>\n"
                             f"⬆️ <b>+{increase_amount:.0f} грн до ціни!</b>\n\n"
-                            f"🏙 Місто: {client_city}\n"
+                            f"🏙 Місто: {client_city or 'Не вказано'}\n"
                             f"🚗 Клас: {car_class_name}\n"
                             f"👤 Клієнт: {order.name}\n"
                             f"📱 Телефон: <code>{masked_phone}</code> 🔒\n\n"
-                            f"📍 Звідки: {order.pickup_address}{pickup_link}\n"
-                            f"📍 Куди: {order.destination_address}{dest_link}\n"
+                            f"📍 Звідки: {clean_pickup}{pickup_link}\n"
+                            f"📍 Куди: {clean_destination}{dest_link}\n"
                             f"{distance_info}\n"
                             f"💰 <b>Нова вартість: {new_fare:.0f} грн</b> 💰\n"
                             f"💬 Коментар: {order.comment or '—'}\n\n"
@@ -1680,9 +1687,11 @@ def create_router(config: AppConfig) -> Router:
                         reply_markup=kb,
                         disable_web_page_preview=True
                     )
-                    logger.info(f"📤 Повідомлення в групі оновлено: нова ціна {new_fare:.0f} грн для замовлення #{order_id}")
+                    logger.info(f"✅ Повідомлення в групі {group_id} оновлено: нова ціна {new_fare:.0f} грн для замовлення #{order_id}")
+                else:
+                    logger.warning(f"⚠️ Не знайдено group_id для міста '{client_city}', замовлення #{order_id}")
             except Exception as e:
-                logger.error(f"❌ Не вдалося оновити повідомлення в групі: {e}")
+                logger.error(f"❌ Не вдалося оновити повідомлення в групі: {e}", exc_info=True)
         
         # Відправити клієнту підтвердження
         try:
