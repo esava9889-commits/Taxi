@@ -62,7 +62,7 @@ async def main() -> None:
 
     # Затримка при запуску щоб старий процес встиг завершитись
     if os.getenv('RENDER'):
-        startup_delay = 45  # Збільшено до 45 секунд для PostgreSQL!
+        startup_delay = 60  # Збільшено до 60 секунд для PostgreSQL + міграції!
         logging.info(f"⏳ Затримка запуску {startup_delay}s для graceful shutdown старого процесу...")
         for i in range(startup_delay):
             if i % 10 == 0:
@@ -110,24 +110,55 @@ async def main() -> None:
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         logging.info("✅ Webhook видалено, pending updates очищено")
-        await asyncio.sleep(2)  # Почекати поки Telegram обробить
+        await asyncio.sleep(3)  # Почекати поки Telegram обробить
     except Exception as e:
         logging.warning(f"⚠️ Не вдалося видалити webhook: {e}")
     
-    # Простий запуск polling БЕЗ складної логіки
+    # Перевірка чи немає іншого бота - спробувати getMe
     try:
-        logging.info("🔄 Запуск polling...")
-        await dp.start_polling(bot, allowed_updates=None)
-        
+        me = await bot.get_me()
+        logging.info(f"✅ Бот @{me.username} готовий до запуску")
+        await asyncio.sleep(2)
     except Exception as e:
-        if "Conflict" in str(e):
-            logging.error(
-                "🔴 КОНФЛІКТ: Старий процес ще працює!\n"
-                "⏳ Зачекайте 30 секунд і спробуйте Manual Deploy заново.\n"
-                "Або: Render Dashboard → View Logs → перевір чи старий процес завершився."
-            )
-        logging.error(f"❌ Помилка: {e}")
-        raise
+        logging.warning(f"⚠️ Не вдалося отримати інфо про бота: {e}")
+    
+    # Простий запуск polling з retry при конфлікті
+    max_retries = 3
+    retry_delay = 10
+    
+    try:
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logging.info(f"🔄 Спроба {attempt + 1}/{max_retries} запуску polling...")
+                    await asyncio.sleep(retry_delay * attempt)  # Експоненціальна затримка
+                else:
+                    logging.info("🔄 Запуск polling...")
+                
+                await dp.start_polling(bot, allowed_updates=None)
+                break  # Якщо успішно - вийти з циклу
+                
+            except Exception as e:
+                if "Conflict" in str(e):
+                    if attempt < max_retries - 1:
+                        logging.warning(
+                            f"⚠️ Конфлікт на спробі {attempt + 1}/{max_retries}. "
+                            f"Чекаю {retry_delay * (attempt + 1)}s перед наступною спробою..."
+                        )
+                        continue
+                    else:
+                        logging.error(
+                            "🔴 КРИТИЧНИЙ КОНФЛІКТ: Старий процес все ще працює після всіх спроб!\n"
+                            "📋 РІШЕННЯ:\n"
+                            "1. Зайдіть в Render Dashboard\n"
+                            "2. Натисніть 'Suspend' щоб зупинити сервіс\n"
+                            "3. Зачекайте 30 секунд\n"
+                            "4. Натисніть 'Resume' для запуску\n"
+                            "Або видаліть старий deploy і зробіть новий."
+                        )
+                logging.error(f"❌ Помилка: {e}")
+                if attempt == max_retries - 1:
+                    raise
     finally:
         # Cleanup
         try:
