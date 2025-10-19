@@ -38,20 +38,34 @@ class DatabaseConnection:
 @asynccontextmanager
 async def _connection_context(manager: DatabaseConnection, db_path: str):
     """Async context manager для підключення"""
+    logger.debug(f"🔌 Відкриваю підключення до {manager.db_type}...")
+    
     if manager.db_type == "postgres":
         import asyncpg
-        conn = await asyncpg.connect(manager.db_url)
         try:
-            yield PostgresAdapter(conn)
-        finally:
-            await conn.close()
+            conn = await asyncpg.connect(manager.db_url)
+            logger.debug("✅ PostgreSQL підключення встановлено")
+            try:
+                yield PostgresAdapter(conn)
+            finally:
+                await conn.close()
+                logger.debug("🔒 PostgreSQL підключення закрито")
+        except Exception as e:
+            logger.error(f"❌ Помилка підключення PostgreSQL: {e}")
+            raise
     else:
         import aiosqlite
-        conn = await aiosqlite.connect(db_path)
         try:
-            yield SQLiteAdapter(conn)
-        finally:
-            await conn.close()
+            conn = await aiosqlite.connect(db_path)
+            logger.debug(f"✅ SQLite підключення до {db_path}")
+            try:
+                yield SQLiteAdapter(conn)
+            finally:
+                await conn.close()
+                logger.debug("🔒 SQLite підключення закрито")
+        except Exception as e:
+            logger.error(f"❌ Помилка підключення SQLite: {e}")
+            raise
 
 
 class SQLiteAdapter:
