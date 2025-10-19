@@ -20,6 +20,8 @@ class AppConfig:
     driver_group_chat_id: Optional[int]
     driver_group_invite_link: Optional[str]
     admin_username: Optional[str]
+    city_groups: dict
+    city_invite_links: dict
     
 # Список доступних міст (тільки 5 міст)
 AVAILABLE_CITIES = [
