@@ -42,6 +42,34 @@ from app.utils.order_timeout import cancel_order_timeout
 logger = logging.getLogger(__name__)
 
 
+def clean_address(address: str) -> str:
+    """
+    Очистити адресу від Plus Codes та зайвих символів.
+    
+    Plus Code - це коди типу "PMQC+G9" які Google додає до адрес.
+    Вони не потрібні для читабельності.
+    """
+    import re
+    
+    if not address:
+        return "Не вказано"
+    
+    # Видалити Plus Codes (формат: 4-8 символів + '+' + 2-3 символи)
+    # Приклади: PMQC+G9, 8FWX+23, ABCD+EF
+    address = re.sub(r'\b[A-Z0-9]{4,8}\+[A-Z0-9]{2,3}\b', '', address)
+    
+    # Видалити зайві пробіли
+    address = re.sub(r'\s+', ' ', address)
+    
+    # Видалити пробіли на початку і в кінці
+    address = address.strip()
+    
+    # Видалити коми на початку (якщо залишились після видалення Plus Code)
+    address = re.sub(r'^[,\s]+', '', address)
+    
+    return address if address else "Не вказано"
+
+
 def driver_panel_keyboard() -> ReplyKeyboardMarkup:
     """Клавіатура панелі водія"""
     return ReplyKeyboardMarkup(
@@ -821,14 +849,30 @@ def create_router(config: AppConfig) -> Router:
             payment_emoji = "💵" if order.payment_method == "cash" else "💳"
             payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
             
+            # ⭐ Очистити адреси від Plus Codes
+            clean_pickup = clean_address(order.pickup_address)
+            clean_destination = clean_address(order.destination_address)
+            
+            # ⭐ Створити посилання на Google Maps якщо є координати
+            pickup_link = ""
+            destination_link = ""
+            
+            if order.pickup_lat and order.pickup_lon:
+                pickup_link = f"<a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>📍 Відкрити на карті</a>"
+            
+            if order.dest_lat and order.dest_lon:
+                destination_link = f"<a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>📍 Відкрити на карті</a>"
+            
             # 3. Відправити ОДНЕ повідомлення з інформацією про замовлення
             trip_info_text = (
                 f"🚗 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n"
                 f"━━━━━━━━━━━━━━━━━\n\n"
                 f"👤 <b>Клієнт:</b> {order.name}\n"
                 f"📱 <b>Телефон:</b> <code>{order.phone}</code>\n\n"
-                f"📍 <b>Звідки:</b>\n   {order.pickup_address}\n\n"
-                f"📍 <b>Куди:</b>\n   {order.destination_address}{distance_text}\n\n"
+                f"📍 <b>Звідки:</b>\n   {clean_pickup}\n"
+                f"   {pickup_link}\n\n"
+                f"📍 <b>Куди:</b>\n   {clean_destination}\n"
+                f"   {destination_link}{distance_text}\n\n"
                 f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
                 f"{payment_emoji} <b>Оплата:</b> {payment_text}\n"
             )
@@ -1357,6 +1401,13 @@ def create_router(config: AppConfig) -> Router:
         # Оновити статус на "in_progress"
         await start_order(config.database_path, order.id, driver.id)
         
+        # ⭐ Очистити адресу і створити посилання
+        clean_pickup = clean_address(order.pickup_address)
+        pickup_link = ""
+        
+        if order.pickup_lat and order.pickup_lon:
+            pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>Відкрити на карті</a>"
+        
         # ⭐ ЗМІНИТИ КНОПКУ на "📍 На місці"
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         
@@ -1378,8 +1429,8 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"✅ <b>В дорозі до клієнта!</b>\n\n"
-            f"🚗 Рухайтесь до адреси подачі:\n"
-            f"📍 {order.pickup_address}\n\n"
+            f"🚗 <b>Рухайтесь до адреси подачі:</b>\n"
+            f"{clean_pickup}{pickup_link}\n\n"
             f"👇 Натисніть кнопку коли приїдете",
             reply_markup=kb_trip
         )
@@ -1411,6 +1462,13 @@ def create_router(config: AppConfig) -> Router:
         except Exception as e:
             logger.error(f"Failed to notify client: {e}")
         
+        # ⭐ Очистити адресу призначення і створити посилання
+        clean_destination = clean_address(order.destination_address)
+        destination_link = ""
+        
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Відкрити на карті</a>"
+        
         # ⭐ ЗМІНИТИ КНОПКУ на "🚀 Виконую замовлення"
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
         
@@ -1432,10 +1490,11 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"✅ <b>На місці подачі!</b>\n\n"
-            f"👋 Зустрічайте клієнта:\n"
+            f"👋 <b>Зустрічайте клієнта:</b>\n"
             f"👤 {order.name}\n"
             f"📱 <code>{order.phone}</code>\n\n"
-            f"📍 Їдете до: {order.destination_address}\n\n"
+            f"📍 <b>Їдете до:</b>\n"
+            f"{clean_destination}{destination_link}\n\n"
             f"👇 Натисніть кнопку коли почнете поїздку",
             reply_markup=kb_trip
         )
@@ -1454,6 +1513,13 @@ def create_router(config: AppConfig) -> Router:
         if not order:
             await message.answer("❌ У вас немає активного замовлення")
             return
+        
+        # ⭐ Очистити адресу призначення і створити посилання
+        clean_destination = clean_address(order.destination_address)
+        destination_link = ""
+        
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Відкрити на карті</a>"
         
         # ⭐ ЗМІНИТИ КНОПКУ на "🏁 Завершити"
         from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -1476,9 +1542,9 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(
             f"🚀 <b>Виконуєте замовлення!</b>\n\n"
-            f"🎯 Напрямок:\n"
-            f"📍 {order.destination_address}\n\n"
-            f"💰 Вартість: {int(order.fare_amount):.0f} грн\n\n"
+            f"🎯 <b>Напрямок:</b>\n"
+            f"{clean_destination}{destination_link}\n\n"
+            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n\n"
             f"👇 Натисніть кнопку коли доїдете до призначення",
             reply_markup=kb_trip
         )
