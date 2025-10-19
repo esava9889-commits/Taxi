@@ -780,41 +780,64 @@ def create_router(config: AppConfig) -> Router:
                 except Exception as e:
                     logger.error(f"Не вдалося відредагувати повідомлення в групі: {e}")
             
-            # Надіслати водію ОСОБИСТЕ повідомлення з ПОВНИМ номером телефону
-            kb_driver = InlineKeyboardMarkup(
+            # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню
+            
+            # 1. Спробувати видалити останні повідомлення в чаті водія
+            try:
+                # Видалити останні 20 повідомлень (очистити чат)
+                for i in range(1, 21):
+                    try:
+                        await call.bot.delete_message(
+                            chat_id=driver.tg_user_id,
+                            message_id=call.message.message_id - i if call.message else 0
+                        )
+                    except:
+                        pass  # Ігноруємо помилки видалення
+            except Exception as e:
+                logger.warning(f"Не вдалося видалити попередні повідомлення: {e}")
+            
+            # 2. Відобразити відстань якщо є
+            distance_text = ""
+            if order.distance_m:
+                km = order.distance_m / 1000.0
+                distance_text = f"\n📏 Відстань: {km:.1f} км"
+            
+            payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+            payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+            
+            # 3. Відправити ОДНЕ повідомлення з інформацією про замовлення
+            trip_info_text = (
+                f"🚗 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n"
+                f"━━━━━━━━━━━━━━━━━\n\n"
+                f"👤 <b>Клієнт:</b> {order.name}\n"
+                f"📱 <b>Телефон:</b> <code>{order.phone}</code>\n\n"
+                f"📍 <b>Звідки:</b>\n   {order.pickup_address}\n\n"
+                f"📍 <b>Куди:</b>\n   {order.destination_address}{distance_text}\n\n"
+                f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
+                f"{payment_emoji} <b>Оплата:</b> {payment_text}\n"
+            )
+            
+            if order.comment:
+                trip_info_text += f"\n💬 <b>Коментар:</b>\n   {order.comment}\n"
+            
+            trip_info_text += (
+                f"\n━━━━━━━━━━━━━━━━━\n"
+                f"📊 <b>Статус:</b> ✅ Прийнято\n\n"
+                f"👇 <i>Натисніть кнопку коли будете готові рухатися</i>"
+            )
+            
+            # 4. Велика зелена кнопка СТАРТ
+            kb_trip = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="🚗 Керувати замовленням", callback_data=f"manage:{order_id}")]
+                    [InlineKeyboardButton(text="🚀 СТАРТ - Рухаюсь до клієнта", callback_data=f"start:{order_id}")],
+                    [InlineKeyboardButton(text="📋 Деталі замовлення", callback_data=f"manage:{order_id}")]
                 ]
             )
             
             await call.bot.send_message(
                 driver.tg_user_id,
-                f"✅ <b>Ви прийняли замовлення #{order_id}</b>\n\n"
-                f"👤 Клієнт: {order.name}\n"
-                f"📱 Телефон: <code>{order.phone}</code> 🔓\n\n"
-                f"📍 Звідки: {order.pickup_address}\n"
-                f"📍 Куди: {order.destination_address}\n\n"
-                f"ℹ️ <i>Повний номер телефону доступний тільки вам</i>\n\n"
-                f"Натисніть кнопку нижче для керування замовленням",
-                reply_markup=kb_driver
-            )
-            
-            # Надіслати окрему клавіатуру з кнопкою поділитися локацією
-            location_kb = ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="📍 Поділитися локацією з клієнтом", request_location=True)],
-                    [KeyboardButton(text="🚗 Панель водія")]
-                ],
-                resize_keyboard=True
-            )
-            
-            await call.bot.send_message(
-                driver.tg_user_id,
-                "📍 <b>Поділіться локацією з клієнтом</b>\n\n"
-                "Натисніть кнопку нижче щоб клієнт міг\n"
-                "відстежувати ваше переміщення в реальному часі.\n\n"
-                "⏱️ Live tracking буде активний 15 хвилин.",
-                reply_markup=location_kb
+                trip_info_text,
+                reply_markup=kb_trip
             )
             
             # Видалити повідомлення в групі (якщо це група)
@@ -853,7 +876,7 @@ def create_router(config: AppConfig) -> Router:
 
     @router.callback_query(F.data.startswith("arrived:"))
     async def driver_arrived(call: CallbackQuery) -> None:
-        """Водій на місці"""
+        """Водій приїхав на місце подачі"""
         if not call.from_user:
             return
         
@@ -869,7 +892,7 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Це не ваше замовлення", show_alert=True)
             return
         
-        await call.answer("📍 Повідомлення надіслано клієнту!", show_alert=True)
+        await call.answer("📍 Клієнт отримав повідомлення!", show_alert=True)
         
         # Повідомити клієнта
         try:
@@ -883,23 +906,61 @@ def create_router(config: AppConfig) -> Router:
         except Exception as e:
             logger.error(f"Failed to notify client: {e}")
         
-        # Оновити кнопки
+        # ⭐ Оновити текст і показати велику червону кнопку "ЗАВЕРШИТИ"
+        distance_text = ""
+        if order.distance_m:
+            km = order.distance_m / 1000.0
+            distance_text = f"\n📏 Відстань: {km:.1f} км"
+        
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+        
+        updated_text = (
+            f"🚗 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n"
+            f"━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Клієнт:</b> {order.name}\n"
+            f"📱 <b>Телефон:</b> <code>{order.phone}</code>\n\n"
+            f"📍 <b>Звідки:</b>\n   {order.pickup_address}\n\n"
+            f"📍 <b>Куди:</b>\n   {order.destination_address}{distance_text}\n\n"
+            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
+            f"{payment_emoji} <b>Оплата:</b> {payment_text}\n"
+        )
+        
+        if order.comment:
+            updated_text += f"\n💬 <b>Коментар:</b>\n   {order.comment}\n"
+        
+        updated_text += (
+            f"\n━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Статус:</b> 📍 На місці подачі\n\n"
+            f"👇 <i>Коли клієнт сяде - натисніть кнопку завершення</i>"
+        )
+        
+        # Велика червона кнопка "ЗАВЕРШИТИ ПОЇЗДКУ"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🚗 Почати поїздку", callback_data=f"start:{order_id}")]
+                [InlineKeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ - Фініш", callback_data=f"complete:{order_id}")],
+                [InlineKeyboardButton(text="📋 Деталі", callback_data=f"manage:{order_id}")]
             ]
         )
         
         if call.message:
-            await call.message.edit_reply_markup(reply_markup=kb)
+            try:
+                await call.message.edit_text(updated_text, reply_markup=kb)
+            except:
+                await call.message.answer(updated_text, reply_markup=kb)
     
     @router.callback_query(F.data.startswith("start:"))
     async def start_trip(call: CallbackQuery) -> None:
-        """Почати поїздку"""
+        """Почати поїздку - водій рухається до клієнта"""
         if not call.from_user:
             return
         
         order_id = int(call.data.split(":")[1])
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
         
         driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
         if not driver:
@@ -908,16 +969,50 @@ def create_router(config: AppConfig) -> Router:
         
         await start_order(config.database_path, order_id, driver.id)
         
-        await call.answer("🚗 Поїздка почалась!", show_alert=True)
+        await call.answer("🚗 В дорозі до клієнта!", show_alert=True)
         
+        # ⭐ Оновити текст повідомлення і показати велику кнопку "Я НА МІСЦІ"
+        distance_text = ""
+        if order.distance_m:
+            km = order.distance_m / 1000.0
+            distance_text = f"\n📏 Відстань: {km:.1f} км"
+        
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+        
+        updated_text = (
+            f"🚗 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n"
+            f"━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Клієнт:</b> {order.name}\n"
+            f"📱 <b>Телефон:</b> <code>{order.phone}</code>\n\n"
+            f"📍 <b>Звідки:</b>\n   {order.pickup_address}\n\n"
+            f"📍 <b>Куди:</b>\n   {order.destination_address}{distance_text}\n\n"
+            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
+            f"{payment_emoji} <b>Оплата:</b> {payment_text}\n"
+        )
+        
+        if order.comment:
+            updated_text += f"\n💬 <b>Коментар:</b>\n   {order.comment}\n"
+        
+        updated_text += (
+            f"\n━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Статус:</b> 🚗 В дорозі\n\n"
+            f"👇 <i>Натисніть коли приїдете до клієнта</i>"
+        )
+        
+        # Велика помаранчева кнопка "Я НА МІСЦІ"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Завершити", callback_data=f"complete:{order_id}")]
+                [InlineKeyboardButton(text="📍 Я НА МІСЦІ - Приїхав", callback_data=f"arrived:{order_id}")],
+                [InlineKeyboardButton(text="📋 Деталі", callback_data=f"manage:{order_id}")]
             ]
         )
         
         if call.message:
-            await call.message.edit_reply_markup(reply_markup=kb)
+            try:
+                await call.message.edit_text(updated_text, reply_markup=kb)
+            except:
+                await call.message.answer(updated_text, reply_markup=kb)
 
     @router.callback_query(F.data.startswith("complete:"))
     async def complete_trip(call: CallbackQuery) -> None:
