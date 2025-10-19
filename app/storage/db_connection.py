@@ -80,9 +80,25 @@ class SQLiteAdapter:
         self.conn = conn
         self.is_postgres = False
     
+    def _convert_params(self, params):
+        """Конвертувати datetime об'єкти в ISO string для SQLite"""
+        if not params:
+            return params
+        
+        from datetime import datetime, date
+        converted = []
+        for param in params:
+            if isinstance(param, (datetime, date)):
+                # SQLite очікує рядки для дат
+                converted.append(param.isoformat())
+            else:
+                converted.append(param)
+        return tuple(converted)
+    
     def execute(self, query: str, params=None):
         """Виконати запит - повертає async context manager"""
         if params:
+            params = self._convert_params(params)
             return self.conn.execute(query, params)
         return self.conn.execute(query)
     
@@ -92,11 +108,15 @@ class SQLiteAdapter:
     
     async def fetchone(self, query: str, params=None):
         """Отримати один рядок"""
+        if params:
+            params = self._convert_params(params)
         async with self.conn.execute(query, params or ()) as cur:
             return await cur.fetchone()
     
     async def fetchall(self, query: str, params=None):
         """Отримати всі рядки"""
+        if params:
+            params = self._convert_params(params)
         async with self.conn.execute(query, params or ()) as cur:
             return await cur.fetchall()
 

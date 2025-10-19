@@ -419,7 +419,7 @@ async def insert_order(db_path: str, order: Order) -> int:
                 order.pickup_address,
                 order.destination_address,
                 order.comment,
-                order.created_at.isoformat(),
+                order.created_at,
                 order.pickup_lat,
                 order.pickup_lon,
                 order.dest_lat,
@@ -430,8 +430,8 @@ async def insert_order(db_path: str, order: Order) -> int:
                 order.fare_amount,
                 order.commission,
                 order.status,
-                (order.started_at.isoformat() if order.started_at else None),
-                (order.finished_at.isoformat() if order.finished_at else None),
+                (order.started_at if order.started_at else None),
+                (order.finished_at if order.finished_at else None),
                 order.group_message_id,
                 order.car_class,
                 order.tip_amount,
@@ -458,7 +458,7 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
     async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET status = 'cancelled', finished_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'",
-            (datetime.now(timezone.utc).isoformat(), order_id, user_id),
+            (datetime.now(timezone.utc), order_id, user_id),
         )
         await db.commit()
         return cur.rowcount > 0
@@ -481,7 +481,7 @@ async def save_address(db_path: str, address: SavedAddress) -> int:
                 address.address,
                 address.lat,
                 address.lon,
-                address.created_at.isoformat(),
+                address.created_at,
             ),
         )
         await db.commit()
@@ -573,7 +573,7 @@ async def set_driver_online_status(db_path: str, driver_id: int, online: bool) -
     async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE drivers SET online = ?, last_seen_at = ? WHERE id = ?",
-            (1 if online else 0, datetime.now(timezone.utc).isoformat(), driver_id)
+            (1 if online else 0, datetime.now(timezone.utc), driver_id)
         )
         await db.commit()
         return cur.rowcount > 0
@@ -833,7 +833,7 @@ async def upsert_user(db_path: str, user: User) -> None:
                 user.role,
                 user.city,
                 user.language,
-                user.created_at.isoformat(),
+                user.created_at,
             ),
         )
         await db.commit()
@@ -912,8 +912,8 @@ async def create_driver_application(db_path: str, driver: Driver) -> int:
                 driver.license_photo_file_id,
                 driver.city,
                 driver.status,
-                driver.created_at.isoformat(),
-                driver.updated_at.isoformat(),
+                driver.created_at,
+                driver.updated_at,
             ),
         )
         await db.commit()
@@ -925,7 +925,7 @@ async def update_driver_status(db_path: str, driver_id: int, status: str) -> Non
     async with db_manager.connect(db_path) as db:
         await db.execute(
             "UPDATE drivers SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now.isoformat(), driver_id),
+            (status, now, driver_id),
         )
         await db.commit()
 
@@ -1046,7 +1046,7 @@ async def set_driver_online(db_path: str, tg_user_id: int, online: bool) -> None
     async with db_manager.connect(db_path) as db:
         await db.execute(
             "UPDATE drivers SET online = ?, last_seen_at = ? WHERE tg_user_id = ? AND status = 'approved'",
-            (1 if online else 0, now.isoformat(), tg_user_id),
+            (1 if online else 0, now, tg_user_id),
         )
         await db.commit()
 
@@ -1056,7 +1056,7 @@ async def update_driver_location(db_path: str, tg_user_id: int, lat: float, lon:
     async with db_manager.connect(db_path) as db:
         await db.execute(
             "UPDATE drivers SET last_lat = ?, last_lon = ?, last_seen_at = ? WHERE tg_user_id = ? AND status = 'approved'",
-            (lat, lon, now.isoformat(), tg_user_id),
+            (lat, lon, now, tg_user_id),
         )
         await db.commit()
 
@@ -1104,7 +1104,7 @@ async def add_rejected_driver(db_path: str, order_id: int, driver_db_id: int) ->
         )
         await db.execute(
             "INSERT INTO rejected_offers (order_id, driver_id, rejected_at) VALUES (?, ?, ?)",
-            (order_id, driver_db_id, datetime.now(timezone.utc).isoformat()),
+            (order_id, driver_db_id, datetime.now(timezone.utc)),
         )
         await db.commit()
 
@@ -1128,7 +1128,7 @@ async def start_order(db_path: str, order_id: int, driver_id: int) -> bool:
     async with db_manager.connect(db_path) as db:
         cur = await db.execute(
             "UPDATE orders SET status = 'in_progress', started_at = ? WHERE id = ? AND driver_id = ? AND status = 'accepted'",
-            (now.isoformat(), order_id, driver_id),
+            (now, order_id, driver_id),
         )
         await db.commit()
         return cur.rowcount > 0
@@ -1151,7 +1151,7 @@ async def complete_order(
             SET status = 'completed', finished_at = ?, fare_amount = ?, distance_m = ?, duration_s = ?, commission = ?
             WHERE id = ? AND driver_id = ? AND status = 'in_progress'
             """,
-            (now.isoformat(), fare_amount, distance_m, duration_s, commission, order_id, driver_id),
+            (now, fare_amount, distance_m, duration_s, commission, order_id, driver_id),
         )
         await db.commit()
         return cur.rowcount > 0
@@ -1270,7 +1270,7 @@ async def insert_rating(db_path: str, rating: Rating) -> int:
             INSERT INTO ratings (order_id, from_user_id, to_user_id, rating, comment, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (rating.order_id, rating.from_user_id, rating.to_user_id, rating.rating, rating.comment, rating.created_at.isoformat()),
+            (rating.order_id, rating.from_user_id, rating.to_user_id, rating.rating, rating.comment, rating.created_at),
         )
         await db.commit()
         return cursor.lastrowid
@@ -1295,7 +1295,7 @@ async def insert_client_rating(db_path: str, rating: ClientRating) -> int:
             INSERT INTO client_ratings (order_id, client_id, driver_id, rating, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (rating.order_id, rating.client_id, rating.driver_id, rating.rating, rating.created_at.isoformat()),
+            (rating.order_id, rating.client_id, rating.driver_id, rating.rating, rating.created_at),
         )
         await db.commit()
         return cursor.lastrowid
@@ -1318,7 +1318,7 @@ async def add_tip_to_order(db_path: str, order_id: int, amount: float) -> bool:
         try:
             await db.execute(
                 "INSERT INTO tips (order_id, amount, created_at) VALUES (?, ?, ?)",
-                (order_id, amount, datetime.now(timezone.utc).isoformat())
+                (order_id, amount, datetime.now(timezone.utc))
             )
             await db.commit()
             return True
@@ -1354,7 +1354,7 @@ async def create_referral_code(db_path: str, user_id: int, code: str) -> None:
     async with db_manager.connect(db_path) as db:
         await db.execute(
             "INSERT INTO referrals (referrer_id, referred_id, referral_code, created_at) VALUES (?, 0, ?, ?)",
-            (user_id, code, datetime.now(timezone.utc).isoformat())
+            (user_id, code, datetime.now(timezone.utc))
         )
         await db.commit()
 
@@ -1389,7 +1389,7 @@ async def apply_referral_code(db_path: str, new_user_id: int, code: str) -> bool
             INSERT INTO referrals (referrer_id, referred_id, referral_code, created_at)
             VALUES (?, ?, ?, ?)
             """,
-            (referrer_id, new_user_id, code, datetime.now(timezone.utc).isoformat())
+            (referrer_id, new_user_id, code, datetime.now(timezone.utc))
         )
         await db.commit()
         return True
@@ -1432,7 +1432,7 @@ async def insert_payment(db_path: str, payment: Payment) -> int:
             INSERT INTO payments (order_id, driver_id, amount, commission, commission_paid, payment_method, created_at, commission_paid_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (payment.order_id, payment.driver_id, payment.amount, payment.commission, 1 if payment.commission_paid else 0, payment.payment_method, payment.created_at.isoformat(), payment.commission_paid_at.isoformat() if payment.commission_paid_at else None),
+            (payment.order_id, payment.driver_id, payment.amount, payment.commission, 1 if payment.commission_paid else 0, payment.payment_method, payment.created_at, payment.commission_paid_at if payment.commission_paid_at else None),
         )
         await db.commit()
         return cursor.lastrowid
@@ -1449,7 +1449,7 @@ async def mark_commission_paid(db_path: str, driver_tg_id: int) -> None:
         driver_db_id = row[0]
         await db.execute(
             "UPDATE payments SET commission_paid = 1, commission_paid_at = ? WHERE driver_id = ? AND commission_paid = 0",
-            (now.isoformat(), driver_db_id),
+            (now, driver_db_id),
         )
         await db.commit()
 
@@ -1462,7 +1462,7 @@ async def get_driver_earnings_today(db_path: str, driver_tg_id: int) -> Tuple[fl
         if not row:
             return (0.0, 0.0)
         driver_db_id = row[0]
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(timezone.utc).date()
         async with db.execute(
             """
             SELECT SUM(amount), SUM(commission) FROM payments
@@ -1681,7 +1681,7 @@ async def insert_tariff(db_path: str, t: Tariff) -> int:
             INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, commission_percent, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (t.base_fare, t.per_km, t.per_minute, t.minimum, t.commission_percent, t.created_at.isoformat()),
+            (t.base_fare, t.per_km, t.per_minute, t.minimum, t.commission_percent, t.created_at),
         )
         await db.commit()
         return cursor.lastrowid
