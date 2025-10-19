@@ -34,6 +34,11 @@ def create_router(config: AppConfig) -> Router:
         if isinstance(event, Message):
             message = event
             user_id = event.from_user.id if event.from_user else 0
+            # Видалити повідомлення користувача для чистого чату
+            try:
+                await event.delete()
+            except:
+                pass
         else:
             await event.answer()
             message = event.message

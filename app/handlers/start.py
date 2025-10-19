@@ -165,6 +165,12 @@ def create_router(config: AppConfig) -> Router:
     @router.callback_query(F.data == "help:show")
     @router.message(F.text == "ℹ️ Допомога")
     async def show_help(event) -> None:
+        # Видалити повідомлення користувача для чистого чату
+        try:
+            await event.delete()
+        except:
+            pass
+        
         # Отримати актуальну комісію з БД
         from app.storage.db import get_latest_tariff
         tariff = await get_latest_tariff(config.database_path)
@@ -837,6 +843,12 @@ def create_router(config: AppConfig) -> Router:
         """Швидкий перехід до кабінету клієнта"""
         if not message.from_user:
             return
+        
+        # Видалити повідомлення користувача для чистого чату
+        try:
+            await message.delete()
+        except:
+            pass
         
         user = await get_user_by_id(config.database_path, message.from_user.id)
         if not user or not user.phone or not user.city:

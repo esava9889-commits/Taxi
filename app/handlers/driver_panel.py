@@ -49,6 +49,12 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # Видалити повідомлення користувача для чистого чату
+        try:
+            await message.delete()
+        except:
+            pass
+        
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if not driver or driver.status != "approved":
             await message.answer(
@@ -129,6 +135,12 @@ def create_router(config: AppConfig) -> Router:
         """Меню керування"""
         if not message.from_user:
             return
+        
+        # Видалити повідомлення користувача для чистого чату
+        try:
+            await message.delete()
+        except:
+            pass
         
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if not driver:
@@ -392,6 +404,12 @@ def create_router(config: AppConfig) -> Router:
         """Комісія"""
         if not message.from_user:
             return
+        
+        # Видалити повідомлення користувача для чистого чату
+        try:
+            await message.delete()
+        except:
+            pass
         
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if not driver:
@@ -996,6 +1014,12 @@ def create_router(config: AppConfig) -> Router:
         """Гаманець водія - картка для отримання оплати"""
         if not message.from_user:
             return
+        
+        # Видалити повідомлення користувача для чистого чату
+        try:
+            await message.delete()
+        except:
+            pass
         
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if not driver or driver.status != "approved":
