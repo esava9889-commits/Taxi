@@ -127,7 +127,8 @@ async def init_postgres_db(database_url: str) -> None:
             CREATE TABLE IF NOT EXISTS ratings (
                 id SERIAL PRIMARY KEY,
                 order_id INTEGER NOT NULL REFERENCES orders(id),
-                driver_user_id BIGINT NOT NULL,
+                from_user_id BIGINT NOT NULL,
+                to_user_id BIGINT NOT NULL,
                 rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
                 comment TEXT,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL
@@ -140,8 +141,8 @@ async def init_postgres_db(database_url: str) -> None:
                 id SERIAL PRIMARY KEY,
                 order_id INTEGER NOT NULL REFERENCES orders(id),
                 client_id BIGINT NOT NULL,
+                driver_id INTEGER NOT NULL,
                 rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-                comment TEXT,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL
             )
         """)
@@ -197,11 +198,47 @@ async def init_postgres_db(database_url: str) -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS payments (
                 id SERIAL PRIMARY KEY,
-                driver_tg_id BIGINT NOT NULL,
+                order_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
                 amount DOUBLE PRECISION NOT NULL,
-                payment_type TEXT NOT NULL,
+                commission DOUBLE PRECISION NOT NULL,
+                commission_paid INTEGER NOT NULL DEFAULT 0,
+                payment_method TEXT NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                note TEXT
+                commission_paid_at TIMESTAMP WITH TIME ZONE
+            )
+        """)
+        
+        # Tips (чайові)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS tips (
+                id SERIAL PRIMARY KEY,
+                order_id INTEGER NOT NULL UNIQUE,
+                amount DOUBLE PRECISION NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL
+            )
+        """)
+        
+        # Referrals (реферальна програма)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                id SERIAL PRIMARY KEY,
+                referrer_id BIGINT NOT NULL,
+                referred_id BIGINT NOT NULL,
+                referral_code TEXT NOT NULL,
+                bonus_amount DOUBLE PRECISION NOT NULL DEFAULT 50,
+                referrer_bonus DOUBLE PRECISION NOT NULL DEFAULT 30,
+                used INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL
+            )
+        """)
+        
+        # Rejected offers
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rejected_offers (
+                order_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
+                rejected_at TIMESTAMP WITH TIME ZONE NOT NULL
             )
         """)
         
@@ -214,6 +251,13 @@ async def init_postgres_db(database_url: str) -> None:
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user_id ON drivers(tg_user_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_saved_addresses_user ON saved_addresses(user_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_client_ratings ON client_ratings(client_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver ON payments(driver_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(referral_code)")
         
         logger.info("✅ Всі таблиці PostgreSQL створено!")
         

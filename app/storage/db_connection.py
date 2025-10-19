@@ -135,19 +135,39 @@ class PostgresCursor:
         query_upper = self.query.strip().upper()
         
         if query_upper.startswith('INSERT'):
-            # Для INSERT додати RETURNING id
+            # Для INSERT спробувати отримати id через RETURNING
+            # Але якщо таблиця не має 'id', це не спрацює
             if 'RETURNING' not in query_upper:
-                returning_query = self.query.rstrip(';') + ' RETURNING id'
+                # Спробувати з RETURNING id
+                try:
+                    returning_query = self.query.rstrip(';') + ' RETURNING id'
+                    if self.params:
+                        result = await self.adapter.conn.fetchrow(returning_query, *self.params)
+                    else:
+                        result = await self.adapter.conn.fetchrow(returning_query)
+                    
+                    if result and 'id' in result:
+                        self._lastrowid = result['id']
+                        self._rowcount = 1
+                    else:
+                        self._rowcount = 1
+                except Exception as e:
+                    # Якщо колонка 'id' не існує, просто виконати INSERT без RETURNING
+                    logger.debug(f"INSERT без RETURNING id: {e}")
+                    if self.params:
+                        await self.adapter.conn.execute(self.query, *self.params)
+                    else:
+                        await self.adapter.conn.execute(self.query)
+                    self._rowcount = 1
             else:
-                returning_query = self.query
-            
-            if self.params:
-                result = await self.adapter.conn.fetchrow(returning_query, *self.params)
-            else:
-                result = await self.adapter.conn.fetchrow(returning_query)
-            
-            if result:
-                self._lastrowid = result['id']
+                # Якщо RETURNING вже є в запиті
+                if self.params:
+                    result = await self.adapter.conn.fetchrow(self.query, *self.params)
+                else:
+                    result = await self.adapter.conn.fetchrow(self.query)
+                
+                if result and 'id' in result:
+                    self._lastrowid = result['id']
                 self._rowcount = 1
         else:
             # Для UPDATE/DELETE
