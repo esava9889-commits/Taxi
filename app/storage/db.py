@@ -212,181 +212,181 @@ async def init_db(db_path: str) -> None:
             """
         )
         
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS orders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                pickup_address TEXT NOT NULL,
-                destination_address TEXT NOT NULL,
-                comment TEXT,
-                created_at TEXT NOT NULL,
-                pickup_lat REAL,
-                pickup_lon REAL,
-                dest_lat REAL,
-                dest_lon REAL,
-                driver_id INTEGER,
-                distance_m INTEGER,
-                duration_s INTEGER,
-                fare_amount REAL,
-                commission REAL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                started_at TEXT,
-                finished_at TEXT,
-                group_message_id INTEGER,
-                car_class TEXT NOT NULL DEFAULT 'economy',
-                tip_amount REAL,
-                payment_method TEXT NOT NULL DEFAULT 'cash'
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    phone TEXT NOT NULL,
+                    pickup_address TEXT NOT NULL,
+                    destination_address TEXT NOT NULL,
+                    comment TEXT,
+                    created_at TEXT NOT NULL,
+                    pickup_lat REAL,
+                    pickup_lon REAL,
+                    dest_lat REAL,
+                    dest_lon REAL,
+                    driver_id INTEGER,
+                    distance_m INTEGER,
+                    duration_s INTEGER,
+                    fare_amount REAL,
+                    commission REAL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    started_at TEXT,
+                    finished_at TEXT,
+                    group_message_id INTEGER,
+                    car_class TEXT NOT NULL DEFAULT 'economy',
+                    tip_amount REAL,
+                    payment_method TEXT NOT NULL DEFAULT 'cash'
+                )
+                """
             )
-            """
-        )
-        # Tariffs: single-row or versioned tariffs
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tariffs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                base_fare REAL NOT NULL,
-                per_km REAL NOT NULL,
-                per_minute REAL NOT NULL,
-                minimum REAL NOT NULL,
-                commission_percent REAL NOT NULL DEFAULT 0.02,
-                created_at TEXT NOT NULL
+            # Tariffs: single-row or versioned tariffs
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tariffs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    base_fare REAL NOT NULL,
+                    per_km REAL NOT NULL,
+                    per_minute REAL NOT NULL,
+                    minimum REAL NOT NULL,
+                    commission_percent REAL NOT NULL DEFAULT 0.02,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        # Users: registered clients
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                full_name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                role TEXT NOT NULL,
-                city TEXT,
-                language TEXT NOT NULL DEFAULT 'uk',
-                created_at TEXT NOT NULL
+            # Users: registered clients
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    full_name TEXT NOT NULL,
+                    phone TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    city TEXT,
+                    language TEXT NOT NULL DEFAULT 'uk',
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        # Drivers: applications and active drivers
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS drivers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tg_user_id INTEGER NOT NULL,
-                full_name TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                car_make TEXT NOT NULL,
-                car_model TEXT NOT NULL,
-                car_plate TEXT NOT NULL,
-                license_photo_file_id TEXT,
-                city TEXT,
-                status TEXT NOT NULL,  -- pending | approved | rejected
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                online INTEGER NOT NULL DEFAULT 0,
-                last_lat REAL,
-                last_lon REAL,
-                last_seen_at TEXT,
-                car_class TEXT NOT NULL DEFAULT 'economy',
-                card_number TEXT
+            # Drivers: applications and active drivers
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS drivers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tg_user_id INTEGER NOT NULL,
+                    full_name TEXT NOT NULL,
+                    phone TEXT NOT NULL,
+                    car_make TEXT NOT NULL,
+                    car_model TEXT NOT NULL,
+                    car_plate TEXT NOT NULL,
+                    license_photo_file_id TEXT,
+                    city TEXT,
+                    status TEXT NOT NULL,  -- pending | approved | rejected
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    online INTEGER NOT NULL DEFAULT 0,
+                    last_lat REAL,
+                    last_lon REAL,
+                    last_seen_at TEXT,
+                    car_class TEXT NOT NULL DEFAULT 'economy',
+                    card_number TEXT
+                )
+                """
             )
-            """
-        )
-        # Helpful indices
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_saved_addresses_user ON saved_addresses(user_id)")
+            # Helpful indices
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_saved_addresses_user ON saved_addresses(user_id)")
         
-        # Ratings table
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS ratings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id INTEGER NOT NULL,
-                from_user_id INTEGER NOT NULL,
-                to_user_id INTEGER NOT NULL,
-                rating INTEGER NOT NULL,
-                comment TEXT,
-                created_at TEXT NOT NULL
+            # Ratings table
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ratings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER NOT NULL,
+                    from_user_id INTEGER NOT NULL,
+                    to_user_id INTEGER NOT NULL,
+                    rating INTEGER NOT NULL,
+                    comment TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
         
-        # Client ratings (водії оцінюють клієнтів)
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS client_ratings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id INTEGER NOT NULL,
-                client_id INTEGER NOT NULL,
-                driver_id INTEGER NOT NULL,
-                rating INTEGER NOT NULL,
-                created_at TEXT NOT NULL
+            # Client ratings (водії оцінюють клієнтів)
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS client_ratings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER NOT NULL,
+                    client_id INTEGER NOT NULL,
+                    driver_id INTEGER NOT NULL,
+                    rating INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_client_ratings ON client_ratings(client_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_client_ratings ON client_ratings(client_id)")
         
-        # Tips (чайові)
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tips (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id INTEGER NOT NULL UNIQUE,
-                amount REAL NOT NULL,
-                created_at TEXT NOT NULL
+            # Tips (чайові)
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tips (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER NOT NULL UNIQUE,
+                    amount REAL NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
         
-        # Referral program (реферальна програма)
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS referrals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                referrer_id INTEGER NOT NULL,
-                referred_id INTEGER NOT NULL,
-                referral_code TEXT NOT NULL,
-                bonus_amount REAL NOT NULL DEFAULT 50,
-                referrer_bonus REAL NOT NULL DEFAULT 30,
-                used INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
+            # Referral program (реферальна програма)
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    referrer_id INTEGER NOT NULL,
+                    referred_id INTEGER NOT NULL,
+                    referral_code TEXT NOT NULL,
+                    bonus_amount REAL NOT NULL DEFAULT 50,
+                    referrer_bonus REAL NOT NULL DEFAULT 30,
+                    used INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(referral_code)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(referral_code)")
         
-        # Payments table
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id INTEGER NOT NULL,
-                driver_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                commission REAL NOT NULL,
-                commission_paid INTEGER NOT NULL DEFAULT 0,
-                payment_method TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                commission_paid_at TEXT
+            # Payments table
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER NOT NULL,
+                    driver_id INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    commission REAL NOT NULL,
+                    commission_paid INTEGER NOT NULL DEFAULT 0,
+                    payment_method TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    commission_paid_at TEXT
+                )
+                """
             )
-            """
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver ON payments(driver_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_unpaid ON payments(driver_id, commission_paid)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver ON payments(driver_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_unpaid ON payments(driver_id, commission_paid)")
         
-        await db.commit()
+            await db.commit()
         logger.info("✅ Всі таблиці SQLite створено!")
     
     except Exception as e:
