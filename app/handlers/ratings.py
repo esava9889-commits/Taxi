@@ -27,15 +27,26 @@ def create_router(config: AppConfig) -> Router:
         
         await call.answer("Дякуємо за поїздку! 🚖", show_alert=False)
         
-        # Видалити повідомлення з запитом на оцінку
-        if call.message:
-            try:
-                await call.message.delete()
-            except:
-                await call.message.edit_text(
-                    "✅ <b>Дякуємо за поїздку!</b>\n\n"
-                    "Сподіваємось побачити вас знову! 🚖"
-                )
+        # ⭐ ОЧИСТИТИ ЧАТ: Видалити всі повідомлення за період замовлення
+        try:
+            # Видалити останні 50 повідомлень (весь період замовлення)
+            if call.message:
+                current_msg_id = call.message.message_id
+                deleted_count = 0
+                
+                for i in range(50):
+                    try:
+                        await call.bot.delete_message(
+                            chat_id=call.from_user.id,
+                            message_id=current_msg_id - i
+                        )
+                        deleted_count += 1
+                    except:
+                        pass  # Ігноруємо помилки (повідомлення може бути вже видалене)
+                
+                logger.info(f"🧹 Очищено {deleted_count} повідомлень для клієнта {call.from_user.id} після пропуску оцінки")
+        except Exception as e:
+            logger.error(f"❌ Помилка очищення чату: {e}")
     
     @router.callback_query(F.data.startswith("rate:"))
     async def handle_rating(call: CallbackQuery) -> None:
@@ -79,16 +90,29 @@ def create_router(config: AppConfig) -> Router:
         stars = "⭐" * rating_value
         await call.answer(f"✅ Дякуємо за оцінку! {stars}", show_alert=True)
         
-        # Видалити повідомлення після оцінки (для чистого чату)
-        if call.message:
-            try:
-                await call.message.delete()
-            except:
-                # Якщо не вдалося видалити - просто оновити текст
-                await call.message.edit_text(
-                    f"✅ <b>Дякуємо за оцінку!</b>\n\n"
-                    f"Ви поставили {stars} ({rating_value}/5)"
-                )
+        # ⭐ ОЧИСТИТИ ЧАТ: Видалити всі повідомлення за період замовлення
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            if call.message:
+                current_msg_id = call.message.message_id
+                deleted_count = 0
+                
+                # Видалити останні 50 повідомлень (весь період замовлення)
+                for i in range(50):
+                    try:
+                        await call.bot.delete_message(
+                            chat_id=call.from_user.id,
+                            message_id=current_msg_id - i
+                        )
+                        deleted_count += 1
+                    except:
+                        pass  # Ігноруємо помилки
+                
+                logger.info(f"🧹 Очищено {deleted_count} повідомлень для клієнта {call.from_user.id} після оцінки {rating_value}⭐")
+        except Exception as e:
+            logger.error(f"❌ Помилка очищення чату: {e}")
         
         # Notify rated user about their new average rating
         try:

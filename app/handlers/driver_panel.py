@@ -1615,15 +1615,16 @@ def create_router(config: AppConfig) -> Router:
         try:
             from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
             
+            # ✅ ПРАВИЛЬНИЙ ФОРМАТ: rate:driver:{driver_id}:{rating}:{order_id}
             rating_buttons = [
                 [
-                    InlineKeyboardButton(text="⭐", callback_data=f"rate:{order.id}:1"),
-                    InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:{order.id}:2"),
-                    InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:{order.id}:3"),
+                    InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.tg_user_id}:1:{order.id}"),
+                    InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:2:{order.id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:3:{order.id}"),
                 ],
                 [
-                    InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:{order.id}:4"),
-                    InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:{order.id}:5"),
+                    InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:4:{order.id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:5:{order.id}"),
                 ],
                 [InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order.id}")]
             ]
