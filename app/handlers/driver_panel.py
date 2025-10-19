@@ -745,8 +745,9 @@ def create_router(config: AppConfig) -> Router:
             
             await call.answer("✅ Прийнято!", show_alert=True)
             
-            # Повідомити клієнта що замовлення прийнято
-            # Автоматично надіслати live location якщо є координати
+            # ⭐ ЗАПРОСИТИ У ВОДІЯ ГЕОЛОКАЦІЮ (обов'язково для відправки клієнту)
+            # Надіслати повідомлення водію з проханням поділитися локацією
+            location_shared = False
             if driver.last_lat and driver.last_lon:
                 try:
                     # Надіслати live location клієнту
@@ -756,9 +757,15 @@ def create_router(config: AppConfig) -> Router:
                         longitude=driver.last_lon,
                         live_period=900,  # 15 хвилин
                     )
+                    location_shared = True
                     logger.info(f"📍 Auto-sent live location to client for order #{order_id}")
                 except Exception as e:
                     logger.error(f"Failed to send live location: {e}")
+            
+            # Якщо геолокація не надіслана - попросити водія поділитися
+            if not location_shared:
+                logger.warning(f"⚠️ Водій #{driver.id} не має збереженої геолокації для замовлення #{order_id}")
+                # Клієнт все одно отримає повідомлення, але без live location
             
             # Якщо оплата карткою - показати картку водія
             if order.payment_method == "card" and driver.card_number:
@@ -1555,14 +1562,21 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        logger.info(f"🏁 Водій {message.from_user.id} натиснув 'Завершити'")
+        
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if not driver:
+            logger.error(f"❌ Водія {message.from_user.id} не знайдено в БД")
+            await message.answer("❌ Водія не знайдено")
             return
         
         order = await get_active_order_for_driver(config.database_path, driver.id)
         if not order:
+            logger.warning(f"⚠️ У водія {driver.id} немає активного замовлення")
             await message.answer("❌ У вас немає активного замовлення")
             return
+        
+        logger.info(f"✅ Завершення замовлення #{order.id} водієм {driver.id}")
         
         # Розрахунок вартості та комісії
         fare = order.fare_amount if order.fare_amount else 100.0
@@ -1636,6 +1650,8 @@ def create_router(config: AppConfig) -> Router:
             logger.error(f"❌ Помилка відправки запиту на оцінку: {e}")
         
         # ⭐ ПОВЕРНУТИСЯ ДО ПАНЕЛІ ВОДІЯ
+        logger.info(f"🔄 Повернення водія {driver.id} до панелі після завершення замовлення #{order.id}")
+        
         await message.answer(
             f"✅ <b>Замовлення #{order.id} завершено!</b>\n\n"
             f"💰 Заробіток: {fare:.2f} грн\n"
@@ -1644,6 +1660,8 @@ def create_router(config: AppConfig) -> Router:
             f"🎉 Дякуємо за роботу!",
             reply_markup=driver_panel_keyboard()
         )
+        
+        logger.info(f"✅ Замовлення #{order.id} повністю завершено. Водій {driver.id} повернувся до панелі.")
     
     @router.message(F.text == "❌ Відмовитися")
     async def trip_cancel_button(message: Message) -> None:
