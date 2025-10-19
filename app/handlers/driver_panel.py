@@ -438,7 +438,7 @@ def create_router(config: AppConfig) -> Router:
             return
         
         # Перевірити що це той самий водій
-        if driver.user_id != call.from_user.id:
+        if driver.tg_user_id != call.from_user.id:
             await call.answer("❌ Помилка доступу", show_alert=True)
             return
         
@@ -960,13 +960,13 @@ def create_router(config: AppConfig) -> Router:
             # Створити інлайн кнопки з зірками
             rating_buttons = [
                 [
-                    InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.user_id}:1:{order_id}"),
-                    InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.user_id}:2:{order_id}"),
-                    InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.user_id}:3:{order_id}"),
+                    InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.tg_user_id}:1:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:2:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:3:{order_id}"),
                 ],
                 [
-                    InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.user_id}:4:{order_id}"),
-                    InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.user_id}:5:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:4:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:5:{order_id}"),
                 ],
                 [
                     InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order_id}")
