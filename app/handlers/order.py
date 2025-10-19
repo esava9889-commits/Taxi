@@ -1033,39 +1033,7 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
             )
 
-    @router.message(F.text == "📜 Мої замовлення")
-    async def show_my_orders(message: Message) -> None:
-        if not message.from_user:
-            return
-        
-        orders = await get_user_order_history(config.database_path, message.from_user.id, limit=10)
-        
-        if not orders:
-            await message.answer("📜 У вас поки немає замовлень.")
-            return
-        
-        text = "📜 <b>Ваші останні замовлення:</b>\n\n"
-        
-        for o in orders:
-            status_emoji = {
-                "pending": "⏳ Очікує",
-                "offered": "📤 Запропоновано",
-                "accepted": "✅ Прийнято",
-                "in_progress": "🚗 В дорозі",
-                "completed": "✔️ Завершено",
-                "cancelled": "❌ Скасовано",
-            }.get(o.status, "❓")
-            
-            text += (
-                f"<b>#{o.id}</b> - {status_emoji}\n"
-                f"📍 {o.pickup_address[:30]}...\n"
-                f"   → {o.destination_address[:30]}...\n"
-            )
-            if o.fare_amount:
-                text += f"💰 {o.fare_amount:.0f} грн\n"
-            text += f"📅 {o.created_at.strftime('%d.%m %H:%M')}\n\n"
-        
-        await message.answer(text)
+    # Обробник "📜 Мої замовлення" прибрано - тепер доступ через профіль
 
     @router.message(F.text == CANCEL_TEXT)
     async def cancel(message: Message, state: FSMContext) -> None:

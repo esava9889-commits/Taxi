@@ -16,8 +16,8 @@ def main_menu_keyboard(
         keyboard = [
             [KeyboardButton(text="⚙️ Адмін-панель")],
             [KeyboardButton(text="🚖 Замовити таксі")],
-            [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
-            [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🆘 SOS")],
+            [KeyboardButton(text="📍 Мої адреси"), KeyboardButton(text="👤 Мій профіль")],
+            [KeyboardButton(text="🆘 SOS")],
         ]
         
         # Якщо адмін також водій - додаємо панель водія
@@ -52,8 +52,7 @@ def main_menu_keyboard(
     if is_registered:
         keyboard = [
             [KeyboardButton(text="🚖 Замовити таксі")],
-            [KeyboardButton(text="📜 Мої замовлення"), KeyboardButton(text="📍 Мої адреси")],
-            [KeyboardButton(text="👤 Мій профіль"), KeyboardButton(text="🎁 Реферальна програма")],
+            [KeyboardButton(text="📍 Мої адреси"), KeyboardButton(text="👤 Мій профіль")],
             [KeyboardButton(text="🆘 SOS"), KeyboardButton(text="ℹ️ Допомога")],
         ]
         

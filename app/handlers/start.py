@@ -476,6 +476,44 @@ def create_router(config: AppConfig) -> Router:
             f"Ви можете зателефонувати водієві за цим номером."
         )
     
+    @router.callback_query(F.data == "profile:history")
+    async def show_order_history(call: CallbackQuery) -> None:
+        """Показати історію замовлень"""
+        if not call.from_user:
+            return
+        
+        from app.storage.db import get_user_order_history
+        orders = await get_user_order_history(config.database_path, call.from_user.id, limit=10)
+        
+        if not orders:
+            await call.answer()
+            await call.message.answer("📜 У вас поки немає замовлень.")
+            return
+        
+        text = "📜 <b>Ваші останні замовлення:</b>\n\n"
+        
+        for o in orders:
+            status_emoji = {
+                "pending": "⏳ Очікує",
+                "offered": "📤 Запропоновано",
+                "accepted": "✅ Прийнято",
+                "in_progress": "🚗 В дорозі",
+                "completed": "✔️ Завершено",
+                "cancelled": "❌ Скасовано",
+            }.get(o.status, "❓")
+            
+            text += (
+                f"<b>#{o.id}</b> - {status_emoji}\n"
+                f"📍 {o.pickup_address[:30]}...\n"
+                f"   → {o.destination_address[:30]}...\n"
+            )
+            if o.fare_amount:
+                text += f"💰 {o.fare_amount:.0f} грн\n"
+            text += "\n"
+        
+        await call.answer()
+        await call.message.answer(text)
+    
     @router.callback_query(F.data == "profile:saved_addresses")
     async def show_saved_addresses(call: CallbackQuery) -> None:
         """Показати збережені адреси"""

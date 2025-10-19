@@ -27,7 +27,8 @@ from app.handlers.promocodes import create_router as create_promocodes_router
 from app.handlers.sos import create_router as create_sos_router
 from app.handlers.live_tracking import create_router as create_live_tracking_router
 from app.handlers.tips import create_router as create_tips_router
-from app.handlers.referral import create_router as create_referral_router
+# Реферальна програма прибрана
+# from app.handlers.referral import create_router as create_referral_router
 from app.handlers.client_rating import create_router as create_client_rating_router
 from app.handlers.voice_input import create_router as create_voice_input_router
 from app.handlers.driver_analytics import create_router as create_driver_analytics_router
@@ -117,7 +118,7 @@ async def main() -> None:
     dp.include_router(create_sos_router(config))  # SOS
     dp.include_router(create_live_tracking_router(config))  # Живе відстеження
     dp.include_router(create_tips_router(config))  # Чайові
-    dp.include_router(create_referral_router(config))  # Реферальна програма
+    # dp.include_router(create_referral_router(config))  # Реферальна програма - ПРИБРАНО
     dp.include_router(create_client_rating_router(config))  # Рейтинг клієнтів
     dp.include_router(create_voice_input_router(config))  # Голосовий ввід
     dp.include_router(create_driver_analytics_router(config))  # Аналітика водія
