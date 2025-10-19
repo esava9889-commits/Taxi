@@ -137,8 +137,40 @@ return cursor.lastrowid         # доступний через властиві
 3. **Testing:** Протестувати всі критичні функції після деплою
 4. **Rollback:** При проблемах можна швидко повернутись до попередньої версії через git
 
+## Додаткове виправлення (коміт 8ada8c8)
+
+### 3. Помилка "column id does not exist"
+
+**Причина:**
+- PostgresCursor намагався додати `RETURNING id` до всіх INSERT запитів
+- Деякі таблиці (наприклад, `users`) мають інший primary key (`user_id`)
+- Відсутні таблиці `tips`, `referrals`, `rejected_offers` в init_postgres.py
+- Розбіжності в схемі між SQLite та PostgreSQL (ratings, client_ratings, payments)
+
+**Виправлення:**
+
+1. **`app/storage/db_connection.py`:**
+   - Додано try-catch для обробки INSERT без колонки `id`
+   - Якщо `RETURNING id` викликає помилку, виконується звичайний INSERT
+   - Graceful fallback для таблиць без колонки `id`
+
+2. **`app/storage/init_postgres.py`:**
+   - Додано відсутні таблиці:
+     - `tips` - чайові
+     - `referrals` - реферальна програма  
+     - `rejected_offers` - відхилені пропозиції
+   - Виправлено схему `ratings`:
+     - Додано `from_user_id` та `to_user_id` (замість `driver_user_id`)
+   - Виправлено схему `client_ratings`:
+     - Додано `driver_id`
+     - Видалено `comment`
+   - Виправлено схему `payments`:
+     - Змінено на `order_id`, `driver_id`, `commission`, `commission_paid`, тощо
+   - Додано індекси для всіх нових таблиць
+
 ## Файли які було змінено
 
-1. `app/storage/db_connection.py` - додано підтримку await до PostgresCursor
+1. `app/storage/db_connection.py` - додано підтримку await до PostgresCursor + обробка відсутнього id
 2. `app/storage/db.py` - виправлено 18 функцій з INSERT/UPDATE/DELETE
 3. `app/main.py` - збільшено затримку запуску до 45 секунд
+4. `app/storage/init_postgres.py` - синхронізовано схему з SQLite, додано відсутні таблиці
