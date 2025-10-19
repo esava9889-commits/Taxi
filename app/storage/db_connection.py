@@ -4,6 +4,11 @@ import logging
 from typing import Optional, Any
 from contextlib import asynccontextmanager
 
+try:
+    import asyncpg
+except ImportError:
+    asyncpg = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,13 +157,19 @@ class PostgresCursor:
                     else:
                         self._rowcount = 1
                 except Exception as e:
-                    # Якщо колонка 'id' не існує, просто виконати INSERT без RETURNING
-                    logger.debug(f"INSERT без RETURNING id: {e}")
-                    if self.params:
-                        await self.adapter.conn.execute(self.query, *self.params)
-                    else:
-                        await self.adapter.conn.execute(self.query)
-                    self._rowcount = 1
+                    # Якщо колонка 'id' не існує або інша помилка PostgreSQL, просто виконати INSERT без RETURNING
+                    logger.debug(f"INSERT без RETURNING id (таблиця може не мати колонки 'id'): {type(e).__name__}")
+                    try:
+                        if self.params:
+                            status = await self.adapter.conn.execute(self.query, *self.params)
+                        else:
+                            status = await self.adapter.conn.execute(self.query)
+                        
+                        # Для INSERT status буде "INSERT 0 1" (0 = OID, 1 = rows affected)
+                        self._rowcount = 1
+                    except Exception as e2:
+                        logger.error(f"Помилка виконання INSERT: {e2}")
+                        raise
             else:
                 # Якщо RETURNING вже є в запиті
                 if self.params:
