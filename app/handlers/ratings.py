@@ -19,6 +19,24 @@ from app.storage.db import (
 def create_router(config: AppConfig) -> Router:
     router = Router(name="ratings")
 
+    @router.callback_query(F.data.startswith("rate:skip:"))
+    async def skip_rating(call: CallbackQuery) -> None:
+        """Пропустити оцінювання"""
+        if not call.from_user:
+            return
+        
+        await call.answer("Дякуємо за поїздку! 🚖", show_alert=False)
+        
+        # Видалити повідомлення з запитом на оцінку
+        if call.message:
+            try:
+                await call.message.delete()
+            except:
+                await call.message.edit_text(
+                    "✅ <b>Дякуємо за поїздку!</b>\n\n"
+                    "Сподіваємось побачити вас знову! 🚖"
+                )
+    
     @router.callback_query(F.data.startswith("rate:"))
     async def handle_rating(call: CallbackQuery) -> None:
         if not call.from_user:
@@ -58,14 +76,19 @@ def create_router(config: AppConfig) -> Router:
         
         await insert_rating(config.database_path, rating)
         
-        stars = "⭐️" * rating_value
+        stars = "⭐" * rating_value
         await call.answer(f"✅ Дякуємо за оцінку! {stars}", show_alert=True)
         
+        # Видалити повідомлення після оцінки (для чистого чату)
         if call.message:
-            await call.message.edit_text(
-                f"✅ <b>Дякуємо за оцінку!</b>\n\n"
-                f"Ви поставили {stars} ({rating_value}/5)"
-            )
+            try:
+                await call.message.delete()
+            except:
+                # Якщо не вдалося видалити - просто оновити текст
+                await call.message.edit_text(
+                    f"✅ <b>Дякуємо за оцінку!</b>\n\n"
+                    f"Ви поставили {stars} ({rating_value}/5)"
+                )
         
         # Notify rated user about their new average rating
         try:

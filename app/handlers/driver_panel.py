@@ -732,6 +732,42 @@ def create_router(config: AppConfig) -> Router:
         
         if call.message:
             await call.message.edit_text(f"✅ Поїздка завершена!\n💰 {fare:.0f} грн")
+        
+        # 🌟 НОВА ФУНКЦІЯ: Відправити клієнту запит на оцінку водія
+        try:
+            # Створити інлайн кнопки з зірками
+            rating_buttons = [
+                [
+                    InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.user_id}:1:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.user_id}:2:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.user_id}:3:{order_id}"),
+                ],
+                [
+                    InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.user_id}:4:{order_id}"),
+                    InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.user_id}:5:{order_id}"),
+                ],
+                [
+                    InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order_id}")
+                ]
+            ]
+            
+            rating_kb = InlineKeyboardMarkup(inline_keyboard=rating_buttons)
+            
+            # Відправити повідомлення клієнту
+            await call.bot.send_message(
+                chat_id=order.user_id,
+                text=(
+                    "✅ <b>Поїздка завершена!</b>\n\n"
+                    f"💰 Вартість: {fare:.0f} грн\n"
+                    f"🚗 Спосіб оплати: {'💳 Картка' if order.payment_method == 'card' else '💵 Готівка'}\n\n"
+                    "⭐ <b>Будь ласка, оцініть водія:</b>\n"
+                    "Це допоможе покращити якість сервісу!"
+                ),
+                reply_markup=rating_kb
+            )
+            logger.info(f"✅ Надіслано запит на оцінку водія {driver.id} клієнту {order.user_id} для замовлення #{order_id}")
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки запиту на оцінку: {e}")
 
     @router.message(F.text == "💼 Гаманець")
     async def show_wallet(message: Message) -> None:
