@@ -59,9 +59,36 @@ async def main() -> None:
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    
+    logger = logging.getLogger(__name__)
 
-    # Затримка при запуску щоб старий процес встиг завершитись
+    # Перевірка DATABASE_URL на Render
     if os.getenv('RENDER'):
+        database_url = os.getenv('DATABASE_URL')
+        logger.info("="*60)
+        logger.info("🔍 ПЕРЕВІРКА НАЛАШТУВАНЬ НА RENDER")
+        logger.info("="*60)
+        
+        if database_url:
+            # Приховати пароль для безпеки
+            safe_url = database_url.split('@')[0].split('://')[0] + "://***@" + database_url.split('@')[1] if '@' in database_url else "***"
+            logger.info(f"✅ DATABASE_URL встановлено: {safe_url}")
+            
+            if database_url.startswith("postgres://") or database_url.startswith("postgresql://"):
+                logger.info("✅ DATABASE_URL починається з postgres:// - використовую PostgreSQL")
+            else:
+                logger.warning(f"⚠️  DATABASE_URL НЕ починається з postgres:// (починається з: {database_url.split('://')[0]}://)")
+                logger.warning("⚠️  Буде використано SQLite, що НЕ рекомендовано на Render!")
+        else:
+            logger.error("❌ DATABASE_URL НЕ ВСТАНОВЛЕНО на Render!")
+            logger.error("❌ Налаштуйте PostgreSQL в Render Dashboard:")
+            logger.error("   1. Dashboard → Services → New → PostgreSQL")
+            logger.error("   2. Скопіюйте Internal Database URL")
+            logger.error("   3. Environment → Add DATABASE_URL")
+            logger.warning("⚠️  Використовую SQLite (дані будуть втрачені при рестарті!)")
+        
+        logger.info("="*60)
+        
         startup_delay = 60  # Збільшено до 60 секунд для PostgreSQL + міграції!
         logging.info(f"⏳ Затримка запуску {startup_delay}s для graceful shutdown старого процесу...")
         for i in range(startup_delay):

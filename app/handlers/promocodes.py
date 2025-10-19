@@ -32,7 +32,8 @@ class Promocode:
 
 async def create_promocode_table(db_path: str) -> None:
     """Створити таблицю промокодів"""
-    async with aiosqlite.connect(db_path) as db:
+    from app.storage.db_connection import db_manager
+    async with db_manager.connect(db_path) as db:
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS promocodes (
@@ -142,7 +143,8 @@ async def apply_promocode(db_path: str, code: str, user_id: int, fare: float) ->
 
 async def use_promocode(db_path: str, promocode_id: int, user_id: int, order_id: int, discount_amount: float) -> None:
     """Записати використання промокоду"""
-    async with aiosqlite.connect(db_path) as db:
+    from app.storage.db_connection import db_manager
+    async with db_manager.connect(db_path) as db:
         # Додати використання
         await db.execute(
             """

@@ -92,12 +92,13 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user or not is_admin(message.from_user.id):
             return
         
-        import aiosqlite
+        from app.storage.db_connection import db_manager
         
-        async with aiosqlite.connect(config.database_path) as db:
-            # Total orders
-            async with db.execute("SELECT COUNT(*) FROM orders") as cur:
-                total_orders = (await cur.fetchone())[0]
+        try:
+            async with db_manager.connect(config.database_path) as db:
+                # Total orders
+                async with db.execute("SELECT COUNT(*) FROM orders") as cur:
+                    total_orders = (await cur.fetchone())[0]
             
             # Completed orders
             async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'") as cur:
@@ -116,17 +117,21 @@ def create_router(config: AppConfig) -> Router:
                 row = await cur.fetchone()
                 total_revenue = row[0] if row[0] else 0.0
             
-            # Total commission
-            async with db.execute("SELECT SUM(commission) FROM orders WHERE status = 'completed'") as cur:
-                row = await cur.fetchone()
-                total_commission = row[0] if row[0] else 0.0
+                # Total commission
+                async with db.execute("SELECT SUM(commission) FROM orders WHERE status = 'completed'") as cur:
+                    row = await cur.fetchone()
+                    total_commission = row[0] if row[0] else 0.0
+                
+                # Unpaid commissions
+                async with db.execute("SELECT SUM(commission) FROM payments WHERE commission_paid = 0") as cur:
+                    row = await cur.fetchone()
+                    unpaid_commission = row[0] if row[0] else 0.0
+                
+                # Total users
+                async with db.execute("SELECT COUNT(*) FROM users") as cur:
+                    total_users = (await cur.fetchone())[0]
             
-            # Unpaid commissions
-            async with db.execute("SELECT SUM(commission) FROM payments WHERE commission_paid = 0") as cur:
-                row = await cur.fetchone()
-                unpaid_commission = row[0] if row[0] else 0.0
-        
-        text = (
+            text = (
             "📊 <b>Статистика системи</b>\n\n"
             f"📦 Всього замовлень: {total_orders}\n"
             f"✅ Виконано: {completed_orders}\n"
@@ -134,9 +139,20 @@ def create_router(config: AppConfig) -> Router:
             f"⏳ Водіїв на модерації: {pending_drivers}\n\n"
             f"💵 Загальний дохід: {total_revenue:.2f} грн\n"
             f"💰 Загальна комісія: {total_commission:.2f} грн\n"
-            f"⚠️ Несплачена комісія: {unpaid_commission:.2f} грн"
-        )
-        await message.answer(text, reply_markup=admin_menu_keyboard())
+            f"⚠️ Несплачена комісія: {unpaid_commission:.2f} грн\n"
+            f"👥 Всього користувачів: {total_users}"
+            )
+            
+            await message.answer(text, reply_markup=admin_menu_keyboard())
+        
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання статистики: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await message.answer(
+                "❌ Помилка отримання статистики. Переконайтесь що DATABASE_URL налаштовано на Render.",
+                reply_markup=admin_menu_keyboard()
+            )
 
     @router.message(F.text == "👥 Модерація водіїв")
     async def moderate_drivers(message: Message) -> None:
@@ -306,9 +322,9 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user or not is_admin(message.from_user.id):
             return
         
-        import aiosqlite
+        from app.storage.db_connection import db_manager
         
-        async with aiosqlite.connect(config.database_path) as db:
+        async with db_manager.connect(config.database_path) as db:
             # Отримати всіх водіїв
             async with db.execute(
                 """
@@ -570,10 +586,10 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("Повідомлення не може бути порожнім.")
             return
         
-        import aiosqlite
+        from app.storage.db_connection import db_manager
         
         try:
-            async with aiosqlite.connect(config.database_path) as db:
+            async with db_manager.connect(config.database_path) as db:
                 async with db.execute("SELECT DISTINCT user_id FROM users") as cur:
                     user_ids = [row[0] for row in await cur.fetchall()]
                 async with db.execute("SELECT DISTINCT tg_user_id FROM drivers WHERE status = 'approved'") as cur:
@@ -881,8 +897,8 @@ def create_router(config: AppConfig) -> Router:
         online_count = await get_online_drivers_count(config.database_path)
         
         # Отримати кількість водіїв за статусами
-        import aiosqlite
-        async with aiosqlite.connect(config.database_path) as db:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
             async with db.execute("SELECT status, COUNT(*) FROM drivers GROUP BY status") as cur:
                 status_counts = dict(await cur.fetchall())
             

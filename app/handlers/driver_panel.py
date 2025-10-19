@@ -804,7 +804,8 @@ def create_router(config: AppConfig) -> Router:
         import logging
         logger = logging.getLogger(__name__)
         
-        async with aiosqlite.connect(config.database_path) as db:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
             cursor = await db.execute(
                 "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
                 (formatted_card, message.from_user.id)

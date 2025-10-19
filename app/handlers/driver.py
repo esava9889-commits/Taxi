@@ -445,8 +445,8 @@ def create_router(config: AppConfig) -> Router:
             return
         
         # Видалити заявку
-        import aiosqlite
-        async with aiosqlite.connect(config.database_path) as db:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
             await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
             await db.commit()
         
@@ -483,8 +483,8 @@ def create_router(config: AppConfig) -> Router:
             return
         
         # Видалити заявку
-        import aiosqlite
-        async with aiosqlite.connect(config.database_path) as db:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
             await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
             await db.commit()
         
