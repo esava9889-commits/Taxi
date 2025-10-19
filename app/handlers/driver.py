@@ -1016,6 +1016,7 @@ def create_router(config: AppConfig) -> Router:
                         f"ID заявки: {driver_id}\n"
                         f"ПІБ: {driver.full_name}\n"
                         f"Телефон: {driver.phone}\n"
+                        f"Місто: {driver.city or 'Не вказано'}\n"
                         f"Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                     ),
                     reply_markup=InlineKeyboardMarkup(

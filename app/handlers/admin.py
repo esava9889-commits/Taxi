@@ -177,6 +177,7 @@ def create_router(config: AppConfig) -> Router:
                 f"<b>Заявка #{d.id}</b>\n\n"
                 f"👤 ПІБ: {d.full_name}\n"
                 f"📱 Телефон: {d.phone}\n"
+                f"🏙 Місто: {d.city or 'Не вказано'}\n"
                 f"🚗 Авто: {d.car_make} {d.car_model}\n"
                 f"🔢 Номер: {d.car_plate}\n"
                 f"📅 Подано: {d.created_at.strftime('%Y-%m-%d %H:%M')}"
@@ -533,6 +534,7 @@ def create_router(config: AppConfig) -> Router:
                         f"✅ <b>Заявку #{driver_id} СХВАЛЕНО</b>\n\n"
                         f"👤 ПІБ: {driver.full_name}\n"
                         f"📱 Телефон: {driver.phone}\n"
+                        f"🏙 Місто: {driver.city or 'Не вказано'}\n"
                         f"🚗 Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})"
                     )
                 
@@ -559,6 +561,7 @@ def create_router(config: AppConfig) -> Router:
                         f"❌ <b>Заявку #{driver_id} ВІДХИЛЕНО</b>\n\n"
                         f"👤 ПІБ: {driver.full_name}\n"
                         f"📱 Телефон: {driver.phone}\n"
+                        f"🏙 Місто: {driver.city or 'Не вказано'}\n"
                         f"🚗 Авто: {driver.car_make} {driver.car_model} ({driver.car_plate})"
                     )
                 
@@ -670,6 +673,7 @@ def create_router(config: AppConfig) -> Router:
                     f"🚫 <b>Водій заблокований</b>\n\n"
                     f"👤 {driver.full_name}\n"
                     f"📱 {driver.phone}\n"
+                    f"🏙 Місто: {driver.city or 'Не вказано'}\n"
                     f"🚗 {driver.car_make} {driver.car_model}\n\n"
                     f"Статус змінено на: rejected",
                     parse_mode="HTML"
@@ -732,6 +736,7 @@ def create_router(config: AppConfig) -> Router:
                     f"✅ <b>Водій розблокований!</b>\n\n"
                     f"👤 {driver.full_name}\n"
                     f"📱 {driver.phone}\n"
+                    f"🏙 Місто: {driver.city or 'Не вказано'}\n"
                     f"🚗 {driver.car_make} {driver.car_model}\n\n"
                     f"Статус змінено на: <b>approved</b>\n"
                     f"Водій отримав повідомлення і може працювати.",
