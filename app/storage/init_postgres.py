@@ -93,6 +93,67 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції client_ratings: {e}")
         
+        # Міграція 3: payments - оновити схему з старої версії
+        try:
+            check = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'payments'
+                )
+            """)
+            
+            if check:
+                # Перевірити чи є стара структура (driver_tg_id, payment_type)
+                has_old_driver_tg_id = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'payments' AND column_name = 'driver_tg_id'
+                    )
+                """)
+                
+                has_commission = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'payments' AND column_name = 'commission'
+                    )
+                """)
+                
+                if has_old_driver_tg_id and not has_commission:
+                    logger.info("🔄 Міграція payments: оновлення структури таблиці...")
+                    # Стара структура несумісна - видалити і створити заново
+                    await conn.execute("DROP TABLE IF EXISTS payments CASCADE")
+                    logger.info("✅ Стара таблиця payments видалена")
+                elif not has_commission:
+                    # Додати відсутні колонки
+                    logger.info("🔄 Міграція payments: додавання відсутніх колонок...")
+                    
+                    has_order_id = await conn.fetchval("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.columns 
+                            WHERE table_name = 'payments' AND column_name = 'order_id'
+                        )
+                    """)
+                    if not has_order_id:
+                        await conn.execute("ALTER TABLE payments ADD COLUMN order_id INTEGER")
+                    
+                    has_driver_id = await conn.fetchval("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.columns 
+                            WHERE table_name = 'payments' AND column_name = 'driver_id'
+                        )
+                    """)
+                    if not has_driver_id:
+                        await conn.execute("ALTER TABLE payments ADD COLUMN driver_id INTEGER")
+                    
+                    await conn.execute("ALTER TABLE payments ADD COLUMN commission DOUBLE PRECISION")
+                    await conn.execute("ALTER TABLE payments ADD COLUMN commission_paid INTEGER DEFAULT 0")
+                    await conn.execute("ALTER TABLE payments ADD COLUMN payment_method TEXT")
+                    await conn.execute("ALTER TABLE payments ADD COLUMN commission_paid_at TIMESTAMP WITH TIME ZONE")
+                    
+                    logger.info("✅ Колонки payments додані")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції payments: {e}")
+        
         logger.info("✅ Міграції завершено!")
         
         # === СТВОРЕННЯ ТАБЛИЦЬ ===
