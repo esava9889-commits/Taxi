@@ -199,8 +199,16 @@ async def init_db(db_path: str) -> None:
     # SQLite для локальної розробки
     logger.info(f"📁 Ініціалізація SQLite: {db_path}")
     
+    # Перевірити що папка існує
+    db_dir = os.path.dirname(db_path)
+    if db_dir and not os.path.exists(db_dir):
+        logger.info(f"📁 Створюю папку для БД: {db_dir}")
+        os.makedirs(db_dir, exist_ok=True)
+    
     try:
+        logger.info("🔨 Відкриваю з'єднання з SQLite...")
         async with db_manager.connect(db_path) as db:
+            logger.info("✅ З'єднання встановлено, створюю таблиці...")
             # Збережені адреси
             await db.execute(
             """
@@ -392,6 +400,19 @@ async def init_db(db_path: str) -> None:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_unpaid ON payments(driver_id, commission_paid)")
         
             await db.commit()
+            
+            # Перевірити що таблиці створено
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ) as cur:
+                tables = await cur.fetchall()
+                logger.info(f"📊 Створено таблиць: {len(tables)}")
+                if len(tables) > 0:
+                    table_names = [t[0] for t in tables]
+                    logger.info(f"📋 Таблиці: {', '.join(table_names)}")
+                else:
+                    logger.error("❌ ЖОДНОЇ таблиці не створено!")
+        
         logger.info("✅ Всі таблиці SQLite створено!")
     
     except Exception as e:
