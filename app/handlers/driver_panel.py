@@ -23,6 +23,8 @@ from app.storage.db import (
     start_order,
     complete_order,
     get_driver_earnings_today,
+    get_active_order_for_driver,
+    cancel_order_by_driver,
     get_driver_unpaid_commission,
     get_driver_order_history,
     mark_commission_paid,
@@ -38,6 +40,20 @@ from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, forma
 from app.utils.order_timeout import cancel_order_timeout
 
 logger = logging.getLogger(__name__)
+
+
+def driver_panel_keyboard() -> ReplyKeyboardMarkup:
+    """Клавіатура панелі водія"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚀 Почати роботу")],
+            [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+            [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
+            [KeyboardButton(text="📊 Розширена аналітика")],
+            [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
+        ],
+        resize_keyboard=True
+    )
 
 
 def create_router(config: AppConfig) -> Router:
@@ -780,7 +796,7 @@ def create_router(config: AppConfig) -> Router:
                 except Exception as e:
                     logger.error(f"Не вдалося відредагувати повідомлення в групі: {e}")
             
-            # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню
+            # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню з Reply Keyboard
             
             # 1. Спробувати видалити останні повідомлення в чаті водія
             try:
@@ -823,15 +839,28 @@ def create_router(config: AppConfig) -> Router:
             trip_info_text += (
                 f"\n━━━━━━━━━━━━━━━━━\n"
                 f"📊 <b>Статус:</b> ✅ Прийнято\n\n"
-                f"👇 <i>Натисніть кнопку коли будете готові рухатися</i>"
+                f"👇 <i>Натисніть кнопку внизу для керування поїздкою</i>"
             )
             
-            # 4. Велика зелена кнопка СТАРТ
-            kb_trip = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="🚀 СТАРТ - Рухаюсь до клієнта", callback_data=f"start:{order_id}")],
-                    [InlineKeyboardButton(text="📋 Деталі замовлення", callback_data=f"manage:{order_id}")]
-                ]
+            # 4. ⭐ REPLY KEYBOARD з великою кнопкою зверху і меншими знизу
+            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+            
+            kb_trip = ReplyKeyboardMarkup(
+                keyboard=[
+                    # ВЕЛИКА КНОПКА (перший ряд - займає всю ширину)
+                    [KeyboardButton(text="🚗 В дорозі")],
+                    # МЕНШІ КНОПКИ (по 2 в ряд)
+                    [
+                        KeyboardButton(text="❌ Відмовитися"),
+                        KeyboardButton(text="📞 Зв'язатися з клієнтом")
+                    ],
+                    [
+                        KeyboardButton(text="ℹ️ Допомога"),
+                        KeyboardButton(text="💬 Підтримка")
+                    ]
+                ],
+                resize_keyboard=True,  # Автоматично підігнати розмір кнопок
+                one_time_keyboard=False  # Не ховати клавіатуру після натискання
             )
             
             await call.bot.send_message(
@@ -1306,4 +1335,361 @@ def create_router(config: AppConfig) -> Router:
         else:
             await call.message.answer(text)
 
+    # ⭐ НОВІ ОБРОБНИКИ ДЛЯ REPLY KEYBOARD (велика кнопка що змінюється)
+    
+    @router.message(F.text == "🚗 В дорозі")
+    async def trip_in_progress_button(message: Message) -> None:
+        """Водій натиснув кнопку 'В дорозі' → змінити на 'На місці'"""
+        if not message.from_user:
+            return
+        
+        # Отримати активне замовлення водія
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Водія не знайдено")
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Оновити статус на "in_progress"
+        await start_order(config.database_path, order.id, driver.id)
+        
+        # ⭐ ЗМІНИТИ КНОПКУ на "📍 На місці"
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 На місці")],
+                [
+                    KeyboardButton(text="❌ Відмовитися"),
+                    KeyboardButton(text="📞 Зв'язатися з клієнтом")
+                ],
+                [
+                    KeyboardButton(text="ℹ️ Допомога"),
+                    KeyboardButton(text="💬 Підтримка")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await message.answer(
+            f"✅ <b>В дорозі до клієнта!</b>\n\n"
+            f"🚗 Рухайтесь до адреси подачі:\n"
+            f"📍 {order.pickup_address}\n\n"
+            f"👇 Натисніть кнопку коли приїдете",
+            reply_markup=kb_trip
+        )
+    
+    @router.message(F.text == "📍 На місці")
+    async def trip_arrived_button(message: Message) -> None:
+        """Водій натиснув кнопку 'На місці' → змінити на 'Виконую замовлення'"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Повідомити клієнта
+        try:
+            await message.bot.send_message(
+                order.user_id,
+                f"📍 <b>Водій на місці!</b>\n\n"
+                f"🚗 {driver.full_name}\n"
+                f"📱 <code>{driver.phone}</code>\n\n"
+                f"Водій чекає на вас!"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify client: {e}")
+        
+        # ⭐ ЗМІНИТИ КНОПКУ на "🚀 Виконую замовлення"
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🚀 Виконую замовлення")],
+                [
+                    KeyboardButton(text="❌ Відмовитися"),
+                    KeyboardButton(text="📞 Зв'язатися з клієнтом")
+                ],
+                [
+                    KeyboardButton(text="ℹ️ Допомога"),
+                    KeyboardButton(text="💬 Підтримка")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await message.answer(
+            f"✅ <b>На місці подачі!</b>\n\n"
+            f"👋 Зустрічайте клієнта:\n"
+            f"👤 {order.name}\n"
+            f"📱 <code>{order.phone}</code>\n\n"
+            f"📍 Їдете до: {order.destination_address}\n\n"
+            f"👇 Натисніть кнопку коли почнете поїздку",
+            reply_markup=kb_trip
+        )
+    
+    @router.message(F.text == "🚀 Виконую замовлення")
+    async def trip_executing_button(message: Message) -> None:
+        """Водій натиснув кнопку 'Виконую замовлення' → змінити на 'Завершити'"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # ⭐ ЗМІНИТИ КНОПКУ на "🏁 Завершити"
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🏁 Завершити")],
+                [
+                    KeyboardButton(text="❌ Відмовитися"),
+                    KeyboardButton(text="📞 Зв'язатися з клієнтом")
+                ],
+                [
+                    KeyboardButton(text="ℹ️ Допомога"),
+                    KeyboardButton(text="💬 Підтримка")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await message.answer(
+            f"🚀 <b>Виконуєте замовлення!</b>\n\n"
+            f"🎯 Напрямок:\n"
+            f"📍 {order.destination_address}\n\n"
+            f"💰 Вартість: {int(order.fare_amount):.0f} грн\n\n"
+            f"👇 Натисніть кнопку коли доїдете до призначення",
+            reply_markup=kb_trip
+        )
+    
+    @router.message(F.text == "🏁 Завершити")
+    async def trip_complete_button(message: Message) -> None:
+        """Водій натиснув кнопку 'Завершити' → завершити замовлення"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Розрахунок вартості та комісії
+        fare = order.fare_amount if order.fare_amount else 100.0
+        distance_m = order.distance_m if order.distance_m else 0
+        duration_s = order.duration_s if order.duration_s else 0
+        
+        from app.storage.db import get_latest_tariff, insert_payment, Payment
+        tariff = await get_latest_tariff(config.database_path)
+        commission_rate = tariff.commission_percent if tariff else 0.02
+        commission = fare * commission_rate
+        
+        await complete_order(
+            config.database_path,
+            order.id,
+            driver.id,
+            fare,
+            distance_m,
+            duration_s,
+            commission
+        )
+        
+        # Запис у payments
+        payment = Payment(
+            id=None,
+            order_id=order.id,
+            driver_id=driver.id,
+            amount=fare,
+            commission=commission,
+            created_at=datetime.now(timezone.utc),
+            commission_paid=False
+        )
+        await insert_payment(config.database_path, payment)
+        
+        # 🌟 Відправити запит на оцінку водія клієнту
+        try:
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            
+            rating_buttons = [
+                [
+                    InlineKeyboardButton(text="⭐", callback_data=f"rate:{order.id}:1"),
+                    InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:{order.id}:2"),
+                    InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:{order.id}:3"),
+                ],
+                [
+                    InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:{order.id}:4"),
+                    InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:{order.id}:5"),
+                ],
+                [InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order.id}")]
+            ]
+            
+            rating_kb = InlineKeyboardMarkup(inline_keyboard=rating_buttons)
+            
+            fare_text = f"{fare:.0f} грн" if fare else "Уточнюється"
+            distance_text = f"{distance_m / 1000:.1f} км" if distance_m else "Не вказано"
+            
+            await message.bot.send_message(
+                chat_id=order.user_id,
+                text=(
+                    f"🏁 <b>Поїздка завершена!</b>\n\n"
+                    f"🚗 Водій: {driver.full_name}\n"
+                    f"📏 Відстань: {distance_text}\n"
+                    f"💰 Вартість: {fare_text}\n\n"
+                    f"⭐ <b>Будь ласка, оцініть водія:</b>\n"
+                    f"Ваша оцінка допоможе покращити сервіс!"
+                ),
+                reply_markup=rating_kb
+            )
+            logger.info(f"✅ Запит на оцінку надіслано клієнту #{order.user_id}")
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки запиту на оцінку: {e}")
+        
+        # ⭐ ПОВЕРНУТИСЯ ДО ПАНЕЛІ ВОДІЯ
+        await message.answer(
+            f"✅ <b>Замовлення #{order.id} завершено!</b>\n\n"
+            f"💰 Заробіток: {fare:.2f} грн\n"
+            f"💳 Комісія: {commission:.2f} грн\n"
+            f"💵 Чистий дохід: {fare - commission:.2f} грн\n\n"
+            f"🎉 Дякуємо за роботу!",
+            reply_markup=driver_panel_keyboard()
+        )
+    
+    @router.message(F.text == "❌ Відмовитися")
+    async def trip_cancel_button(message: Message) -> None:
+        """Водій відмовляється від замовлення"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Скасувати замовлення
+        success = await cancel_order_by_driver(config.database_path, order.id, driver.id, "Водій відмовився")
+        
+        if success:
+            # Повідомити клієнта
+            try:
+                await message.bot.send_message(
+                    order.user_id,
+                    f"❌ <b>Водій відмовився від замовлення</b>\n\n"
+                    f"🚗 {driver.full_name}\n\n"
+                    f"Ваше замовлення повернуто в загальну чергу.\n"
+                    f"Шукаємо іншого водія..."
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify client: {e}")
+            
+            # Оновити статистику водія (відмова)
+            # Це можна додати до бази даних для аналітики
+            logger.warning(f"⚠️ Водій {driver.full_name} відмовився від замовлення #{order.id}")
+            
+            await message.answer(
+                "❌ <b>Ви відмовилися від замовлення</b>\n\n"
+                "Замовлення повернуто іншим водіям.",
+                reply_markup=driver_panel_keyboard()
+            )
+        else:
+            await message.answer("❌ Не вдалося скасувати замовлення")
+    
+    @router.message(F.text == "📞 Зв'язатися з клієнтом")
+    async def trip_contact_client_button(message: Message) -> None:
+        """Показати контакти клієнта"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        await message.answer(
+            f"📞 <b>Контакти клієнта:</b>\n\n"
+            f"👤 Ім'я: {order.name}\n"
+            f"📱 Телефон: <code>{order.phone}</code>\n\n"
+            f"💡 Натисніть на номер щоб скопіювати"
+        )
+    
+    @router.message(F.text == "ℹ️ Допомога")
+    async def trip_help_button(message: Message) -> None:
+        """Інструкції для водія під час поїздки"""
+        await message.answer(
+            "ℹ️ <b>Допомога - Керування поїздкою</b>\n\n"
+            "<b>Крок 1:</b> 🚗 <b>В дорозі</b>\n"
+            "Натисніть коли почнете рух до клієнта\n\n"
+            "<b>Крок 2:</b> 📍 <b>На місці</b>\n"
+            "Натисніть коли приїдете на адресу подачі\n\n"
+            "<b>Крок 3:</b> 🚀 <b>Виконую замовлення</b>\n"
+            "Натисніть коли клієнт сів і ви почали поїздку\n\n"
+            "<b>Крок 4:</b> 🏁 <b>Завершити</b>\n"
+            "Натисніть коли доїхали до призначення\n\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "<b>Додаткові кнопки:</b>\n\n"
+            "❌ <b>Відмовитися</b> - скасувати замовлення\n"
+            "📞 <b>Зв'язатися</b> - номер телефону клієнта\n"
+            "💬 <b>Підтримка</b> - зв'язок з адміністрацією"
+        )
+    
+    @router.message(F.text == "💬 Підтримка")
+    async def trip_support_button(message: Message) -> None:
+        """Зв'язок з адміністрацією"""
+        admin_ids = config.bot.admin_ids
+        
+        if admin_ids and len(admin_ids) > 0:
+            admin_id = admin_ids[0]  # Перший адмін зі списку
+            admin_link = f"tg://user?id={admin_id}"
+            
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📨 Написати адміну", url=admin_link)]
+                ]
+            )
+            
+            await message.answer(
+                "💬 <b>Зв'язок з підтримкою</b>\n\n"
+                "Натисніть кнопку нижче щоб написати адміністратору:\n\n"
+                "💡 Опишіть вашу проблему детально",
+                reply_markup=kb
+            )
+        else:
+            await message.answer(
+                "💬 <b>Зв'язок з підтримкою</b>\n\n"
+                "❌ Контакт адміністратора не налаштовано"
+            )
+    
     return router

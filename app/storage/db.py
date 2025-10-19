@@ -545,6 +545,88 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
         return cur.rowcount > 0
 
 
+async def cancel_order_by_driver(db_path: str, order_id: int, driver_id: int, reason: str = "Driver cancelled") -> bool:
+    """
+    Скасувати замовлення водієм.
+    
+    Водій може скасувати тільки своє активне замовлення.
+    Замовлення повертається в статус 'pending' для інших водіїв.
+    """
+    async with db_manager.connect(db_path) as db:
+        # Перевірити що це замовлення цього водія
+        cur = await db.execute(
+            "SELECT id FROM orders WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'in_progress')",
+            (order_id, driver_id)
+        )
+        row = await cur.fetchone()
+        
+        if not row:
+            return False
+        
+        # Скасувати замовлення і повернути в статус pending
+        cur = await db.execute(
+            "UPDATE orders SET status = 'pending', driver_id = NULL WHERE id = ?",
+            (order_id,)
+        )
+        await db.commit()
+        
+        logger.warning(f"⚠️ Водій #{driver_id} скасував замовлення #{order_id}: {reason}")
+        return cur.rowcount > 0
+
+
+async def get_active_order_for_driver(db_path: str, driver_id: int) -> Optional[Order]:
+    """
+    Отримати активне замовлення водія.
+    
+    Активне замовлення = статус 'accepted' або 'in_progress'.
+    """
+    async with db_manager.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT id, user_id, name, phone, pickup_address, destination_address, comment, created_at,
+                   pickup_lat, pickup_lon, dest_lat, dest_lon,
+                   driver_id, distance_m, duration_s, fare_amount, commission, status, started_at, finished_at, group_message_id,
+                   car_class, tip_amount, payment_method
+            FROM orders 
+            WHERE driver_id = ? AND status IN ('accepted', 'in_progress')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (driver_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    
+    if not row:
+        return None
+    
+    return Order(
+        id=row[0],
+        user_id=row[1],
+        name=row[2],
+        phone=row[3],
+        pickup_address=row[4],
+        destination_address=row[5],
+        comment=row[6],
+        created_at=_parse_datetime(row[7]),
+        pickup_lat=row[8],
+        pickup_lon=row[9],
+        dest_lat=row[10],
+        dest_lon=row[11],
+        driver_id=row[12],
+        distance_m=row[13],
+        duration_s=row[14],
+        fare_amount=row[15],
+        commission=row[16],
+        status=row[17],
+        started_at=_parse_datetime(row[18]),
+        finished_at=_parse_datetime(row[19]),
+        group_message_id=row[20],
+        car_class=row[21],
+        tip_amount=row[22],
+        payment_method=row[23],
+    )
+
+
 # ==================== Збережені адреси ====================
 
 async def save_address(db_path: str, address: SavedAddress) -> int:
