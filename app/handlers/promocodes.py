@@ -69,7 +69,8 @@ async def create_promocode_table(db_path: str) -> None:
 
 async def get_promocode(db_path: str, code: str) -> Optional[Promocode]:
     """Отримати промокод за кодом"""
-    async with aiosqlite.connect(db_path) as db:
+    from app.storage.db_connection import db_manager
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             """
             SELECT id, code, discount_percent, discount_amount, max_uses, uses_count, 
@@ -118,7 +119,8 @@ async def apply_promocode(db_path: str, code: str, user_id: int, fare: float) ->
         return False, fare, "❌ Промокод вичерпано"
     
     # Перевірка чи використовував цей користувач
-    async with aiosqlite.connect(db_path) as db:
+    from app.storage.db_connection import db_manager
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT COUNT(*) FROM promocode_uses WHERE promocode_id = ? AND user_id = ?",
             (promo.id, user_id)

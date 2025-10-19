@@ -21,7 +21,7 @@ async def location_reminder_task(bot, db_path: str) -> None:
     - Якщо локація старіша за 20 хвилин - перевести водія в офлайн
     """
     from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-    import aiosqlite
+    from app.storage.db_connection import db_manager
     
     while True:
         try:
@@ -32,7 +32,7 @@ async def location_reminder_task(bot, db_path: str) -> None:
             
             now = datetime.now(timezone.utc)
             
-            async with aiosqlite.connect(db_path) as db:
+            async with db_manager.connect(db_path) as db:
                 # Отримати всіх онлайн водіїв
                 async with db.execute(
                     """
@@ -128,9 +128,9 @@ async def check_driver_location_status(db_path: str, tg_user_id: int) -> dict:
             'status': 'fresh' | 'warning' | 'stale' | 'none'
         }
     """
-    import aiosqlite
+    from app.storage.db_connection import db_manager
     
-    async with aiosqlite.connect(db_path) as db:
+    async with db_manager.connect(db_path) as db:
         async with db.execute(
             "SELECT last_seen_at, last_lat, last_lon FROM drivers WHERE tg_user_id = ?",
             (tg_user_id,)

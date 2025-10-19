@@ -743,9 +743,9 @@ def create_router(config: AppConfig) -> Router:
             
             elif action == "stats":
                 # Показати статистику водія
-                import aiosqlite
+                from app.storage.db_connection import db_manager
                 
-                async with aiosqlite.connect(config.database_path) as db:
+                async with db_manager.connect(config.database_path) as db:
                     # Загальна кількість замовлень
                     async with db.execute(
                         "SELECT COUNT(*) FROM orders WHERE driver_id = ? AND status = 'completed'",
@@ -810,9 +810,9 @@ def create_router(config: AppConfig) -> Router:
             
             elif action == "confirm_delete":
                 # Видалити водія з БД
-                import aiosqlite
+                from app.storage.db_connection import db_manager
                 
-                async with aiosqlite.connect(config.database_path) as db:
+                async with db_manager.connect(config.database_path) as db:
                     await db.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
                     await db.commit()
                 
@@ -844,8 +844,8 @@ def create_router(config: AppConfig) -> Router:
         online_count = await get_online_drivers_count(config.database_path)
         
         # Отримати кількість водіїв за статусами
-        import aiosqlite
-        async with aiosqlite.connect(config.database_path) as db:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
             async with db.execute("SELECT status, COUNT(*) FROM drivers GROUP BY status") as cur:
                 status_counts = dict(await cur.fetchall())
             

@@ -12,7 +12,7 @@ async def commission_reminder_task(bot: Bot, db_path: str, payment_card: str) ->
     """
     Background task that sends daily commission reminders at 20:00
     """
-    import aiosqlite
+    from app.storage.db_connection import db_manager
     
     while True:
         now = datetime.now(timezone.utc)
@@ -23,7 +23,7 @@ async def commission_reminder_task(bot: Bot, db_path: str, payment_card: str) ->
         if now.hour == target_time.hour and now.minute == target_time.minute:
             # Send reminders to all drivers with unpaid commission
             try:
-                async with aiosqlite.connect(db_path) as db:
+                async with db_manager.connect(db_path) as db:
                     # Get all approved drivers
                     async with db.execute(
                         "SELECT DISTINCT tg_user_id FROM drivers WHERE status = 'approved'"
