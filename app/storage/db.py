@@ -137,12 +137,17 @@ class Order:
 
 
 async def ensure_driver_columns(db_path: str) -> None:
-    """Міграція: додати відсутні колонки до drivers (ТІЛЬКИ якщо таблиця існує)"""
+    """Міграція: додати відсутні колонки до drivers (ТІЛЬКИ для SQLite)"""
     import logging
     logger = logging.getLogger(__name__)
     
+    # Це міграція тільки для SQLite
+    if _is_postgres():
+        logger.debug("PostgreSQL: міграції drivers виконуються в init_postgres.py")
+        return
+    
     async with db_manager.connect(db_path) as db:
-        # Перевірити чи таблиця drivers існує
+        # Перевірити чи таблиця drivers існує (SQLite синтаксис)
         async with db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='drivers'"
         ) as cur:
@@ -152,7 +157,7 @@ async def ensure_driver_columns(db_path: str) -> None:
             logger.info("ℹ️  Таблиця drivers ще не створена, пропускаю міграцію")
             return
         
-        # Отримати поточні колонки
+        # Отримати поточні колонки (SQLite синтаксис)
         async with db.execute("PRAGMA table_info(drivers)") as cur:
             columns = await cur.fetchall()
             col_names = [c[1] for c in columns]
@@ -395,25 +400,28 @@ async def init_db(db_path: str) -> None:
         logger.error(traceback.format_exc())
         raise
     
-    # Виконати міграції ПІСЛЯ створення всіх таблиць
-    try:
-        await ensure_driver_columns(db_path)
-        # Міграція: додати commission_percent у tariffs якщо відсутнє
-        async with db_manager.connect(db_path) as db:
-            async with db.execute("PRAGMA table_info(tariffs)") as cur:
-                cols = await cur.fetchall()
-                col_names = [c[1] for c in cols]
-            if 'commission_percent' not in col_names:
-                await db.execute("ALTER TABLE tariffs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0.02")
-                await db.commit()
+    # Виконати міграції ПІСЛЯ створення всіх таблиць (ТІЛЬКИ для SQLite)
+    if not _is_postgres():
+        try:
+            await ensure_driver_columns(db_path)
+            # Міграція: додати commission_percent у tariffs якщо відсутнє
+            async with db_manager.connect(db_path) as db:
+                async with db.execute("PRAGMA table_info(tariffs)") as cur:
+                    cols = await cur.fetchall()
+                    col_names = [c[1] for c in cols]
+                if 'commission_percent' not in col_names:
+                    await db.execute("ALTER TABLE tariffs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0.02")
+                    await db.commit()
+            
+            logger.info("✅ SQLite міграції завершено успішно!")
         
-        logger.info("✅ init_db() завершено успішно!")
+        except Exception as e:
+            logger.error(f"❌ ПОМИЛКА при SQLite міграціях: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
     
-    except Exception as e:
-        logger.error(f"❌ ПОМИЛКА при міграціях: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
+    logger.info("✅ init_db() завершено успішно!")
 
 
 async def insert_order(db_path: str, order: Order) -> int:
