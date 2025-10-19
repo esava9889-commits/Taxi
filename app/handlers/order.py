@@ -275,19 +275,371 @@ def create_router(config: AppConfig) -> Router:
             city=user.city,
         )
         
-        # СПОЧАТКУ адреса звідки
+        # СПОЧАТКУ адреса звідки - ІНЛАЙН КНОПКИ ВИБОРУ
         await state.set_state(OrderStates.pickup)
-        await message.answer(
+        
+        # Перевірити чи є збережені адреси
+        from app.storage.db import get_user_saved_addresses
+        saved_addresses = await get_user_saved_addresses(config.database_path, message.from_user.id)
+        
+        kb_buttons = [
+            [InlineKeyboardButton(text="📍 Надіслати мою геолокацію", callback_data="order:pickup:send_location")],
+            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:pickup:text")],
+        ]
+        
+        if saved_addresses:
+            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:pickup:saved")])
+        
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        msg = await message.answer(
+            "🚖 <b>Замовлення таксі</b>\n\n"
             "📍 <b>Звідки вас забрати?</b>\n\n"
-            "Надішліть адресу текстом або поділіться геолокацією 📍",
-            reply_markup=location_keyboard("Вкажіть адресу подачі")
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
         )
+        
+        # Зберегти message_id для подальшого редагування
+        await state.update_data(last_message_id=msg.message_id)
 
+    @router.callback_query(F.data == "order:pickup:send_location")
+    async def pickup_request_location(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити користувача надіслати геолокацію для pickup"""
+        await call.answer()
+        
+        # Тут ПОТРІБЕН ReplyKeyboard для request_location
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        # Видалити попереднє повідомлення
+        try:
+            await call.message.delete()
+        except:
+            pass
+        
+        # Показати нове з ReplyKeyboard
+        msg = await call.message.answer(
+            "📍 Натисніть кнопку нижче, щоб надіслати вашу геолокацію:",
+            reply_markup=kb
+        )
+        await state.update_data(last_message_id=msg.message_id)
+    
+    @router.callback_query(F.data == "order:pickup:text")
+    async def pickup_request_text(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити користувача ввести адресу текстом для pickup"""
+        await call.answer()
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")]
+            ]
+        )
+        
+        await call.message.edit_text(
+            "📍 <b>Звідки вас забрати?</b>\n\n"
+            "✏️ Введіть адресу текстом:\n\n"
+            "Наприклад: вул. Хрещатик, 1, Київ",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "order:pickup:saved")
+    async def pickup_show_saved(call: CallbackQuery, state: FSMContext) -> None:
+        """Показати збережені адреси для вибору pickup"""
+        await call.answer()
+        
+        if not call.from_user:
+            return
+        
+        from app.storage.db import get_user_saved_addresses
+        addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        if not addresses:
+            await call.answer("У вас немає збережених адрес", show_alert=True)
+            return
+        
+        buttons = []
+        for addr in addresses:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{addr.emoji} {addr.name}",
+                    callback_data=f"order:pickup:use_saved:{addr.id}"
+                )
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:pickup:back")])
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        text = "📍 <b>Оберіть адресу подачі:</b>\n\n"
+        for addr in addresses:
+            text += f"{addr.emoji} <b>{addr.name}</b>\n"
+            text += f"   {addr.address[:45]}{'...' if len(addr.address) > 45 else ''}\n\n"
+        
+        await call.message.edit_text(text, reply_markup=kb)
+    
+    @router.callback_query(F.data.startswith("order:pickup:use_saved:"))
+    async def pickup_use_saved_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Використати збережену адресу для pickup"""
+        await call.answer()
+        
+        if not call.from_user:
+            return
+        
+        addr_id = int(call.data.split(":", 3)[3])
+        
+        from app.storage.db import get_saved_address_by_id
+        address = await get_saved_address_by_id(config.database_path, addr_id, call.from_user.id)
+        
+        if not address:
+            await call.answer("❌ Адресу не знайдено", show_alert=True)
+            return
+        
+        # Зберегти pickup
+        await state.update_data(
+            pickup=address.address,
+            pickup_lat=address.lat,
+            pickup_lon=address.lon
+        )
+        
+        # Перейти до destination
+        await state.set_state(OrderStates.destination)
+        
+        # Знову показати інлайн кнопки для destination
+        from app.storage.db import get_user_saved_addresses
+        saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        kb_buttons = [
+            [InlineKeyboardButton(text="📍 Надіслати геолокацію", callback_data="order:dest:send_location")],
+            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:dest:text")],
+        ]
+        
+        if saved_addresses:
+            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:dest:saved")])
+        
+        kb_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup")])
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        await call.message.edit_text(
+            f"✅ <b>Місце подачі:</b> {address.emoji} {address.name}\n"
+            f"   {address.address}\n\n"
+            "📍 <b>Куди їдемо?</b>\n\n"
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "order:pickup:back")
+    async def pickup_back_to_menu(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору способу введення pickup"""
+        await call.answer()
+        
+        from app.storage.db import get_user_saved_addresses
+        saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        kb_buttons = [
+            [InlineKeyboardButton(text="📍 Надіслати мою геолокацію", callback_data="order:pickup:send_location")],
+            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:pickup:text")],
+        ]
+        
+        if saved_addresses:
+            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:pickup:saved")])
+        
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        await call.message.edit_text(
+            "🚖 <b>Замовлення таксі</b>\n\n"
+            "📍 <b>Звідки вас забрати?</b>\n\n"
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
+        )
+    
     @router.callback_query(F.data == "show_car_classes")
     async def show_classes_callback(call: CallbackQuery, state: FSMContext) -> None:
         """Показати класи авто з цінами (викликається з saved_addresses)"""
         await call.answer()
         await show_car_class_selection_with_prices(call.message, state)
+    
+    @router.callback_query(F.data == "order:back:pickup")
+    async def back_to_pickup(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до введення адреси подачі"""
+        await call.answer()
+        await state.set_state(OrderStates.pickup)
+        
+        from app.storage.db import get_user_saved_addresses
+        saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        kb_buttons = [
+            [InlineKeyboardButton(text="📍 Надіслати мою геолокацію", callback_data="order:pickup:send_location")],
+            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:pickup:text")],
+        ]
+        
+        if saved_addresses:
+            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:pickup:saved")])
+        
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        await call.message.edit_text(
+            "🚖 <b>Замовлення таксі</b>\n\n"
+            "📍 <b>Звідки вас забрати?</b>\n\n"
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "order:dest:send_location")
+    async def dest_request_location(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити користувача надіслати геолокацію для destination"""
+        await call.answer()
+        
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        try:
+            await call.message.delete()
+        except:
+            pass
+        
+        msg = await call.message.answer(
+            "📍 Натисніть кнопку нижче, щоб надіслати геолокацію призначення:",
+            reply_markup=kb
+        )
+        await state.update_data(last_message_id=msg.message_id)
+    
+    @router.callback_query(F.data == "order:dest:text")
+    async def dest_request_text(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити користувача ввести адресу текстом для destination"""
+        await call.answer()
+        
+        data = await state.get_data()
+        pickup = data.get("pickup", "")
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")]
+            ]
+        )
+        
+        await call.message.edit_text(
+            f"✅ <b>Місце подачі:</b>\n   {pickup}\n\n"
+            "📍 <b>Куди їдемо?</b>\n\n"
+            "✏️ Введіть адресу текстом:\n\n"
+            "Наприклад: вул. Хрещатик, 1, Київ",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "order:dest:saved")
+    async def dest_show_saved(call: CallbackQuery, state: FSMContext) -> None:
+        """Показати збережені адреси для вибору destination"""
+        await call.answer()
+        
+        if not call.from_user:
+            return
+        
+        from app.storage.db import get_user_saved_addresses
+        addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        if not addresses:
+            await call.answer("У вас немає збережених адрес", show_alert=True)
+            return
+        
+        buttons = []
+        for addr in addresses:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{addr.emoji} {addr.name}",
+                    callback_data=f"order:dest:use_saved:{addr.id}"
+                )
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:dest:back")])
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        text = "📍 <b>Оберіть адресу призначення:</b>\n\n"
+        for addr in addresses:
+            text += f"{addr.emoji} <b>{addr.name}</b>\n"
+            text += f"   {addr.address[:45]}{'...' if len(addr.address) > 45 else ''}\n\n"
+        
+        await call.message.edit_text(text, reply_markup=kb)
+    
+    @router.callback_query(F.data.startswith("order:dest:use_saved:"))
+    async def dest_use_saved_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Використати збережену адресу для destination"""
+        await call.answer()
+        
+        if not call.from_user:
+            return
+        
+        addr_id = int(call.data.split(":", 3)[3])
+        
+        from app.storage.db import get_saved_address_by_id
+        address = await get_saved_address_by_id(config.database_path, addr_id, call.from_user.id)
+        
+        if not address:
+            await call.answer("❌ Адресу не знайдено", show_alert=True)
+            return
+        
+        # Зберегти destination
+        await state.update_data(
+            destination=address.address,
+            dest_lat=address.lat,
+            dest_lon=address.lon
+        )
+        
+        # Перейти до вибору класу авто
+        await state.set_state(OrderStates.car_class)
+        await call.message.answer("⏳ Розраховую вартість...")
+        await show_car_class_selection_with_prices(call.message, state)
+    
+    @router.callback_query(F.data == "order:dest:back")
+    async def dest_back_to_menu(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору способу введення destination"""
+        await call.answer()
+        
+        data = await state.get_data()
+        pickup = data.get("pickup", "")
+        
+        from app.storage.db import get_user_saved_addresses
+        saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        kb_buttons = [
+            [InlineKeyboardButton(text="📍 Надіслати геолокацію", callback_data="order:dest:send_location")],
+            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:dest:text")],
+        ]
+        
+        if saved_addresses:
+            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:dest:saved")])
+        
+        kb_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup")])
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        await call.message.edit_text(
+            f"✅ <b>Місце подачі:</b>\n   {pickup}\n\n"
+            "📍 <b>Куди їдемо?</b>\n\n"
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
+        )
     
     @router.callback_query(F.data == "order:back_to_destination")
     async def back_to_destination(call: CallbackQuery, state: FSMContext) -> None:
@@ -295,11 +647,32 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
         await state.set_state(OrderStates.destination)
         
+        # Показати інлайн кнопки
+        data = await state.get_data()
+        pickup = data.get("pickup", "")
+        
+        from app.storage.db import get_user_saved_addresses
+        saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        kb_buttons = [
+            [InlineKeyboardButton(text="📍 Надіслати геолокацію", callback_data="order:dest:send_location")],
+            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:dest:text")],
+        ]
+        
+        if saved_addresses:
+            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:dest:saved")])
+        
+        kb_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup")])
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
         try:
             await call.message.edit_text(
+                f"✅ <b>Місце подачі:</b>\n   {pickup}\n\n"
                 "📍 <b>Куди їдемо?</b>\n\n"
-                "Надішліть адресу призначення текстом\n"
-                "або поділіться геолокацією 📍"
+                "💡 Оберіть спосіб:",
+                reply_markup=kb
             )
         except:
             await call.message.answer(
