@@ -38,13 +38,9 @@ def create_router(config: AppConfig) -> Router:
         emoji = State()
         address = State()
 
-    @router.message(F.text == "📍 Мої адреси")
-    async def show_saved_addresses(message: Message) -> None:
-        """Показати збережені адреси"""
-        if not message.from_user:
-            return
-        
-        addresses = await get_user_saved_addresses(config.database_path, message.from_user.id)
+    async def _show_addresses_list(user_id: int, edit_message=None, send_to_chat=None) -> None:
+        """Допоміжна функція для показу списку адрес (інлайн)"""
+        addresses = await get_user_saved_addresses(config.database_path, user_id)
         
         if not addresses:
             kb = InlineKeyboardMarkup(
@@ -52,57 +48,100 @@ def create_router(config: AppConfig) -> Router:
                     [InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")]
                 ]
             )
-            await message.answer(
-                "📍 <b>Збережені адреси</b>\n\n"
-                "У вас поки немає збережених адрес.\n\n"
-                "Збережіть часто використовувані адреси для швидкого замовлення!",
-                reply_markup=kb
-            )
+            text = ("📍 <b>Збережені адреси</b>\n\n"
+                   "У вас поки немає збережених адрес.\n\n"
+                   "Збережіть часто використовувані адреси для швидкого замовлення!")
+        else:
+            buttons = []
+            text = "📍 <b>Збережені адреси</b>\n\n"
+            for addr in addresses:
+                text += f"{addr.emoji} <b>{addr.name}</b>\n"
+                text += f"   {addr.address[:50]}{'...' if len(addr.address) > 50 else ''}\n\n"
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"{addr.emoji} {addr.name}",
+                        callback_data=f"address:view:{addr.id}"
+                    )
+                ])
+            
+            buttons.append([InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")])
+            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        if edit_message:
+            await edit_message.edit_text(text, reply_markup=kb)
+        elif send_to_chat:
+            await send_to_chat.answer(text, reply_markup=kb)
+    
+    @router.message(F.text == "📍 Мої адреси")
+    async def show_saved_addresses(message: Message) -> None:
+        """Показати збережені адреси (з Reply keyboard)"""
+        if not message.from_user:
             return
-        
-        # Кнопки для кожної адреси
-        buttons = []
-        for addr in addresses:
-            buttons.append([
-                InlineKeyboardButton(
-                    text=f"{addr.emoji} {addr.name}",
-                    callback_data=f"address:view:{addr.id}"
-                )
-            ])
-        
-        buttons.append([InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")])
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        text = "📍 <b>Збережені адреси</b>\n\n"
-        for addr in addresses:
-            text += f"{addr.emoji} <b>{addr.name}</b>\n"
-            text += f"   {addr.address[:50]}{'...' if len(addr.address) > 50 else ''}\n\n"
-        
-        await message.answer(text, reply_markup=kb)
+        await _show_addresses_list(message.from_user.id, send_to_chat=message)
+    
+    @router.callback_query(F.data == "address:list")
+    async def show_saved_addresses_inline(call: CallbackQuery) -> None:
+        """Показати збережені адреси (з Inline кнопки)"""
+        await call.answer()
+        if not call.from_user:
+            return
+        await _show_addresses_list(call.from_user.id, edit_message=call.message)
 
     @router.callback_query(F.data == "address:add")
     async def start_add_address(call: CallbackQuery, state: FSMContext) -> None:
         """Почати додавання адреси"""
         await call.answer()
         await state.set_state(SaveAddressStates.name)
-        await call.message.answer(
-            "📝 <b>Додавання адреси</b>\n\n"
-            "Введіть назву адреси (наприклад: Додому, На роботу, До батьків):"
-        )
+        
+        # Інлайн кнопка для скасування
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="address:cancel")]
+        ])
+        
+        # Оновити повідомлення (не створювати нове!)
+        try:
+            msg = await call.message.edit_text(
+                "📝 <b>Додавання адреси</b>\n\n"
+                "Введіть назву адреси (наприклад: Додому, На роботу, До батьків):",
+                reply_markup=kb
+            )
+            # Зберегти message_id для подальшого редагування
+            await state.update_data(last_message_id=msg.message_id)
+        except:
+            msg = await call.message.answer(
+                "📝 <b>Додавання адреси</b>\n\n"
+                "Введіть назву адреси (наприклад: Додому, На роботу, До батьків):",
+                reply_markup=kb
+            )
+            await state.update_data(last_message_id=msg.message_id)
 
     @router.message(SaveAddressStates.name)
     async def save_name(message: Message, state: FSMContext) -> None:
         """Зберегти назву адреси"""
         name = message.text.strip() if message.text else ""
         if len(name) < 2:
-            await message.answer("❌ Назва занадто коротка. Спробуйте ще раз:")
+            # Не створювати нове повідомлення - просто показати помилку коротко
+            error_msg = await message.answer("❌ Назва занадто коротка. Спробуйте ще раз:")
+            # Видалити повідомлення помилки через 3 секунди
+            import asyncio
+            asyncio.create_task(asyncio.sleep(3))
+            try:
+                await message.delete()
+                asyncio.create_task(asyncio.sleep(3).then(lambda: error_msg.delete()))
+            except:
+                pass
             return
+        
+        # Видалити повідомлення користувача щоб чат був чистий
+        try:
+            await message.delete()
+        except:
+            pass
         
         await state.update_data(name=name)
         await state.set_state(SaveAddressStates.emoji)
         
-        # Запропонувати емодзі
+        # Запропонувати емодзі з кнопкою "Назад"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -117,14 +156,38 @@ def create_router(config: AppConfig) -> Router:
                     InlineKeyboardButton(text="☕", callback_data="emoji:☕"),
                     InlineKeyboardButton(text="📍", callback_data="emoji:📍"),
                 ],
-                [InlineKeyboardButton(text="⏩ Пропустити", callback_data="emoji:📍")]
+                [InlineKeyboardButton(text="⏩ Пропустити", callback_data="emoji:📍")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="address:back:name")]
             ]
         )
-        await message.answer(
-            f"✅ Назва: <b>{name}</b>\n\n"
-            "Оберіть емодзі для адреси:",
-            reply_markup=kb
-        )
+        
+        # Оновити попереднє повідомлення бота
+        data = await state.get_data()
+        last_msg_id = data.get('last_message_id')
+        
+        if last_msg_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=last_msg_id,
+                    text=f"✅ Назва: <b>{name}</b>\n\n"
+                         "Оберіть емодзі для адреси:",
+                    reply_markup=kb
+                )
+            except:
+                msg = await message.answer(
+                    f"✅ Назва: <b>{name}</b>\n\n"
+                    "Оберіть емодзі для адреси:",
+                    reply_markup=kb
+                )
+                await state.update_data(last_message_id=msg.message_id)
+        else:
+            msg = await message.answer(
+                f"✅ Назва: <b>{name}</b>\n\n"
+                "Оберіть емодзі для адреси:",
+                reply_markup=kb
+            )
+            await state.update_data(last_message_id=msg.message_id)
 
     @router.callback_query(F.data.startswith("emoji:"))
     async def save_emoji(call: CallbackQuery, state: FSMContext) -> None:
@@ -135,19 +198,162 @@ def create_router(config: AppConfig) -> Router:
         
         await call.answer()
         
-        # Кнопка для надсилання локації
+        # Інлайн кнопки для вибору способу введення адреси
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📍 Надіслати геолокацію", callback_data="address:send_location")],
+                [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="address:text_input")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="address:back:emoji")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="address:cancel")]
+            ]
+        )
+        
+        # Оновити повідомлення
+        try:
+            await call.message.edit_text(
+                f"✅ Емодзі: {emoji}\n\n"
+                "Тепер надішліть адресу або геолокацію:\n\n"
+                "💡 Оберіть спосіб:",
+                reply_markup=kb
+            )
+        except:
+            await call.message.answer(
+                f"✅ Емодзі: {emoji}\n\n"
+                "Тепер надішліть адресу або геолокацію:\n\n"
+                "💡 Оберіть спосіб:",
+                reply_markup=kb
+            )
+
+    # Нові обробники для інлайн-навігації
+    @router.callback_query(F.data == "address:cancel")
+    async def cancel_add_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Скасувати додавання адреси"""
+        await call.answer()
+        await state.clear()
+        
+        # Повернутися до списку адрес
+        if not call.from_user:
+            return
+        
+        addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
+        
+        if not addresses:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")]
+                ]
+            )
+            await call.message.edit_text(
+                "📍 <b>Збережені адреси</b>\n\n"
+                "У вас поки немає збережених адрес.",
+                reply_markup=kb
+            )
+        else:
+            buttons = []
+            text = "📍 <b>Збережені адреси</b>\n\n"
+            for addr in addresses:
+                text += f"{addr.emoji} <b>{addr.name}</b>\n   {addr.address[:50]}{'...' if len(addr.address) > 50 else ''}\n\n"
+                buttons.append([InlineKeyboardButton(text=f"{addr.emoji} {addr.name}", callback_data=f"address:view:{addr.id}")])
+            
+            buttons.append([InlineKeyboardButton(text="➕ Додати адресу", callback_data="address:add")])
+            await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    
+    @router.callback_query(F.data == "address:back:name")
+    async def back_to_name(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до введення назви"""
+        await call.answer()
+        await state.set_state(SaveAddressStates.name)
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="address:cancel")]
+        ])
+        
+        await call.message.edit_text(
+            "📝 <b>Додавання адреси</b>\n\n"
+            "Введіть назву адреси (наприклад: Додому, На роботу, До батьків):",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "address:back:emoji")
+    async def back_to_emoji(call: CallbackQuery, state: FSMContext) -> None:
+        """Повернутися до вибору емодзі"""
+        await call.answer()
+        
+        data = await state.get_data()
+        name = data.get("name", "")
+        
+        await state.set_state(SaveAddressStates.emoji)
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="🏠", callback_data="emoji:🏠"),
+                    InlineKeyboardButton(text="💼", callback_data="emoji:💼"),
+                    InlineKeyboardButton(text="🏥", callback_data="emoji:🏥"),
+                    InlineKeyboardButton(text="🏫", callback_data="emoji:🏫"),
+                ],
+                [
+                    InlineKeyboardButton(text="🛒", callback_data="emoji:🛒"),
+                    InlineKeyboardButton(text="🏋️", callback_data="emoji:🏋️"),
+                    InlineKeyboardButton(text="☕", callback_data="emoji:☕"),
+                    InlineKeyboardButton(text="📍", callback_data="emoji:📍"),
+                ],
+                [InlineKeyboardButton(text="⏩ Пропустити", callback_data="emoji:📍")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="address:back:name")]
+            ]
+        )
+        
+        await call.message.edit_text(
+            f"✅ Назва: <b>{name}</b>\n\n"
+            "Оберіть емодзі для адреси:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "address:send_location")
+    async def request_location_for_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити користувача надіслати геолокацію"""
+        await call.answer()
+        
+        # Тут ПОТРІБЕН ReplyKeyboard для request_location
         kb = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
-                [KeyboardButton(text="❌ Скасувати")]
             ],
             resize_keyboard=True,
             one_time_keyboard=True
         )
         
-        await call.message.answer(
-            f"✅ Емодзі: {emoji}\n\n"
-            "Тепер надішліть адресу або геолокацію:",
+        data = await state.get_data()
+        last_msg_id = data.get('last_message_id')
+        
+        # Видалити попереднє повідомлення
+        try:
+            await call.message.delete()
+        except:
+            pass
+        
+        # Показати нове з ReplyKeyboard
+        msg = await call.message.answer(
+            "📍 Натисніть кнопку нижче, щоб надіслати вашу геолокацію:",
+            reply_markup=kb
+        )
+        await state.update_data(last_message_id=msg.message_id)
+    
+    @router.callback_query(F.data == "address:text_input")
+    async def request_text_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити користувача ввести адресу текстом"""
+        await call.answer()
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="address:back:emoji")],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="address:cancel")]
+            ]
+        )
+        
+        await call.message.edit_text(
+            "✏️ Введіть адресу текстом:\n\n"
+            "Наприклад: вул. Хрещатик, 1, Київ",
             reply_markup=kb
         )
 
@@ -156,6 +362,12 @@ def create_router(config: AppConfig) -> Router:
         """Зберегти адресу з геолокації"""
         if not message.from_user or not message.location:
             return
+        
+        # Видалити повідомлення користувача
+        try:
+            await message.delete()
+        except:
+            pass
         
         data = await state.get_data()
         loc = message.location
@@ -191,9 +403,52 @@ def create_router(config: AppConfig) -> Router:
         )
         
         addr_id = await save_address(config.database_path, saved_addr)
+        
+        # Видалити last_message_id щоб створити нове повідомлення
+        last_msg_id = data.get('last_message_id')
         await state.clear()
         
-        # Повернути головне меню
+        # Показати успіх і повернутися до списку адрес (інлайн!)
+        addresses = await get_user_saved_addresses(config.database_path, message.from_user.id)
+        
+        buttons = []
+        text = f"✅ <b>Адресу збережено!</b>\n\n"
+        text += f"{saved_addr.emoji} <b>{saved_addr.name}</b>\n{address}\n\n"
+        text += "━━━━━━━━━━━━━━━━━\n\n"
+        text += "📍 <b>Ваші збережені адреси:</b>\n\n"
+        
+        for addr in addresses:
+            text += f"{addr.emoji} <b>{addr.name}</b>\n   {addr.address[:45]}{'...' if len(addr.address) > 45 else ''}\n\n"
+            buttons.append([InlineKeyboardButton(text=f"{addr.emoji} {addr.name}", callback_data=f"address:view:{addr.id}")])
+        
+        buttons.append([InlineKeyboardButton(text="➕ Додати ще адресу", callback_data="address:add")])
+        
+        # Оновити попереднє повідомлення або створити нове
+        if last_msg_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=last_msg_id,
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+                )
+                # Прибрати ReplyKeyboard
+                from app.handlers.keyboards import main_menu_keyboard
+                from app.storage.db import get_driver_by_tg_user_id
+                
+                is_admin = message.from_user.id in config.bot.admin_ids
+                driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+                is_driver = driver is not None and driver.status == "approved"
+                
+                await message.answer(
+                    "✅",
+                    reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+                )
+                return
+            except:
+                pass
+        
+        # Fallback - створити нове
         from app.handlers.keyboards import main_menu_keyboard
         from app.storage.db import get_driver_by_tg_user_id
         
@@ -202,9 +457,12 @@ def create_router(config: AppConfig) -> Router:
         is_driver = driver is not None and driver.status == "approved"
         
         await message.answer(
-            f"✅ Адресу збережено!\n\n"
-            f"{saved_addr.emoji} <b>{saved_addr.name}</b>\n"
-            f"{address}",
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        
+        await message.answer(
+            "👌",
             reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
         )
 
@@ -214,26 +472,26 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user or not message.text:
             return
         
-        if message.text == "❌ Скасувати":
-            await state.clear()
-            from app.handlers.keyboards import main_menu_keyboard
-            from app.storage.db import get_driver_by_tg_user_id
-            
-            is_admin = message.from_user.id in config.bot.admin_ids
-            driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
-            is_driver = driver is not None and driver.status == "approved"
-            
-            await message.answer(
-                "❌ Скасовано",
-                reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
-            )
-            return
+        # Видалити повідомлення користувача
+        try:
+            await message.delete()
+        except:
+            pass
         
         data = await state.get_data()
         address = message.text.strip()
         
         if len(address) < 5:
-            await message.answer("❌ Адреса занадто коротка. Спробуйте ще раз:")
+            error_msg = await message.answer("❌ Адреса занадто коротка. Спробуйте ще раз:")
+            # Видалити помилку через 3 секунди
+            import asyncio
+            async def delete_after_delay():
+                await asyncio.sleep(3)
+                try:
+                    await error_msg.delete()
+                except:
+                    pass
+            asyncio.create_task(delete_after_delay())
             return
         
         # Спроба геокодувати
@@ -262,20 +520,42 @@ def create_router(config: AppConfig) -> Router:
         )
         
         await save_address(config.database_path, saved_addr)
+        
+        last_msg_id = data.get('last_message_id')
         await state.clear()
         
-        from app.handlers.keyboards import main_menu_keyboard
-        from app.storage.db import get_driver_by_tg_user_id
+        # Показати успіх і повернутися до списку адрес (інлайн!)
+        addresses = await get_user_saved_addresses(config.database_path, message.from_user.id)
         
-        is_admin = message.from_user.id in config.bot.admin_ids
-        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
-        is_driver = driver is not None and driver.status == "approved"
+        buttons = []
+        text = f"✅ <b>Адресу збережено!</b>\n\n"
+        text += f"{saved_addr.emoji} <b>{saved_addr.name}</b>\n{address}\n\n"
+        text += "━━━━━━━━━━━━━━━━━\n\n"
+        text += "📍 <b>Ваші збережені адреси:</b>\n\n"
         
+        for addr in addresses:
+            text += f"{addr.emoji} <b>{addr.name}</b>\n   {addr.address[:45]}{'...' if len(addr.address) > 45 else ''}\n\n"
+            buttons.append([InlineKeyboardButton(text=f"{addr.emoji} {addr.name}", callback_data=f"address:view:{addr.id}")])
+        
+        buttons.append([InlineKeyboardButton(text="➕ Додати ще адресу", callback_data="address:add")])
+        
+        # Оновити попереднє повідомлення або створити нове
+        if last_msg_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=last_msg_id,
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+                )
+                return
+            except:
+                pass
+        
+        # Fallback - створити нове
         await message.answer(
-            f"✅ Адресу збережено!\n\n"
-            f"{saved_addr.emoji} <b>{saved_addr.name}</b>\n"
-            f"{address}",
-            reply_markup=main_menu_keyboard(is_registered=True, is_driver=is_driver, is_admin=is_admin)
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
 
     @router.callback_query(F.data.startswith("address:view:"))
@@ -302,6 +582,9 @@ def create_router(config: AppConfig) -> Router:
                 [
                     InlineKeyboardButton(text="✏️ Редагувати", callback_data=f"address:edit:{addr_id}"),
                     InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"address:delete:{addr_id}")
+                ],
+                [
+                    InlineKeyboardButton(text="⬅️ Назад до списку", callback_data="address:list")
                 ]
             ]
         )
