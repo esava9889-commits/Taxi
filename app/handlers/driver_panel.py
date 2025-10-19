@@ -393,15 +393,237 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
         unpaid = await get_driver_unpaid_commission(config.database_path, message.from_user.id)
         
         if unpaid > 0:
+            # Показати інлайн кнопку для підтвердження оплати
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Комісію сплачено", callback_data=f"commission:paid:{driver.id}")]
+                ]
+            )
+            
             await message.answer(
                 f"💳 <b>Комісія до сплати:</b> {unpaid:.2f} грн\n\n"
-                f"Картка: <code>{config.payment_card or '4149499901234567'}</code>"
+                f"📋 <b>Реквізити для оплати:</b>\n"
+                f"💳 Картка: <code>{config.payment_card or '4149499901234567'}</code>\n\n"
+                f"⚠️ <b>УВАГА:</b>\n"
+                f"1. Переведіть комісію на вказану картку\n"
+                f"2. Тільки після переказу натисніть кнопку нижче\n"
+                f"3. Адміністратор перевірить платіж\n"
+                f"4. Після підтвердження комісія буде анульована\n\n"
+                f"💡 Не натискайте кнопку до здійснення оплати!",
+                reply_markup=kb
             )
         else:
             await message.answer("✅ Комісія сплачена!")
+
+    @router.callback_query(F.data.startswith("commission:paid:"))
+    async def commission_paid_request(call: CallbackQuery) -> None:
+        """Водій повідомляє що сплатив комісію"""
+        if not call.from_user:
+            return
+        
+        await call.answer()
+        
+        driver_id = int(call.data.split(":", 2)[2])
+        
+        driver = await get_driver_by_id(config.database_path, driver_id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Перевірити що це той самий водій
+        if driver.user_id != call.from_user.id:
+            await call.answer("❌ Помилка доступу", show_alert=True)
+            return
+        
+        unpaid = await get_driver_unpaid_commission(config.database_path, call.from_user.id)
+        
+        if unpaid <= 0:
+            await call.answer("✅ У вас немає боргу", show_alert=True)
+            return
+        
+        # Оновити повідомлення водію
+        try:
+            await call.message.edit_text(
+                f"⏳ <b>Запит на підтвердження надіслано</b>\n\n"
+                f"💳 Сума: {unpaid:.2f} грн\n\n"
+                f"Очікуйте підтвердження від адміністратора.\n"
+                f"Це може зайняти деякий час."
+            )
+        except:
+            pass
+        
+        # Відправити повідомлення всім адмінам
+        admin_ids = config.bot.admin_ids
+        
+        for admin_id in admin_ids:
+            try:
+                # Кнопки для адміна
+                admin_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="✅ Підтвердити", callback_data=f"commission:confirm:{driver.id}:{call.from_user.id}"),
+                            InlineKeyboardButton(text="❌ Відхилити", callback_data=f"commission:reject:{driver.id}:{call.from_user.id}")
+                        ]
+                    ]
+                )
+                
+                await call.bot.send_message(
+                    chat_id=admin_id,
+                    text=(
+                        f"💳 <b>ЗАПИТ НА ПІДТВЕРДЖЕННЯ ОПЛАТИ КОМІСІЇ</b>\n\n"
+                        f"👤 Водій: {driver.full_name}\n"
+                        f"📱 Телефон: {driver.phone}\n"
+                        f"🚗 Авто: {driver.car_model} ({driver.car_number})\n"
+                        f"💳 Сума комісії: <b>{unpaid:.2f} грн</b>\n\n"
+                        f"📋 Реквізити (куди мав переказати):\n"
+                        f"💳 {config.payment_card or '4149499901234567'}\n\n"
+                        f"⚠️ <b>Перевірте надходження коштів</b>\n"
+                        f"та підтвердіть або відхиліть платіж:"
+                    ),
+                    reply_markup=admin_kb
+                )
+                
+                logger.info(f"✅ Надіслано запит на підтвердження комісії {unpaid:.2f} грн від водія {driver.id} адміну {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Помилка відправки повідомлення адміну {admin_id}: {e}")
+        
+        await call.answer("✅ Запит надіслано адміністратору", show_alert=True)
+    
+    @router.callback_query(F.data.startswith("commission:confirm:"))
+    async def commission_confirm(call: CallbackQuery) -> None:
+        """Адмін підтверджує оплату комісії"""
+        if not call.from_user:
+            return
+        
+        # Перевірити що це адмін
+        if call.from_user.id not in config.bot.admin_ids:
+            await call.answer("❌ Тільки для адміністраторів", show_alert=True)
+            return
+        
+        await call.answer()
+        
+        parts = call.data.split(":", 3)
+        driver_id = int(parts[2])
+        driver_tg_id = int(parts[3])
+        
+        driver = await get_driver_by_id(config.database_path, driver_id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        unpaid = await get_driver_unpaid_commission(config.database_path, driver_tg_id)
+        
+        if unpaid <= 0:
+            await call.answer("ℹ️ Комісія вже сплачена", show_alert=True)
+            try:
+                await call.message.edit_text(
+                    f"ℹ️ <b>Комісія вже була сплачена раніше</b>\n\n"
+                    f"👤 Водій: {driver.full_name}"
+                )
+            except:
+                pass
+            return
+        
+        # АНУЛЮВАТИ КОМІСІЮ В БД
+        await mark_commission_paid(config.database_path, driver_tg_id)
+        
+        logger.info(f"✅ Адмін {call.from_user.id} підтвердив оплату комісії {unpaid:.2f} грн від водія {driver.id}")
+        
+        # Оновити повідомлення адміна
+        try:
+            await call.message.edit_text(
+                f"✅ <b>ОПЛАТУ ПІДТВЕРДЖЕНО</b>\n\n"
+                f"👤 Водій: {driver.full_name}\n"
+                f"💳 Сума: {unpaid:.2f} грн\n"
+                f"👨‍💼 Підтвердив: @{call.from_user.username or call.from_user.first_name}\n"
+                f"⏰ Час: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                f"✅ Комісія анульована в системі"
+            )
+        except:
+            pass
+        
+        # Сповістити водія про підтвердження
+        try:
+            await call.bot.send_message(
+                chat_id=driver_tg_id,
+                text=(
+                    f"✅ <b>ОПЛАТУ КОМІСІЇ ПІДТВЕРДЖЕНО!</b>\n\n"
+                    f"💳 Сума: {unpaid:.2f} грн\n\n"
+                    f"Дякуємо! Ваша комісія анульована.\n"
+                    f"Можете продовжувати роботу! 🚗"
+                )
+            )
+        except Exception as e:
+            logger.error(f"❌ Помилка сповіщення водія {driver_tg_id}: {e}")
+        
+        await call.answer("✅ Оплату підтверджено та комісію анульовано", show_alert=True)
+    
+    @router.callback_query(F.data.startswith("commission:reject:"))
+    async def commission_reject(call: CallbackQuery) -> None:
+        """Адмін відхиляє оплату комісії"""
+        if not call.from_user:
+            return
+        
+        # Перевірити що це адмін
+        if call.from_user.id not in config.bot.admin_ids:
+            await call.answer("❌ Тільки для адміністраторів", show_alert=True)
+            return
+        
+        await call.answer()
+        
+        parts = call.data.split(":", 3)
+        driver_id = int(parts[2])
+        driver_tg_id = int(parts[3])
+        
+        driver = await get_driver_by_id(config.database_path, driver_id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        unpaid = await get_driver_unpaid_commission(config.database_path, driver_tg_id)
+        
+        logger.info(f"❌ Адмін {call.from_user.id} відхилив оплату комісії від водія {driver.id}")
+        
+        # Оновити повідомлення адміна
+        try:
+            await call.message.edit_text(
+                f"❌ <b>ОПЛАТУ ВІДХИЛЕНО</b>\n\n"
+                f"👤 Водій: {driver.full_name}\n"
+                f"💳 Сума: {unpaid:.2f} грн\n"
+                f"👨‍💼 Відхилив: @{call.from_user.username or call.from_user.first_name}\n"
+                f"⏰ Час: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                f"⚠️ Водія буде сповіщено"
+            )
+        except:
+            pass
+        
+        # Сповістити водія про відхилення
+        try:
+            await call.bot.send_message(
+                chat_id=driver_tg_id,
+                text=(
+                    f"❌ <b>ОПЛАТУ КОМІСІЇ ВІДХИЛЕНО</b>\n\n"
+                    f"💳 Сума: {unpaid:.2f} грн\n\n"
+                    f"⚠️ Причини можливого відхилення:\n"
+                    f"• Оплата не надійшла на картку\n"
+                    f"• Неправильна сума\n"
+                    f"• Інша помилка\n\n"
+                    f"📞 Зв'яжіться з адміністратором для уточнення.\n\n"
+                    f"Після здійснення правильної оплати\n"
+                    f"надішліть запит знову через меню '💳 Комісія'"
+                )
+            )
+        except Exception as e:
+            logger.error(f"❌ Помилка сповіщення водія {driver_tg_id}: {e}")
+        
+        await call.answer("❌ Оплату відхилено, водія сповіщено", show_alert=True)
 
     @router.message(F.text == "📜 Історія поїздок")
     async def history(message: Message) -> None:
