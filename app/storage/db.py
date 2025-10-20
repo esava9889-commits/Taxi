@@ -1961,57 +1961,52 @@ async def update_tariff_multipliers(db_path: str, night_percent: float, weather_
 async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
     """Отримати останній тариф (з підтримкою старої та нової схеми)"""
     async with db_manager.connect(db_path) as db:
-        # Спробувати з новими колонками (після міграції)
+        # СПОЧАТКУ спробувати зі СТАРОЮ схемою (безпечно)
         try:
             async with db.execute(
-                "SELECT id, base_fare, per_km, per_minute, minimum, commission_percent, night_tariff_percent, weather_percent, created_at FROM tariffs ORDER BY id DESC LIMIT 1"
+                "SELECT id, base_fare, per_km, per_minute, minimum, commission_percent, created_at FROM tariffs ORDER BY id DESC LIMIT 1"
             ) as cursor:
                 row = await cursor.fetchone()
             
             if not row:
                 return None
             
-            # Перевірити чи є всі колонки
-            if len(row) >= 9:
-                return Tariff(
-                    id=row[0],
-                    base_fare=row[1],
-                    per_km=row[2],
-                    per_minute=row[3],
-                    minimum=row[4],
-                    commission_percent=row[5] if row[5] is not None else 0.02,
-                    night_tariff_percent=row[6] if row[6] is not None else 50.0,
-                    weather_percent=row[7] if row[7] is not None else 0.0,
-                    created_at=_parse_datetime(row[8]),
-                )
-            else:
-                # Стара схема
-                raise IndexError("Old schema - less columns")
-        
-        except Exception as e:
-            # Fallback: стара БД без нових колонок
-            logger.warning(f"⚠️ Tariffs: використовую стару схему (без night_tariff_percent/weather_percent): {type(e).__name__}")
+            # Базові дані є (стара схема працює)
+            base_tariff = {
+                'id': row[0],
+                'base_fare': row[1],
+                'per_km': row[2],
+                'per_minute': row[3],
+                'minimum': row[4],
+                'commission_percent': row[5] if row[5] is not None else 0.02,
+                'created_at': _parse_datetime(row[6])
+            }
             
+            # Тепер спробувати прочитати НОВІ колонки (якщо є)
             try:
                 async with db.execute(
-                    "SELECT id, base_fare, per_km, per_minute, minimum, commission_percent, created_at FROM tariffs ORDER BY id DESC LIMIT 1"
+                    "SELECT night_tariff_percent, weather_percent FROM tariffs WHERE id = ? LIMIT 1",
+                    (base_tariff['id'],)
                 ) as cursor:
-                    row = await cursor.fetchone()
+                    extra_row = await cursor.fetchone()
                 
-                if not row:
-                    return None
-                
-                return Tariff(
-                    id=row[0],
-                    base_fare=row[1],
-                    per_km=row[2],
-                    per_minute=row[3],
-                    minimum=row[4],
-                    commission_percent=row[5] if row[5] is not None else 0.02,
-                    night_tariff_percent=50.0,  # Дефолтне значення
-                    weather_percent=0.0,  # Дефолтне значення
-                    created_at=_parse_datetime(row[6]),
-                )
-            except Exception as fallback_error:
-                logger.error(f"❌ Помилка читання tariffs: {fallback_error}")
-                return None
+                if extra_row and len(extra_row) >= 2:
+                    base_tariff['night_tariff_percent'] = extra_row[0] if extra_row[0] is not None else 50.0
+                    base_tariff['weather_percent'] = extra_row[1] if extra_row[1] is not None else 0.0
+                    logger.info("✅ Tariffs: використовую НОВУ схему (з night_tariff_percent/weather_percent)")
+                else:
+                    raise Exception("New columns not found")
+            
+            except Exception:
+                # Нові колонки відсутні - використати дефолти
+                base_tariff['night_tariff_percent'] = 50.0
+                base_tariff['weather_percent'] = 0.0
+                logger.warning("⚠️ Tariffs: використовую СТАРУ схему (дефолти: night=50%, weather=0%)")
+            
+            return Tariff(**base_tariff)
+        
+        except Exception as e:
+            logger.error(f"❌ Критична помилка читання tariffs: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
