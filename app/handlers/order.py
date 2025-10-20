@@ -1810,4 +1810,59 @@ def create_router(config: AppConfig) -> Router:
         else:
             await call.answer("❌ Не вдалося скасувати", show_alert=True)
     
+    @router.callback_query(F.data.startswith("continue_waiting:"))
+    async def continue_waiting_handler(call: CallbackQuery, state: FSMContext) -> None:
+        """Продовжити очікування без підвищення ціни"""
+        if not call.from_user:
+            return
+        
+        order_id = int(call.data.split(":")[1])
+        
+        # Отримати замовлення
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        # Перевірити що це замовлення цього користувача
+        if order.user_id != call.from_user.id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        # Перевірити статус
+        if order.status != "pending":
+            await call.answer("✅ Водій вже прийняв замовлення!", show_alert=True)
+            try:
+                await call.message.delete()
+            except:
+                pass
+            return
+        
+        await call.answer("⏳ Продовжуємо пошук на поточній ціні...", show_alert=False)
+        
+        # Видалити повідомлення з пропозицією підвищити ціну
+        try:
+            await call.message.delete()
+        except Exception as e:
+            logger.warning(f"Не вдалося видалити повідомлення: {e}")
+        
+        # Показати повідомлення "Пошук водія..." (знову)
+        from app.handlers.keyboards import main_menu_keyboard
+        is_admin = call.from_user.id in config.bot.admin_ids
+        
+        current_fare = order.fare_amount if order.fare_amount else 100.0
+        
+        await call.bot.send_message(
+            call.from_user.id,
+            f"🔍 <b>Шукаємо водія...</b>\n\n"
+            f"📍 Звідки: {order.pickup_address}\n"
+            f"📍 Куди: {order.destination_address}\n\n"
+            f"💰 Вартість: <b>{current_fare:.0f} грн</b>\n\n"
+            f"⏳ Зачекайте, будь ласка...",
+            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+        )
+        
+        logger.info(f"⏳ Клієнт #{call.from_user.id} вирішив продовжити очікування без підвищення ціни (замовлення #{order_id})")
+    
     return router

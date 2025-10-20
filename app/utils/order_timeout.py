@@ -125,6 +125,7 @@ class OrderTimeoutManager:
                             InlineKeyboardButton(text="💵 +30 грн", callback_data=f"increase_price:{order_id}:30"),
                         ],
                         [InlineKeyboardButton(text="💵 +50 грн", callback_data=f"increase_price:{order_id}:50")],
+                        [InlineKeyboardButton(text="⏳ Продовжити очікування", callback_data=f"continue_waiting:{order_id}")],
                         [InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data=f"cancel_waiting_order:{order_id}")]
                     ]
                 )
