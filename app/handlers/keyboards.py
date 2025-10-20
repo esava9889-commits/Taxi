@@ -71,6 +71,7 @@ def main_menu_keyboard(
         keyboard=[
             [KeyboardButton(text="📱 Зареєструватись")],
             [KeyboardButton(text="ℹ️ Допомога")],
+            [KeyboardButton(text="📖 Правила користування")]  # ⭐ НОВА КНОПКА
         ],
         resize_keyboard=True,
         one_time_keyboard=False,
