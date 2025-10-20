@@ -30,7 +30,7 @@ from app.storage.db import (
     get_user_active_order,
     increase_order_fare,
 )
-from app.utils.maps import get_distance_and_duration, geocode_address
+from app.utils.maps import get_distance_and_duration, geocode_address, reverse_geocode_with_places
 from app.utils.privacy import mask_phone_number
 from app.utils.validation import validate_address, validate_comment
 from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
@@ -807,20 +807,20 @@ def create_router(config: AppConfig) -> Router:
         
         loc = message.location
         
-        # ⭐ REVERSE GEOCODING: Координати → Текстова адреса
+        # ⭐ REVERSE GEOCODING + PLACES: Координати → Текстова адреса з об'єктами поруч
         pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
         
         if config.google_maps_api_key:
             try:
-                from app.utils.maps import reverse_geocode
-                readable_address = await reverse_geocode(
+                # Використовуємо нову функцію з Places API
+                readable_address = await reverse_geocode_with_places(
                     config.google_maps_api_key,
                     loc.latitude,
                     loc.longitude
                 )
                 if readable_address:
                     pickup = readable_address
-                    logger.info(f"✅ Reverse geocoded pickup: {pickup}")
+                    logger.info(f"✅ Reverse geocoded pickup з об'єктами: {pickup}")
                 else:
                     logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
             except Exception as e:
@@ -904,20 +904,20 @@ def create_router(config: AppConfig) -> Router:
         
         loc = message.location
         
-        # ⭐ REVERSE GEOCODING: Координати → Текстова адреса
+        # ⭐ REVERSE GEOCODING + PLACES: Координати → Текстова адреса з об'єктами поруч
         destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
         
         if config.google_maps_api_key:
             try:
-                from app.utils.maps import reverse_geocode
-                readable_address = await reverse_geocode(
+                # Використовуємо нову функцію з Places API
+                readable_address = await reverse_geocode_with_places(
                     config.google_maps_api_key,
                     loc.latitude,
                     loc.longitude
                 )
                 if readable_address:
                     destination = readable_address
-                    logger.info(f"✅ Reverse geocoded destination: {destination}")
+                    logger.info(f"✅ Reverse geocoded destination з об'єктами: {destination}")
                 else:
                     logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
             except Exception as e:
@@ -1493,6 +1493,39 @@ def create_router(config: AppConfig) -> Router:
         )
 
     # Скасування замовлення клієнтом
+    @router.callback_query(F.data == "cancel_order")
+    async def cancel_order_creation(call: CallbackQuery, state: FSMContext) -> None:
+        """Скасувати створення замовлення (під час заповнення форми)"""
+        if not call.from_user:
+            return
+        
+        await call.answer("✅ Скасовано")
+        
+        # Очистити FSM state
+        await state.clear()
+        
+        # Показати головне меню
+        from app.handlers.keyboards import main_menu_keyboard
+        user = await get_user_by_id(config.database_path, call.from_user.id)
+        is_registered = user is not None and user.phone and user.city
+        is_admin = call.from_user.id in config.bot.admin_ids
+        
+        try:
+            await call.message.edit_text(
+                "❌ <b>Створення замовлення скасовано</b>\n\n"
+                "Ви можете створити нове замовлення будь-коли.",
+                reply_markup=None
+            )
+        except:
+            pass
+        
+        await call.message.answer(
+            "🏠 Головне меню:",
+            reply_markup=main_menu_keyboard(is_registered=is_registered, is_admin=is_admin)
+        )
+        
+        logger.info(f"❌ Клієнт {call.from_user.id} скасував створення замовлення")
+    
     @router.callback_query(F.data.startswith("cancel_order:"))
     async def cancel_order_handler(call: CallbackQuery, state: FSMContext) -> None:
         if not call.from_user or not call.message:

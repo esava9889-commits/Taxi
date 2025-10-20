@@ -78,7 +78,8 @@ def driver_panel_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
             [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
             [KeyboardButton(text="📊 Розширена аналітика")],
-            [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
+            [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
+            [KeyboardButton(text="📖 Правила користування")]  # ⭐ НОВА КНОПКА
         ],
         resize_keyboard=True
     )

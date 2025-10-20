@@ -139,6 +139,66 @@ async def geocode_address(api_key: str, address: str) -> Optional[Tuple[float, f
         return None
 
 
+async def reverse_geocode_with_places(api_key: str, lat: float, lon: float) -> Optional[str]:
+    """
+    Отримати адресу з об'єктами поруч (Places API).
+    
+    Використовує Google Maps Geocoding API + Places Nearby Search.
+    Повертає адресу з найближчими визначними місцями.
+    
+    Args:
+        api_key: Google Maps API ключ
+        lat: Широта
+        lon: Довгота
+    
+    Returns:
+        Адреса з об'єктами поруч, наприклад:
+        "вул. Хрещатик, 1, Київ (поруч: McDonald's, Кінотеатр Київ)"
+    """
+    try:
+        # 1. Отримати адресу (reverse geocoding)
+        address = await reverse_geocode(api_key, lat, lon)
+        if not address:
+            return None
+        
+        # 2. Пошук об'єктів поруч (Places Nearby Search)
+        import aiohttp
+        
+        places_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {
+            "location": f"{lat},{lon}",
+            "radius": 100,  # 100 метрів
+            "key": api_key,
+            "language": "uk"  # Українська мова
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(places_url, params=params) as response:
+                if response.status != 200:
+                    logger.warning(f"Places API error: {response.status}")
+                    return address  # Повернути просто адресу без places
+                
+                data = await response.json()
+                
+                if data.get("status") != "OK":
+                    return address  # Без places
+                
+                # Взяти перші 2-3 найближчі об'єкти
+                places = data.get("results", [])[:3]
+                
+                if places:
+                    place_names = [p.get("name") for p in places if p.get("name")]
+                    if place_names:
+                        places_text = ", ".join(place_names[:2])  # Максимум 2 об'єкти
+                        return f"{address} (поруч: {places_text})"
+                
+                return address
+    
+    except Exception as e:
+        logger.error(f"Error in reverse_geocode_with_places: {e}")
+        return await reverse_geocode(api_key, lat, lon)  # Fallback без places
+
+
 async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]:
     """
     Convert coordinates to address using Google Reverse Geocoding API
