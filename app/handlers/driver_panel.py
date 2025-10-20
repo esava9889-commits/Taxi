@@ -713,7 +713,10 @@ def create_router(config: AppConfig) -> Router:
     async def accept(call: CallbackQuery) -> None:
         """Прийняти замовлення"""
         if not call.from_user:
+            logger.error("❌ accept_order: call.from_user is None")
             return
+        
+        logger.info(f"🔔 accept_order callback from user {call.from_user.id} (username: @{call.from_user.username})")
         
         # RATE LIMITING: Перевірка ліміту прийняття замовлень (максимум 20 спроб на годину)
         if not check_rate_limit(call.from_user.id, "accept_order", max_requests=20, window_seconds=3600):
@@ -723,11 +726,17 @@ def create_router(config: AppConfig) -> Router:
                 f"Спробуйте через: {format_time_remaining(time_until_reset)}",
                 show_alert=True
             )
-            logger.warning(f"Driver {call.from_user.id} exceeded accept_order rate limit")
+            logger.warning(f"⏱️ Driver {call.from_user.id} exceeded accept_order rate limit")
             return
         
         driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
         if not driver:
+            logger.error(f"❌ Driver not found for user {call.from_user.id}")
+            await call.answer(
+                "❌ Ви не зареєстровані як водій.\n"
+                "Зареєструйтесь через /start → Стати водієм",
+                show_alert=True
+            )
             return
         
         order_id = int(call.data.split(":")[1])
