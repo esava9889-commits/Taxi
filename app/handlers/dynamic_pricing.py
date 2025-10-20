@@ -10,9 +10,13 @@ from app.config.config import AppConfig
 logger = logging.getLogger(__name__)
 
 
-def get_surge_multiplier(city: str = "Київ") -> Tuple[float, str]:
+def get_surge_multiplier(city: str = "Київ", night_percent: float = 50.0) -> Tuple[float, str]:
     """
     Отримати множник підвищення та причину
+    
+    Args:
+        city: Місто
+        night_percent: % надбавки за нічний тариф (з БД)
     
     Returns:
         (multiplier, reason) - множник та текст причини
@@ -29,10 +33,11 @@ def get_surge_multiplier(city: str = "Київ") -> Tuple[float, str]:
         multiplier *= 1.3
         reasons.append("Піковий час")
     
-    # 2. Нічний тариф
+    # 2. Нічний тариф (з БД!)
     if hour >= 23 or hour < 6:
-        multiplier *= 1.5
-        reasons.append("Нічний тариф")
+        night_mult = 1.0 + (night_percent / 100.0)  # 50% → 1.5
+        multiplier *= night_mult
+        reasons.append(f"Нічний тариф (+{night_percent:.0f}%)")
     
     # 3. Вихідні (п'ятниця-неділя ввечері)
     if day_of_week >= 4 and 18 <= hour <= 23:  # Пт-Нд вечір
@@ -50,16 +55,19 @@ def get_surge_multiplier(city: str = "Київ") -> Tuple[float, str]:
     return multiplier, reason_text
 
 
-def get_weather_multiplier() -> Tuple[float, str]:
+def get_weather_multiplier(weather_percent: float = 0.0) -> Tuple[float, str]:
     """
-    Множник за погодою (потребує API погоди)
+    Множник за погодою
     
-    TODO: Інтеграція з OpenWeatherMap API
+    Args:
+        weather_percent: % надбавки за погодні умови (з БД)
+    
+    Returns:
+        (multiplier, reason) - множник та текст причини
     """
-    # Заглушка - можна додати реальну перевірку погоди
-    # import requests
-    # weather_api = "https://api.openweathermap.org/data/2.5/weather"
-    # ...
+    if weather_percent > 0:
+        weather_mult = 1.0 + (weather_percent / 100.0)  # 20% → 1.2
+        return weather_mult, f"Погодні умови (+{weather_percent:.0f}%)"
     
     return 1.0, ""
 
@@ -90,19 +98,29 @@ async def calculate_dynamic_price(
     base_fare: float,
     city: str = "Київ",
     online_drivers: int = 10,
-    pending_orders: int = 5
+    pending_orders: int = 5,
+    night_percent: float = 50.0,
+    weather_percent: float = 0.0
 ) -> Tuple[float, str, float]:
     """
     Розрахувати вартість з урахуванням всіх факторів
+    
+    Args:
+        base_fare: Базова вартість
+        city: Місто
+        online_drivers: Кількість онлайн водіїв
+        pending_orders: Кількість очікуючих замовлень
+        night_percent: % надбавки за нічний тариф (з БД)
+        weather_percent: % надбавки за погодні умови (з БД)
     
     Returns:
         (final_price, explanation, total_multiplier)
     """
     # 1. Час доби та день тижня
-    time_mult, time_reason = get_surge_multiplier(city)
+    time_mult, time_reason = get_surge_multiplier(city, night_percent)
     
-    # 2. Погода (TODO)
-    weather_mult, weather_reason = get_weather_multiplier()
+    # 2. Погода
+    weather_mult, weather_reason = get_weather_multiplier(weather_percent)
     
     # 3. Попит
     demand_mult, demand_reason = get_demand_multiplier(online_drivers, pending_orders)

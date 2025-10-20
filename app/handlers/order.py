@@ -132,10 +132,15 @@ def create_router(config: AppConfig) -> Router:
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
         pending_orders_estimate = 5
+        
+        # Отримати налаштування множників з БД
+        night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
+        weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
+        
         for class_key in ["economy", "standard", "comfort", "business"]:
             class_fare = calculate_fare_with_class(base_fare, class_key)
             final_price, explanation, total_mult = await calculate_dynamic_price(
-                class_fare, city, online_count, pending_orders_estimate
+                class_fare, city, online_count, pending_orders_estimate, night_percent, weather_percent
             )
             car_class_prices[class_key] = round(final_price, 2)
             emoji = get_surge_emoji(total_mult)
@@ -757,9 +762,14 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db import get_online_drivers_count
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
+        
+        # Отримати налаштування множників з БД
+        night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
+        weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
+        
         class_fare = calculate_fare_with_class(base_fare, car_class)
         final_price, explanation, total_mult = await calculate_dynamic_price(
-            class_fare, city, online_count, 5
+            class_fare, city, online_count, 5, night_percent, weather_percent
         )
         await state.update_data(estimated_fare=final_price, fare_explanation=explanation)
 

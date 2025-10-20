@@ -154,6 +154,38 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції payments: {e}")
         
+        # Міграція 4: tariffs - додати night_tariff_percent та weather_percent
+        try:
+            has_night = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'tariffs' AND column_name = 'night_tariff_percent'
+                )
+            """)
+            
+            has_weather = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'tariffs' AND column_name = 'weather_percent'
+                )
+            """)
+            
+            if not has_night:
+                logger.info("🔄 Міграція tariffs: додавання night_tariff_percent...")
+                await conn.execute("ALTER TABLE tariffs ADD COLUMN night_tariff_percent DOUBLE PRECISION DEFAULT 50.0")
+                await conn.execute("UPDATE tariffs SET night_tariff_percent = 50.0 WHERE night_tariff_percent IS NULL")
+                await conn.execute("ALTER TABLE tariffs ALTER COLUMN night_tariff_percent SET NOT NULL")
+                logger.info("✅ Колонка night_tariff_percent додана")
+            
+            if not has_weather:
+                logger.info("🔄 Міграція tariffs: додавання weather_percent...")
+                await conn.execute("ALTER TABLE tariffs ADD COLUMN weather_percent DOUBLE PRECISION DEFAULT 0.0")
+                await conn.execute("UPDATE tariffs SET weather_percent = 0.0 WHERE weather_percent IS NULL")
+                await conn.execute("ALTER TABLE tariffs ALTER COLUMN weather_percent SET NOT NULL")
+                logger.info("✅ Колонка weather_percent додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції tariffs: {e}")
+        
         logger.info("✅ Міграції завершено!")
         
         # === СТВОРЕННЯ ТАБЛИЦЬ ===
@@ -212,6 +244,8 @@ async def init_postgres_db(database_url: str) -> None:
                 per_minute DOUBLE PRECISION NOT NULL,
                 minimum DOUBLE PRECISION NOT NULL,
                 commission_percent DOUBLE PRECISION NOT NULL DEFAULT 0.02,
+                night_tariff_percent DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+                weather_percent DOUBLE PRECISION NOT NULL DEFAULT 0.0,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL
             )
         """)

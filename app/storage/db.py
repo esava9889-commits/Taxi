@@ -265,10 +265,25 @@ async def init_db(db_path: str) -> None:
                     per_minute REAL NOT NULL,
                     minimum REAL NOT NULL,
                     commission_percent REAL NOT NULL DEFAULT 0.02,
+                    night_tariff_percent REAL NOT NULL DEFAULT 50.0,
+                    weather_percent REAL NOT NULL DEFAULT 0.0,
                     created_at TEXT NOT NULL
                 )
                 """
             )
+            
+            # ⭐ МІГРАЦІЯ: Додати нові колонки якщо їх немає
+            try:
+                await db.execute("ALTER TABLE tariffs ADD COLUMN night_tariff_percent REAL NOT NULL DEFAULT 50.0")
+                logger.info("✅ Додано колонку night_tariff_percent до tariffs")
+            except:
+                pass  # Колонка вже існує
+            
+            try:
+                await db.execute("ALTER TABLE tariffs ADD COLUMN weather_percent REAL NOT NULL DEFAULT 0.0")
+                logger.info("✅ Додано колонку weather_percent до tariffs")
+            except:
+                pass  # Колонка вже існує
             # Users: registered clients
             await db.execute(
                 """
@@ -1885,7 +1900,9 @@ class Tariff:
     per_minute: float
     minimum: float
     commission_percent: float  # e.g., 0.02 for 2%
-    created_at: datetime
+    night_tariff_percent: float = 50.0  # % надбавка за нічний тариф (за замовчуванням 50%)
+    weather_percent: float = 0.0  # % надбавка за погодні умови (за замовчуванням 0%)
+    created_at: Optional[datetime] = None
 
 
 async def insert_tariff(db_path: str, t: Tariff) -> int:
@@ -1899,6 +1916,33 @@ async def insert_tariff(db_path: str, t: Tariff) -> int:
         )
         await db.commit()
         return cursor.lastrowid
+
+
+async def update_tariff_multipliers(db_path: str, night_percent: float, weather_percent: float) -> bool:
+    """Оновити множники націнок в останньому тарифі"""
+    async with db_manager.connect(db_path) as db:
+        # Отримати ID останнього тарифу
+        cur = await db.execute("SELECT id FROM tariffs ORDER BY id DESC LIMIT 1")
+        row = await cur.fetchone()
+        
+        if not row:
+            return False
+        
+        tariff_id = row[0]
+        
+        # Оновити множники
+        cur = await db.execute(
+            """
+            UPDATE tariffs 
+            SET night_tariff_percent = ?, weather_percent = ?
+            WHERE id = ?
+            """,
+            (night_percent, weather_percent, tariff_id)
+        )
+        await db.commit()
+        
+        logger.info(f"✅ Оновлено націнки: нічний={night_percent}%, погода={weather_percent}%")
+        return cur.rowcount > 0
 
 
 async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
@@ -1916,5 +1960,7 @@ async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
         per_minute=row[3],
         minimum=row[4],
         commission_percent=row[5] if row[5] is not None else 0.02,
-        created_at=_parse_datetime(row[6]),
+        night_tariff_percent=row[6] if row[6] is not None else 50.0,
+        weather_percent=row[7] if row[7] is not None else 0.0,
+        created_at=_parse_datetime(row[8]),
     )

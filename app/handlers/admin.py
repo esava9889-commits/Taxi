@@ -66,6 +66,13 @@ class TariffStates(StatesGroup):
     commission = State()
 
 
+class SettingsStates(StatesGroup):
+    """Стани для налаштувань (націнки)"""
+    select_option = State()  # Вибір що налаштувати
+    night_tariff = State()  # Введення % нічного тарифу
+    weather = State()  # Введення % погоди
+
+
 class BroadcastStates(StatesGroup):
     message = State()
 
@@ -586,6 +593,224 @@ def create_router(config: AppConfig) -> Router:
             logger.error(f"Error in driver moderation: {e}")
             await call.answer("❌ Помилка при обробці", show_alert=True)
 
+    @router.message(F.text == "⚙️ Налаштування")
+    async def show_settings(message: Message) -> None:
+        """Показати меню налаштувань"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        # Отримати поточні налаштування з БД
+        tariff = await get_latest_tariff(config.database_path)
+        
+        if not tariff:
+            await message.answer(
+                "❌ Тарифи не налаштовані. Спочатку створіть тариф через '💰 Тарифи'.",
+                reply_markup=admin_menu_keyboard()
+            )
+            return
+        
+        night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
+        weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
+        
+        text = (
+            "⚙️ <b>НАЛАШТУВАННЯ НАЦІНОК</b>\n\n"
+            "<b>Поточні значення:</b>\n\n"
+            f"🌙 <b>Нічний тариф:</b> +{night_percent:.0f}%\n"
+            f"   (23:00 - 06:00)\n\n"
+            f"🌧️ <b>Погодні умови:</b> +{weather_percent:.0f}%\n"
+            f"   (адмін увімкнув вручну)\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "💡 <b>Як це працює:</b>\n\n"
+            "• При замовленні таксі ці націнки додаються до базової ціни\n"
+            "• Клієнт бачить збільшену суму під час замовлення\n"
+            "• Водії бачать збільшену суму в групі\n"
+            "• Націнки комбінуються (наприклад: 23:00 + дощ = +70%)\n\n"
+            "Оберіть що налаштувати:"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🌙 Нічний тариф", callback_data="settings:night")],
+                [InlineKeyboardButton(text="🌧️ Погодні умови", callback_data="settings:weather")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="settings:back")]
+            ]
+        )
+        
+        await message.answer(text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "settings:night")
+    async def settings_night_tariff(call: CallbackQuery, state: FSMContext) -> None:
+        """Налаштувати нічний тариф"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        
+        await call.answer()
+        await state.set_state(SettingsStates.night_tariff)
+        
+        tariff = await get_latest_tariff(config.database_path)
+        current = tariff.night_tariff_percent if tariff and hasattr(tariff, 'night_tariff_percent') else 50.0
+        
+        await call.message.edit_text(
+            f"🌙 <b>НІЧНИЙ ТАРИФ</b>\n\n"
+            f"Поточна надбавка: <b>+{current:.0f}%</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📝 Введіть нову надбавку у відсотках:\n\n"
+            f"Наприклад:\n"
+            f"• <code>50</code> → +50% (1.5x)\n"
+            f"• <code>30</code> → +30% (1.3x)\n"
+            f"• <code>0</code> → вимкнути\n\n"
+            f"⏰ Діє з 23:00 до 06:00"
+        )
+    
+    @router.callback_query(F.data == "settings:weather")
+    async def settings_weather(call: CallbackQuery, state: FSMContext) -> None:
+        """Налаштувати погодні умови"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        
+        await call.answer()
+        await state.set_state(SettingsStates.weather)
+        
+        tariff = await get_latest_tariff(config.database_path)
+        current = tariff.weather_percent if tariff and hasattr(tariff, 'weather_percent') else 0.0
+        
+        await call.message.edit_text(
+            f"🌧️ <b>ПОГОДНІ УМОВИ</b>\n\n"
+            f"Поточна надбавка: <b>+{current:.0f}%</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📝 Введіть надбавку у відсотках:\n\n"
+            f"Наприклад:\n"
+            f"• <code>20</code> → +20% (погана погода)\n"
+            f"• <code>30</code> → +30% (дуже погана погода)\n"
+            f"• <code>0</code> → вимкнути\n\n"
+            f"💡 Увімкніть вручну при дощі, снігу, тощо.\n"
+            f"Не забудьте вимкнути коли погода покращає!"
+        )
+    
+    @router.callback_query(F.data == "settings:back")
+    async def settings_back(call: CallbackQuery) -> None:
+        """Повернутися до меню адміна"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        
+        await call.answer()
+        await call.message.delete()
+        await call.message.answer("🔙 Повернення до меню", reply_markup=admin_menu_keyboard())
+    
+    @router.message(SettingsStates.night_tariff)
+    async def save_night_tariff(message: Message, state: FSMContext) -> None:
+        """Зберегти нічний тариф"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        try:
+            night_percent = float(message.text.strip())
+            if night_percent < 0 or night_percent > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        # Отримати поточну погоду
+        tariff = await get_latest_tariff(config.database_path)
+        weather_percent = tariff.weather_percent if tariff and hasattr(tariff, 'weather_percent') else 0.0
+        
+        # Оновити націнки
+        from app.storage.db import update_tariff_multipliers
+        success = await update_tariff_multipliers(config.database_path, night_percent, weather_percent)
+        
+        if success:
+            await state.clear()
+            
+            # Повідомлення в групи водіїв
+            notification = (
+                f"🌙 <b>ОНОВЛЕНО НІЧНИЙ ТАРИФ</b>\n\n"
+                f"Надбавка: <b>+{night_percent:.0f}%</b>\n"
+                f"Час дії: 23:00 - 06:00\n\n"
+                f"💰 Вартість замовлень збільшена!"
+            )
+            
+            # Відправити в усі групи
+            sent_count = 0
+            for city, group_id in config.city_groups.items():
+                if group_id:
+                    try:
+                        await message.bot.send_message(group_id, notification)
+                        sent_count += 1
+                    except Exception as e:
+                        logger.error(f"Помилка відправки в групу {city}: {e}")
+            
+            await message.answer(
+                f"✅ Нічний тариф оновлено: <b>+{night_percent:.0f}%</b>\n\n"
+                f"📢 Повідомлення надіслано в {sent_count} груп водіїв",
+                reply_markup=admin_menu_keyboard()
+            )
+        else:
+            await message.answer("❌ Помилка оновлення", reply_markup=admin_menu_keyboard())
+    
+    @router.message(SettingsStates.weather)
+    async def save_weather(message: Message, state: FSMContext) -> None:
+        """Зберегти погодні умови"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        try:
+            weather_percent = float(message.text.strip())
+            if weather_percent < 0 or weather_percent > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        # Отримати поточний нічний тариф
+        tariff = await get_latest_tariff(config.database_path)
+        night_percent = tariff.night_tariff_percent if tariff and hasattr(tariff, 'night_tariff_percent') else 50.0
+        
+        # Оновити націнки
+        from app.storage.db import update_tariff_multipliers
+        success = await update_tariff_multipliers(config.database_path, night_percent, weather_percent)
+        
+        if success:
+            await state.clear()
+            
+            # Повідомлення в групи водіїв
+            if weather_percent > 0:
+                notification = (
+                    f"🌧️ <b>УВІМКНЕНО НАДБАВКУ ЗА ПОГОДУ</b>\n\n"
+                    f"Надбавка: <b>+{weather_percent:.0f}%</b>\n\n"
+                    f"⚠️ Погодні умови погіршились!\n"
+                    f"💰 Вартість замовлень збільшена"
+                )
+            else:
+                notification = (
+                    f"☀️ <b>ВИМКНЕНО НАДБАВКУ ЗА ПОГОДУ</b>\n\n"
+                    f"✅ Погода покращала\n"
+                    f"💰 Вартість повернута до стандартної"
+                )
+            
+            # Відправити в усі групи
+            sent_count = 0
+            for city, group_id in config.city_groups.items():
+                if group_id:
+                    try:
+                        await message.bot.send_message(group_id, notification)
+                        sent_count += 1
+                    except Exception as e:
+                        logger.error(f"Помилка відправки в групу {city}: {e}")
+            
+            if weather_percent > 0:
+                status_text = f"✅ Погодна надбавка увімкнена: <b>+{weather_percent:.0f}%</b>"
+            else:
+                status_text = "✅ Погодна надбавка вимкнена"
+            
+            await message.answer(
+                f"{status_text}\n\n"
+                f"📢 Повідомлення надіслано в {sent_count} груп водіїв",
+                reply_markup=admin_menu_keyboard()
+            )
+        else:
+            await message.answer("❌ Помилка оновлення", reply_markup=admin_menu_keyboard())
+    
     @router.message(F.text == "📢 Розсилка")
     async def start_broadcast(message: Message, state: FSMContext) -> None:
         if not message.from_user or not is_admin(message.from_user.id):
