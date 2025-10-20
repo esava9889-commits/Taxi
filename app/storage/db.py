@@ -1907,13 +1907,26 @@ class Tariff:
 
 async def insert_tariff(db_path: str, t: Tariff) -> int:
     async with db_manager.connect(db_path) as db:
-        cursor = await db.execute(
-            """
-            INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, commission_percent, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (t.base_fare, t.per_km, t.per_minute, t.minimum, t.commission_percent, t.created_at),
-        )
+        # Спробувати з новими колонками
+        try:
+            cursor = await db.execute(
+                """
+                INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, commission_percent, night_tariff_percent, weather_percent, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (t.base_fare, t.per_km, t.per_minute, t.minimum, t.commission_percent, t.night_tariff_percent, t.weather_percent, t.created_at),
+            )
+        except Exception as e:
+            # Fallback: стара схема без нових колонок
+            logger.warning(f"⚠️ Insert tariff: використовую стару схему (без night_tariff_percent/weather_percent)")
+            cursor = await db.execute(
+                """
+                INSERT INTO tariffs (base_fare, per_km, per_minute, minimum, commission_percent, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (t.base_fare, t.per_km, t.per_minute, t.minimum, t.commission_percent, t.created_at),
+            )
+        
         await db.commit()
         return cursor.lastrowid
 
