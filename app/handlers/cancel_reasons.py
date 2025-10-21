@@ -110,7 +110,11 @@ def create_router(config: AppConfig) -> Router:
                             message_id=order.group_message_id
                         )
                 except Exception as e:
-                    logger.error(f"Failed to update group message: {e}")
+                    # Якщо повідомлення вже видалене - це не помилка
+                    if "message to edit not found" in str(e).lower() or "message can't be edited" in str(e).lower():
+                        logger.info(f"ℹ️ Group message #{order.group_message_id} already deleted (order #{order_id})")
+                    else:
+                        logger.error(f"Failed to update group message: {e}")
         else:
             await call.answer("❌ Не вдалося скасувати замовлення", show_alert=True)
 
