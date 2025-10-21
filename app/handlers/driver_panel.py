@@ -800,7 +800,7 @@ def create_router(config: AppConfig) -> Router:
 
     @router.message(F.location)
     async def share_location_with_client(message: Message) -> None:
-        """Поділитися локацією з клієнтом (для активного замовлення)"""
+        """Оновити геолокацію водія (завжди) + поділитися з клієнтом (якщо є замовлення)"""
         if not message.from_user or not message.location:
             return
         
@@ -809,26 +809,15 @@ def create_router(config: AppConfig) -> Router:
         if not driver or driver.status != "approved":
             return
         
-        # Знайти активне замовлення водія
-        from app.storage.db import get_driver_order_history
-        orders = await get_driver_order_history(config.database_path, driver.tg_user_id, limit=5)
-        
-        active_order = None
-        for order in orders:
-            if order.status in ["accepted", "in_progress"] and order.driver_id == driver.id:
-                active_order = order
-                break
-        
-        if not active_order:
-            await message.answer(
-                "❌ <b>Немає активного замовлення</b>\n\n"
-                "Щоб поділитися локацією з клієнтом,\n"
-                "спочатку прийміть замовлення."
-            )
-            return
-        
         lat = message.location.latitude
         lon = message.location.longitude
+        
+        # ⭐ ЗАВЖДИ ОНОВЛЮЄМО ГЕОЛОКАЦІЮ В БД
+        from app.utils.location_tracker import update_driver_location
+        await update_driver_location(config.database_path, message.from_user.id, lat, lon)
+        
+        # Знайти активне замовлення водія
+        active_order = await get_active_order_for_driver(config.database_path, driver.id)
         
         # Оновити локацію водія в БД
         await update_driver_location(
