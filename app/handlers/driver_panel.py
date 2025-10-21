@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -419,6 +421,39 @@ def create_router(config: AppConfig) -> Router:
         driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
         if not driver:
             return
+        
+        # ВАЛІДАЦІЯ ПРОФІЛЮ перед увімкненням онлайн
+        if not driver.online:  # Якщо намагається увімкнути онлайн
+            car_color = getattr(driver, 'car_color', None)
+            missing = []
+            if not driver.city:
+                missing.append("🏙 Місто")
+            if not driver.card_number:
+                missing.append("💳 Картка для переказів")
+            if not car_color:
+                missing.append("🎨 Колір авто")
+            if not driver.last_lat:
+                missing.append("📍 Геолокація")
+            
+            if missing:
+                await call.answer(
+                    f"❌ ПРОФІЛЬ НЕ ЗАПОВНЕНИЙ!\n\n"
+                    f"Відсутні:\n" + "\n".join(f"• {m}" for m in missing) + 
+                    f"\n\n👉 Заповніть в налаштуваннях!",
+                    show_alert=True
+                )
+                # Відправити повідомлення з кнопкою налаштувань
+                await call.bot.send_message(
+                    call.from_user.id,
+                    f"⚠️ <b>НЕ МОЖНА УВІМКНУТИ ОНЛАЙН</b>\n\n"
+                    f"Для роботи необхідно заповнити профіль!\n\n"
+                    f"<b>Відсутні дані:</b>\n" +
+                    "\n".join(f"• {m}" for m in missing) +
+                    f"\n\n💡 Натисніть кнопку <b>⚙️ Налаштування</b> в меню\n"
+                    f"і заповніть всі поля",
+                    reply_markup=driver_panel_keyboard()
+                )
+                return
         
         new = not driver.online
         await set_driver_online_status(config.database_path, driver.id, new)
@@ -2947,17 +2982,43 @@ def create_router(config: AppConfig) -> Router:
             minutes = loc_status['minutes_old']
             location_text = f"📍 Геолокація: ✅ Актуальна ({minutes:.0f}хв)"
         
+        # Перевірка повноти профілю
+        car_color = getattr(driver, 'car_color', None)
+        
+        missing_fields = []
+        if not driver.city:
+            missing_fields.append("🏙 Місто")
+        if not driver.card_number:
+            missing_fields.append("💳 Картка")
+        if not car_color:
+            missing_fields.append("🎨 Колір авто")
+        if not driver.last_lat:
+            missing_fields.append("📍 Геолокація")
+        
+        # Попередження якщо профіль неповний
+        profile_warning = ""
+        if missing_fields:
+            profile_warning = (
+                f"⚠️ <b>ПРОФІЛЬ НЕ ЗАПОВНЕНИЙ</b>\n\n"
+                f"Відсутні дані:\n"
+                + "\n".join(f"• {field}" for field in missing_fields) +
+                f"\n\n❌ Ви не зможете приймати замовлення!\n"
+                f"👇 Заповніть профіль нижче\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            )
+        
         text = (
             f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{profile_warning}"
             f"👤 <b>ОСОБИСТА ІНФОРМАЦІЯ:</b>\n\n"
             f"👨‍✈️ ПІБ: {driver.full_name}\n"
             f"📱 Телефон: {driver.phone}\n"
-            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"🏙 Місто: {driver.city or '❌ Не вказано'}\n"
             f"🚗 Авто: {driver.car_make} {driver.car_model}\n"
             f"🔢 Номер: {driver.car_plate}\n"
-            f"🎨 Колір: {driver.car_color or 'Не вказано'}\n"
-            f"💳 Картка: {driver.card_number or 'Не додана'}\n"
+            f"🎨 Колір: {car_color or '❌ Не вказано'}\n"
+            f"💳 Картка: {driver.card_number or '❌ Не додана'}\n"
             f"{location_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
@@ -2980,14 +3041,32 @@ def create_router(config: AppConfig) -> Router:
             f"• Низька (<50): ⚠️ Попередження"
         )
         
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
-                [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
-                [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="settings:update_location")],
-                [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
-            ]
-        )
+        # Кнопки з підсвічуванням відсутніх полів
+        buttons = []
+        
+        if missing_fields:
+            # Якщо профіль неповний - показати кнопки заповнення
+            if not driver.city:
+                buttons.append([InlineKeyboardButton(text="🏙 ⚠️ ВКАЗАТИ МІСТО", callback_data="settings:set_city")])
+            if not driver.card_number:
+                buttons.append([InlineKeyboardButton(text="💳 ⚠️ ДОДАТИ КАРТКУ", callback_data="settings:card")])
+            if not car_color:
+                buttons.append([InlineKeyboardButton(text="🎨 ⚠️ ВКАЗАТИ КОЛІР АВТО", callback_data="settings:set_color")])
+            if not driver.last_lat:
+                buttons.append([InlineKeyboardButton(text="📍 ⚠️ ОНОВИТИ ГЕОЛОКАЦІЮ", callback_data="settings:update_location")])
+            buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
+        
+        # Завжди показати всі налаштування
+        buttons.extend([
+            [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
+            [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
+            [InlineKeyboardButton(text="🎨 Колір авто", callback_data="settings:set_color")],
+            [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
+            [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="settings:update_location")],
+            [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         await message.answer(text, reply_markup=kb)
     
@@ -3051,5 +3130,195 @@ def create_router(config: AppConfig) -> Router:
         if call.message:
             await call.message.edit_text(text, reply_markup=kb)
         await call.answer("✅ Оновлено!")
+    
+    # ==================== ЗАПОВНЕННЯ ПРОФІЛЮ ====================
+    
+    @router.callback_query(F.data == "noop")
+    async def noop_handler(call: CallbackQuery) -> None:
+        """Порожній обробник для роздільників"""
+        await call.answer()
+    
+    @router.callback_query(F.data == "settings:set_city")
+    async def prompt_city(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити вказати місто"""
+        await call.answer()
+        await state.set_state(DriverProfileStates.waiting_for_city)
+        
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Київ"), KeyboardButton(text="Львів")],
+                [KeyboardButton(text="Одеса"), KeyboardButton(text="Дніпро")],
+                [KeyboardButton(text="Харків"), KeyboardButton(text="Вінниця")],
+                [KeyboardButton(text="❌ Скасувати")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.bot.send_message(
+            call.from_user.id,
+            "🏙 <b>Вкажіть місто роботи</b>\n\n"
+            "Оберіть місто зі списку або введіть своє:",
+            reply_markup=kb
+        )
+    
+    @router.message(DriverProfileStates.waiting_for_city)
+    async def process_city(message: Message, state: FSMContext) -> None:
+        """Зберегти місто"""
+        if not message.text or message.text == "❌ Скасувати":
+            await state.clear()
+            await message.answer(
+                "❌ Скасовано",
+                reply_markup=driver_panel_keyboard()
+            )
+            return
+        
+        city = message.text.strip()
+        
+        # Оновити місто в БД
+        from app.storage.db import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            await db.execute(
+                "UPDATE drivers SET city = ? WHERE tg_user_id = ?",
+                (city, message.from_user.id)
+            )
+            await db.commit()
+        
+        await state.clear()
+        await message.answer(
+            f"✅ Місто збережено: <b>{city}</b>",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        logger.info(f"✅ Водій {message.from_user.id} встановив місто: {city}")
+    
+    @router.callback_query(F.data == "settings:set_color")
+    async def prompt_color(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити вказати колір авто"""
+        await call.answer()
+        await state.set_state(DriverProfileStates.waiting_for_color)
+        
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Чорний"), KeyboardButton(text="Білий")],
+                [KeyboardButton(text="Сірий"), KeyboardButton(text="Синій")],
+                [KeyboardButton(text="Червоний"), KeyboardButton(text="Зелений")],
+                [KeyboardButton(text="Срібний"), KeyboardButton(text="Жовтий")],
+                [KeyboardButton(text="❌ Скасувати")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.bot.send_message(
+            call.from_user.id,
+            "🎨 <b>Вкажіть колір автомобіля</b>\n\n"
+            "Оберіть колір зі списку або введіть свій:",
+            reply_markup=kb
+        )
+    
+    @router.message(DriverProfileStates.waiting_for_color)
+    async def process_color(message: Message, state: FSMContext) -> None:
+        """Зберегти колір (додати колонку якщо потрібно)"""
+        if not message.text or message.text == "❌ Скасувати":
+            await state.clear()
+            await message.answer(
+                "❌ Скасовано",
+                reply_markup=driver_panel_keyboard()
+            )
+            return
+        
+        color = message.text.strip()
+        
+        # Додати колонку car_color якщо не існує + оновити
+        from app.storage.db import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            # Спробувати додати колонку (якщо не існує)
+            try:
+                await db.execute("ALTER TABLE drivers ADD COLUMN car_color TEXT")
+                await db.commit()
+                logger.info("✅ Додано колонку car_color до таблиці drivers")
+            except Exception as e:
+                # Колонка вже існує - це нормально
+                pass
+            
+            # Оновити колір
+            await db.execute(
+                "UPDATE drivers SET car_color = ? WHERE tg_user_id = ?",
+                (color, message.from_user.id)
+            )
+            await db.commit()
+        
+        await state.clear()
+        await message.answer(
+            f"✅ Колір збережено: <b>{color}</b>",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        logger.info(f"✅ Водій {message.from_user.id} встановив колір: {color}")
+    
+    @router.callback_query(F.data == "settings:card")
+    async def prompt_card(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити вказати номер картки"""
+        await call.answer()
+        await state.set_state(DriverProfileStates.waiting_for_card)
+        
+        kb = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.bot.send_message(
+            call.from_user.id,
+            "💳 <b>Введіть номер картки для переказів</b>\n\n"
+            "Формат: 16 цифр (можна з пробілами)\n"
+            "Приклад: 4149 4999 1234 5678\n\n"
+            "💡 На цю картку буде переводитись комісія 2%",
+            reply_markup=kb
+        )
+    
+    @router.message(DriverProfileStates.waiting_for_card)
+    async def process_card(message: Message, state: FSMContext) -> None:
+        """Зберегти номер картки"""
+        if not message.text or message.text == "❌ Скасувати":
+            await state.clear()
+            await message.answer(
+                "❌ Скасовано",
+                reply_markup=driver_panel_keyboard()
+            )
+            return
+        
+        card = message.text.strip()
+        
+        # Валідація номера картки (тільки цифри, 16 символів)
+        card_digits = ''.join(filter(str.isdigit, card))
+        if len(card_digits) != 16:
+            await message.answer(
+                "❌ Невірний номер картки!\n\n"
+                "Має бути 16 цифр. Спробуйте ще раз:"
+            )
+            return
+        
+        # Форматувати 4149 4999 1234 5678
+        formatted_card = ' '.join([card_digits[i:i+4] for i in range(0, 16, 4)])
+        
+        # Оновити в БД
+        from app.storage.db import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            await db.execute(
+                "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
+                (formatted_card, message.from_user.id)
+            )
+            await db.commit()
+        
+        await state.clear()
+        await message.answer(
+            f"✅ Картка збережена:\n<code>{formatted_card}</code>\n\n"
+            f"💡 На цю картку переводиться комісія 2%",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        logger.info(f"✅ Водій {message.from_user.id} встановив картку: {formatted_card}")
     
     return router
