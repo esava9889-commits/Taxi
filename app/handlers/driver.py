@@ -898,7 +898,8 @@ def create_router(config: AppConfig) -> Router:
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         msg = await message.answer(
-            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate}) - {car_color}\n\n"
+            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n"
+            f"🎨 <b>Колір:</b> {car_color}\n\n"
             "🚗 <b>Крок 8/9: Клас автомобіля</b>\n\n"
             "Оберіть клас вашого авто:\n\n"
             "• 🚗 Економ - базовий тариф\n"
