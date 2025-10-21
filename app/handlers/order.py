@@ -1292,15 +1292,20 @@ def create_router(config: AppConfig) -> Router:
         user = await get_user_by_id(config.database_path, message.from_user.id)
         client_city = user.city if user and user.city else None
         
+        # DEBUG: Логування для діагностики
+        logger.info(f"🔍 DEBUG: user_id={message.from_user.id}, user={user}, user.city={user.city if user else 'NO USER'}, client_city={client_city}")
+        logger.info(f"🔍 DEBUG: config.city_groups={config.city_groups}")
+        
         # Знайти групу для цього міста
         city_group_id = None
         if client_city and client_city in config.city_groups:
             city_group_id = config.city_groups[client_city]
+            logger.info(f"✅ Знайдено групу для міста '{client_city}': {city_group_id}")
         
         # Fallback на стару групу якщо немає city-specific
         if not city_group_id and config.driver_group_chat_id:
             city_group_id = config.driver_group_chat_id
-            logger.warning(f"⚠️ Група для міста '{client_city}' не налаштована. Використовую загальну групу.")
+            logger.warning(f"⚠️ Група для міста '{client_city}' не налаштована. Використовую загальну групу {city_group_id}.")
         
         if city_group_id:
             try:

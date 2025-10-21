@@ -84,6 +84,9 @@ def create_registration_router(config: AppConfig) -> Router:
         await state.update_data(city=city)
         await call.answer(f"✅ {city}")
         
+        # DEBUG: Логування вибору міста
+        logger.info(f"🔍 CITY SELECTED: user_id={call.from_user.id}, city={city}")
+        
         # Видалити попереднє повідомлення
         data = await state.get_data()
         reg_message_id = data.get("reg_message_id")
