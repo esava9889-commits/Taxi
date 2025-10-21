@@ -3029,8 +3029,7 @@ def create_router(config: AppConfig) -> Router:
                 f"🚗 Авто: {driver.car_make} {driver.car_model}\n"
                 f"🔢 Номер: {driver.car_plate}\n"
                 f"🎨 Колір: {car_color or '❌ Не вказано'}\n"
-                f"💳 Картка: {driver.card_number or '❌ Не додана'}\n"
-                f"{location_text}\n\n"
+                f"💳 Картка: {driver.card_number or '❌ Не додана'}\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
                 f"{'🔴 Низька!' if karma < 50 else '🟡 Середня' if karma < 80 else '🟢 Відмінна!'}\n\n"
@@ -3074,15 +3073,15 @@ def create_router(config: AppConfig) -> Router:
             # ❌ ВИДАЛЕНО: Попередження про геолокацію - не обов'язкова
             buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
         
-        # Завжди показати всі налаштування
-        buttons.extend([
-            [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
-            [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
-            [InlineKeyboardButton(text="🎨 Колір авто", callback_data="settings:set_color")],
-            [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
-            [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="settings:update_location")],
-            [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
-        ])
+            # Завжди показати всі налаштування (БЕЗ геолокації!)
+            buttons.extend([
+                [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
+                [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
+                [InlineKeyboardButton(text="🎨 Колір авто", callback_data="settings:set_color")],
+                [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
+                # ❌ ВИДАЛЕНО: Оновити геолокацію - не потрібна
+                [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
+            ])
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
