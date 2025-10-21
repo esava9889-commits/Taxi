@@ -2993,6 +2993,10 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # ⚠️ Адміни мають свою кнопку налаштування - skip тут
+        if message.from_user.id in config.bot.admin_ids:
+            return
+        
         # Видалити повідомлення користувача
         try:
             await message.delete()

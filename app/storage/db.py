@@ -2099,7 +2099,7 @@ async def decrease_driver_karma(db_path: str, driver_id: int, amount: int = 5) -
             await db.execute(
                 """
                 UPDATE drivers 
-                SET karma = MAX(0, karma - ?),
+                SET karma = GREATEST(0, karma - ?),
                     rejected_orders = rejected_orders + 1
                 WHERE id = ?
                 """,
@@ -2120,7 +2120,7 @@ async def decrease_client_karma(db_path: str, user_id: int, amount: int = 5) -> 
             await db.execute(
                 """
                 UPDATE users 
-                SET karma = MAX(0, karma - ?),
+                SET karma = GREATEST(0, karma - ?),
                     cancelled_orders = cancelled_orders + 1
                 WHERE user_id = ?
                 """,
@@ -2141,7 +2141,7 @@ async def increase_driver_karma(db_path: str, driver_id: int, amount: int = 1) -
             await db.execute(
                 """
                 UPDATE drivers 
-                SET karma = MIN(100, karma + ?),
+                SET karma = LEAST(100, karma + ?),
                     total_orders = total_orders + 1
                 WHERE id = ?
                 """,
@@ -2162,7 +2162,7 @@ async def increase_client_karma(db_path: str, user_id: int, amount: int = 1) -> 
             await db.execute(
                 """
                 UPDATE users 
-                SET karma = MIN(100, karma + ?),
+                SET karma = LEAST(100, karma + ?),
                     total_orders = total_orders + 1
                 WHERE user_id = ?
                 """,
