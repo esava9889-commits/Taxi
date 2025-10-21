@@ -177,7 +177,7 @@ def create_router(config: AppConfig) -> Router:
 
     @router.message(F.text == "🚀 Почати роботу")
     async def start_work(message: Message) -> None:
-        """Меню керування"""
+        """Меню керування роботою - розширена версія"""
         if not message.from_user:
             return
         
@@ -192,31 +192,77 @@ def create_router(config: AppConfig) -> Router:
             return
         
         status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        status_emoji = "🟢" if driver.online else "🔴"
         
+        # Статистика
         online = 0
         try:
             online = await get_online_drivers_count(config.database_path, driver.city)
         except:
             pass
         
+        # Активне замовлення
+        active_order = await get_active_order_for_driver(config.database_path, driver.id)
+        
+        # Заробіток сьогодні
+        earnings_today = 0
+        commission_today = 0
+        try:
+            earnings_today, commission_today = await get_driver_earnings_today(
+                config.database_path, 
+                message.from_user.id
+            )
+        except:
+            pass
+        
+        # Текст статусу
+        if active_order:
+            order_status = (
+                f"📦 <b>Активне замовлення:</b> #{active_order.id}\n"
+                f"📍 {active_order.pickup_address[:30]}... → {active_order.destination_address[:30]}...\n"
+                f"💰 {int(active_order.fare_amount):.0f} грн\n\n"
+            )
+        else:
+            order_status = ""
+        
+        # Кнопки
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(
-                    text="🟢 ПОЧАТИ ПРАЦЮВАТИ" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
+                    text=f"{status_emoji} УВІМКНУТИ ОНЛАЙН" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
                     callback_data="work:toggle"
                 )],
-                [InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats")],
+                [
+                    InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats"),
+                    InlineKeyboardButton(text="📍 Моя локація", callback_data="work:location")
+                ],
+                [
+                    InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings"),
+                    InlineKeyboardButton(text="⚙️ Налаштування", callback_data="work:settings")
+                ],
                 [InlineKeyboardButton(text="🔄 Оновити", callback_data="work:refresh")]
             ]
         )
         
-        await message.answer(
-            f"🚀 <b>Меню керування</b>\n\n"
-            f"Статус: {status}\n"
-            f"👥 Водіїв онлайн: {online}\n\n"
-            "Оберіть дію:",
-            reply_markup=kb
+        text = (
+            f"🚀 <b>МЕНЮ КЕРУВАННЯ РОБОТОЮ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Водій:</b> {driver.full_name}\n"
+            f"🏙 <b>Місто:</b> {driver.city or 'Не вказано'}\n"
+            f"📊 <b>Статус:</b> {status}\n\n"
+            f"👥 <b>Водіїв онлайн:</b> {online} чол.\n"
+            f"💰 <b>Заробіток сьогодні:</b> {earnings_today:.0f} грн\n"
+            f"💳 <b>Комісія:</b> {commission_today:.0f} грн\n\n"
+            f"{order_status}"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Швидкі дії:</b>\n"
+            f"• Увімкніть 🟢 Онлайн щоб отримувати замовлення\n"
+            f"• Замовлення надходять в групу <b>{driver.city}</b>\n"
+            f"• Перший хто натисне ✅ Прийняти - отримує замовлення\n\n"
+            f"Оберіть дію:"
         )
+        
+        await message.answer(text, reply_markup=kb)
 
     @router.callback_query(F.data == "work:toggle")
     async def toggle_status(call: CallbackQuery) -> None:
@@ -291,7 +337,7 @@ def create_router(config: AppConfig) -> Router:
 
     @router.callback_query(F.data == "work:refresh")
     async def refresh_menu(call: CallbackQuery) -> None:
-        """Оновити меню"""
+        """Оновити меню - РОЗШИРЕНА ВЕРСІЯ"""
         if not call.from_user:
             return
         
@@ -300,27 +346,75 @@ def create_router(config: AppConfig) -> Router:
             return
         
         status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
-        online = await get_online_drivers_count(config.database_path, driver.city)
+        status_emoji = "🟢" if driver.online else "🔴"
+        
+        online = 0
+        try:
+            online = await get_online_drivers_count(config.database_path, driver.city)
+        except:
+            pass
+        
+        # Активне замовлення
+        active_order = await get_active_order_for_driver(config.database_path, driver.id)
+        
+        # Заробіток сьогодні
+        earnings_today = 0
+        commission_today = 0
+        try:
+            earnings_today, commission_today = await get_driver_earnings_today(
+                config.database_path, 
+                call.from_user.id
+            )
+        except:
+            pass
+        
+        if active_order:
+            order_status = (
+                f"📦 <b>Активне замовлення:</b> #{active_order.id}\n"
+                f"📍 {active_order.pickup_address[:30]}... → {active_order.destination_address[:30]}...\n"
+                f"💰 {int(active_order.fare_amount):.0f} грн\n\n"
+            )
+        else:
+            order_status = ""
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(
-                    text="🟢 ПОЧАТИ ПРАЦЮВАТИ" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
+                    text=f"{status_emoji} УВІМКНУТИ ОНЛАЙН" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
                     callback_data="work:toggle"
                 )],
-                [InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats")],
+                [
+                    InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats"),
+                    InlineKeyboardButton(text="📍 Моя локація", callback_data="work:location")
+                ],
+                [
+                    InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings"),
+                    InlineKeyboardButton(text="⚙️ Налаштування", callback_data="work:settings")
+                ],
                 [InlineKeyboardButton(text="🔄 Оновити", callback_data="work:refresh")]
             ]
         )
         
+        text = (
+            f"🚀 <b>МЕНЮ КЕРУВАННЯ РОБОТОЮ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Водій:</b> {driver.full_name}\n"
+            f"🏙 <b>Місто:</b> {driver.city or 'Не вказано'}\n"
+            f"📊 <b>Статус:</b> {status}\n\n"
+            f"👥 <b>Водіїв онлайн:</b> {online} чол.\n"
+            f"💰 <b>Заробіток сьогодні:</b> {earnings_today:.0f} грн\n"
+            f"💳 <b>Комісія:</b> {commission_today:.0f} грн\n\n"
+            f"{order_status}"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Швидкі дії:</b>\n"
+            f"• Увімкніть 🟢 Онлайн щоб отримувати замовлення\n"
+            f"• Замовлення надходять в групу <b>{driver.city}</b>\n"
+            f"• Перший хто натисне ✅ Прийняти - отримує замовлення\n\n"
+            f"Оберіть дію:"
+        )
+        
         if call.message:
-            await call.message.edit_text(
-                f"🚀 <b>Меню керування</b>\n\n"
-                f"Статус: {status}\n"
-                f"👥 Водіїв онлайн: {online}\n\n"
-                "Оберіть дію:",
-                reply_markup=kb
-            )
+            await call.message.edit_text(text, reply_markup=kb)
         await call.answer("✅ Оновлено!")
 
     @router.callback_query(F.data == "work:stats")
@@ -1741,23 +1835,94 @@ def create_router(config: AppConfig) -> Router:
     
     @router.message(F.text == "ℹ️ Допомога")
     async def trip_help_button(message: Message) -> None:
-        """Інструкції для водія під час поїздки"""
-        await message.answer(
-            "ℹ️ <b>Допомога - Керування поїздкою</b>\n\n"
-            "<b>Крок 1:</b> 🚗 <b>В дорозі</b>\n"
-            "Натисніть коли почнете рух до клієнта\n\n"
-            "<b>Крок 2:</b> 📍 <b>На місці</b>\n"
-            "Натисніть коли приїдете на адресу подачі\n\n"
-            "<b>Крок 3:</b> 🚀 <b>Виконую замовлення</b>\n"
-            "Натисніть коли клієнт сів і ви почали поїздку\n\n"
-            "<b>Крок 4:</b> 🏁 <b>Завершити</b>\n"
-            "Натисніть коли доїхали до призначення\n\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "<b>Додаткові кнопки:</b>\n\n"
-            "❌ <b>Відмовитися</b> - скасувати замовлення\n"
-            "📞 <b>Зв'язатися</b> - номер телефону клієнта\n"
-            "💬 <b>Підтримка</b> - зв'язок з адміністрацією"
+        """Інструкції для водія (універсальна - працює завжди)"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        
+        # Перевірити чи є активне замовлення
+        active_order = None
+        if driver:
+            active_order = await get_active_order_for_driver(config.database_path, driver.id)
+        
+        if active_order:
+            # Допомога під час поїздки
+            help_text = (
+                "ℹ️ <b>Допомога - Керування поїздкою</b>\n\n"
+                "<b>Крок 1:</b> 🚗 <b>В дорозі</b>\n"
+                "Натисніть коли почнете рух до клієнта\n\n"
+                "<b>Крок 2:</b> 📍 <b>На місці</b>\n"
+                "Натисніть коли приїдете на адресу подачі\n\n"
+                "<b>Крок 3:</b> 🚀 <b>Виконую замовлення</b>\n"
+                "Натисніть коли клієнт сів і ви почали поїздку\n\n"
+                "<b>Крок 4:</b> 🏁 <b>Завершити</b>\n"
+                "Натисніть коли доїхали до призначення\n\n"
+                "━━━━━━━━━━━━━━━\n\n"
+                "<b>Додаткові кнопки:</b>\n\n"
+                "❌ <b>Відмовитися</b> - скасувати замовлення\n"
+                "📞 <b>Зв'язатися</b> - номер телефону клієнта\n"
+                "💬 <b>Підтримка</b> - зв'язок з адміністрацією"
+            )
+        else:
+            # Допомога на головній панелі
+            help_text = (
+                "ℹ️ <b>ДОПОМОГА ДЛЯ ВОДІЯ</b>\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+                "🚀 <b>ПОЧАТИ РОБОТУ:</b>\n"
+                "1. Натисніть 🚀 Почати роботу\n"
+                "2. Увімкніть статус 🟢 Онлайн\n"
+                "3. Замовлення надходять в групу вашого міста\n"
+                "4. Натисніть ✅ Прийняти на замовленні\n\n"
+                
+                "📱 <b>ПРИЙНЯТТЯ ЗАМОВЛЕННЯ:</b>\n"
+                "• Замовлення з'являється в групі\n"
+                "• Перший хто натисне ✅ Прийняти - отримує\n"
+                "• Якщо не успіли - чекайте наступне\n\n"
+                
+                "🎯 <b>ВИКОНАННЯ ЗАМОВЛЕННЯ:</b>\n"
+                "1. 🚗 В дорозі - рухайтесь до клієнта\n"
+                "2. 📍 На місці - прибули на адресу\n"
+                "3. 🚀 Виконую - клієнт сів, їдете\n"
+                "4. 🏁 Завершити - доїхали, оплата\n\n"
+                
+                "💰 <b>ЗАРОБІТОК:</b>\n"
+                "• 📊 Мій заробіток - сьогодні\n"
+                "• 💳 Комісія - нарахована комісія\n"
+                "• 📜 Історія - всі поїздки\n"
+                "• 💼 Гаманець - картка для переказів\n\n"
+                
+                "📊 <b>СТАТИСТИКА:</b>\n"
+                "• 📊 Розширена аналітика - детально\n\n"
+                
+                "⚠️ <b>ПРОБЛЕМИ:</b>\n"
+                "• Не приходять замовлення → перевірте статус (має бути 🟢 Онлайн)\n"
+                "• Кнопка не працює → спробуйте ще раз через 1 хв\n"
+                "• Технічні питання → 💬 Підтримка\n\n"
+                
+                "━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "💡 Для детальних інструкцій натисніть:\n"
+                "📖 Правила користування"
+            )
+        
+        # Inline кнопка "Зрозуміло"
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Зрозуміло", callback_data="help:close")]
+            ]
         )
+        
+        await message.answer(help_text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "help:close")
+    async def close_help(call: CallbackQuery) -> None:
+        """Закрити допомогу"""
+        await call.answer("✅")
+        try:
+            await call.message.delete()
+        except:
+            pass
     
     @router.message(F.text == "💬 Підтримка")
     async def trip_support_button(message: Message) -> None:
@@ -1918,5 +2083,136 @@ def create_router(config: AppConfig) -> Router:
             await call.message.delete()
         except:
             pass
+    
+    @router.callback_query(F.data == "work:location")
+    async def show_work_location(call: CallbackQuery) -> None:
+        """Показати поточну геолокацію водія"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            return
+        
+        if driver.last_lat and driver.last_lon:
+            await call.answer("📍 Ваша остання геолокація:")
+            
+            # Надіслати геолокацію
+            await call.bot.send_location(
+                call.from_user.id,
+                latitude=driver.last_lat,
+                longitude=driver.last_lon
+            )
+            
+            # Додати текстове пояснення
+            from datetime import datetime, timezone
+            if driver.last_seen_at:
+                last_seen = driver.last_seen_at
+                if isinstance(last_seen, str):
+                    try:
+                        last_seen = datetime.fromisoformat(last_seen)
+                    except:
+                        pass
+                
+                if isinstance(last_seen, datetime):
+                    time_diff = datetime.now(timezone.utc) - last_seen.replace(tzinfo=timezone.utc)
+                    minutes_ago = int(time_diff.total_seconds() / 60)
+                    time_text = f"(оновлено {minutes_ago} хв тому)"
+                else:
+                    time_text = ""
+            else:
+                time_text = ""
+            
+            await call.bot.send_message(
+                call.from_user.id,
+                f"📍 <b>Ваша остання геолокація</b> {time_text}\n\n"
+                f"💡 Геолокація оновлюється автоматично коли ви активні"
+            )
+        else:
+            await call.answer(
+                "❌ Геолокація недоступна.\n"
+                "Надішліть геолокацію через телефон.",
+                show_alert=True
+            )
+    
+    @router.callback_query(F.data == "work:earnings")
+    async def show_work_earnings(call: CallbackQuery) -> None:
+        """Швидкий перегляд заробітку"""
+        if not call.from_user:
+            return
+        
+        earnings_today, commission_today = await get_driver_earnings_today(
+            config.database_path, 
+            call.from_user.id
+        )
+        
+        net_today = earnings_today - commission_today
+        
+        await call.answer(
+            f"💰 Сьогодні:\n"
+            f"Заробіток: {earnings_today:.0f} грн\n"
+            f"Комісія: {commission_today:.0f} грн\n"
+            f"Чистий: {net_today:.0f} грн",
+            show_alert=True
+        )
+    
+    @router.callback_query(F.data == "work:settings")
+    async def show_work_settings(call: CallbackQuery) -> None:
+        """Налаштування роботи"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            return
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
+                [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
+                [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="settings:update_location")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="work:refresh")]
+            ]
+        )
+        
+        car_class_text = {
+            'economy': '💺 Економ',
+            'standard': '🚗 Стандарт', 
+            'comfort': '🚙 Комфорт',
+            'business': '💼 Бізнес'
+        }.get(driver.car_class, driver.car_class)
+        
+        text = (
+            f"⚙️ <b>НАЛАШТУВАННЯ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🚗 <b>Клас авто:</b> {car_class_text}\n"
+            f"💳 <b>Картка:</b> {driver.card_number or 'Не вказано'}\n"
+            f"📍 <b>Геолокація:</b> {'✅ Активна' if driver.last_lat else '❌ Не оновлювалась'}\n\n"
+            f"Оберіть що налаштувати:"
+        )
+        
+        await call.message.edit_text(text, reply_markup=kb)
+        await call.answer()
+    
+    @router.callback_query(F.data == "settings:update_location")
+    async def update_location_prompt(call: CallbackQuery) -> None:
+        """Попросити водія оновити геолокацію"""
+        await call.answer()
+        
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати мою геолокацію", request_location=True)]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.bot.send_message(
+            call.from_user.id,
+            "📍 <b>Оновлення геолокації</b>\n\n"
+            "Натисніть кнопку нижче щоб надіслати вашу поточну геолокацію.\n\n"
+            "💡 Це допоможе клієнтам бачити вашу позицію під час поїздки.",
+            reply_markup=kb
+        )
     
     return router
