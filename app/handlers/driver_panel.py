@@ -819,60 +819,67 @@ def create_router(config: AppConfig) -> Router:
         # Знайти активне замовлення водія
         active_order = await get_active_order_for_driver(config.database_path, driver.id)
         
-        # Оновити локацію водія в БД
-        await update_driver_location(
-            config.database_path,
-            message.from_user.id,
-            lat,
-            lon
-        )
-        
-        try:
-            # Надіслати live location клієнту (оновлюється автоматично 15 хвилин)
-            await message.bot.send_location(
-                active_order.user_id,
-                latitude=lat,
-                longitude=lon,
-                live_period=900,  # 15 хвилин
-            )
-            
-            # Надіслати повідомлення з інформацією
-            kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="🗺️ Відкрити в Google Maps",
-                        url=f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-                    )]
-                ]
-            )
-            
-            await message.bot.send_message(
-                active_order.user_id,
-                f"📍 <b>Водій поділився локацією!</b>\n\n"
-                f"🚗 {driver.full_name}\n"
-                f"🚙 {driver.car_make} {driver.car_model}\n"
-                f"📱 <code>{driver.phone}</code>\n\n"
-                f"Ви можете відстежувати його переміщення\n"
-                f"протягом наступних 15 хвилин.",
-                reply_markup=kb
-            )
-            
+        # ⭐ ЯКЩО Є АКТИВНЕ ЗАМОВЛЕННЯ - відправити клієнту
+        if active_order:
+            try:
+                # Надіслати live location клієнту (оновлюється автоматично 15 хвилин)
+                await message.bot.send_location(
+                    active_order.user_id,
+                    latitude=lat,
+                    longitude=lon,
+                    live_period=900,  # 15 хвилин
+                )
+                
+                # Надіслати повідомлення з інформацією
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="🗺️ Відкрити в Google Maps",
+                            url=f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+                        )]
+                    ]
+                )
+                
+                await message.bot.send_message(
+                    active_order.user_id,
+                    f"📍 <b>Водій поділився локацією!</b>\n\n"
+                    f"🚗 {driver.full_name}\n"
+                    f"🚙 {driver.car_make} {driver.car_model}\n"
+                    f"📱 <code>{driver.phone}</code>\n\n"
+                    f"Ви можете відстежувати його переміщення\n"
+                    f"протягом наступних 15 хвилин.",
+                    reply_markup=kb
+                )
+                
+                await message.answer(
+                    f"✅ <b>Локацію надіслано клієнту!</b>\n\n"
+                    f"👤 Клієнт: {active_order.name}\n"
+                    f"📱 {active_order.phone}\n\n"
+                    f"Клієнт тепер бачить вашу локацію в реальному часі.\n"
+                    f"⏱️ Live tracking активний: 15 хвилин",
+                    reply_markup=driver_panel_keyboard()
+                )
+                
+                logger.info(f"Driver {driver.tg_user_id} shared location with client for order #{active_order.id}")
+                
+            except Exception as e:
+                logger.error(f"Failed to share location with client: {e}")
+                await message.answer(
+                    "❌ Не вдалося надіслати локацію клієнту.\n"
+                    "Спробуйте ще раз.",
+                    reply_markup=driver_panel_keyboard()
+                )
+        else:
+            # ⭐ НЕМАЄ АКТИВНОГО ЗАМОВЛЕННЯ - просто оновили геолокацію
             await message.answer(
-                f"✅ <b>Локацію надіслано клієнту!</b>\n\n"
-                f"👤 Клієнт: {active_order.name}\n"
-                f"📱 {active_order.phone}\n\n"
-                f"Клієнт тепер бачить вашу локацію в реальному часі.\n"
-                f"⏱️ Live tracking активний: 15 хвилин"
+                "✅ <b>Геолокацію оновлено!</b>\n\n"
+                "📍 Ваша поточна позиція збережена.\n\n"
+                "💡 Коли ви приймете замовлення, клієнт зможе\n"
+                "бачити вашу геолокацію в реальному часі.",
+                reply_markup=driver_panel_keyboard()
             )
             
-            logger.info(f"Driver {driver.tg_user_id} shared location with client for order #{active_order.id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to share location with client: {e}")
-            await message.answer(
-                "❌ Не вдалося надіслати локацію клієнту.\n"
-                "Спробуйте ще раз."
-            )
+            logger.info(f"Driver {driver.tg_user_id} updated location (no active order)")
 
     # ⛔ ВИДАЛЕНО: "Мій заробіток" - тепер в "⚙️ Налаштування"
 
