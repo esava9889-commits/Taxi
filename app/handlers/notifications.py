@@ -141,8 +141,13 @@ async def notify_driver_new_order(
     estimated_fare: Optional[float] = None
 ) -> None:
     """Сповіщення водію про нове замовлення"""
-    distance_text = f"\n📏 Відстань: {distance_km:.1f} км" if distance_km else ""
-    fare_text = f"\n💰 Орієнтовна вартість: ~{estimated_fare:.0f} грн" if estimated_fare else ""
+    distance_text = f"📏 {distance_km:.1f} км\n" if distance_km else ""
+    fare_text = f"💰 <b>ВАРТІСТЬ: {int(estimated_fare)} грн</b> 💰" if estimated_fare else ""
+    
+    # Очистити адреси
+    from app.handlers.driver_panel import clean_address
+    clean_pickup = clean_address(pickup_address)
+    clean_destination = clean_address(destination_address)
     
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -154,11 +159,15 @@ async def notify_driver_new_order(
     try:
         await bot.send_message(
             driver_id,
-            f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
-            f"👤 Клієнт: {client_name}\n"
-            f"📍 Звідки: {pickup_address}\n"
-            f"📍 Куди: {destination_address}{distance_text}{fare_text}\n\n"
-            f"⏰ Прийміть замовлення швидше за інших!",
+            f"🚖 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
+            f"{fare_text}\n"
+            f"{distance_text}"
+            f"━━━━━━━━━━━━━━━━━\n\n"
+            f"📍 <b>МАРШРУТ:</b>\n"
+            f"🔵 {clean_pickup}\n"
+            f"🔴 {clean_destination}\n\n"
+            f"👤 {client_name}\n\n"
+            f"⏰ Прийміть швидше за інших!",
             reply_markup=kb
         )
     except Exception as e:

@@ -1408,19 +1408,37 @@ def create_router(config: AppConfig) -> Router:
                 # БЕЗПЕКА: Маскуємо номер телефону в групі (показуємо тільки останні 2 цифри)
                 masked_phone = mask_phone_number(str(data.get('phone', '')), show_last_digits=2)
                 
+                # Очистити адреси від Plus Codes
+                from app.handlers.driver_panel import clean_address
+                clean_pickup = clean_address(data.get('pickup', ''))
+                clean_destination = clean_address(data.get('destination', ''))
+                
+                # Створити посилання на маршрут Google Maps
+                route_link = ""
+                if pickup_lat and pickup_lon and dest_lat and dest_lon:
+                    route_link = (
+                        f"\n🗺️ <a href='https://www.google.com/maps/dir/?api=1"
+                        f"&origin={pickup_lat},{pickup_lon}"
+                        f"&destination={dest_lat},{dest_lon}"
+                        f"&travelmode=driving'>Відкрити маршрут на Google Maps</a>"
+                    )
+                
+                # Форматування вартості для візуального виділення
+                fare_amount = data.get('fare_amount', 0)
+                fare_text = f"💰 <b>ВАРТІСТЬ: {int(fare_amount)} грн</b> 💰" if fare_amount else ""
+                
                 group_message = (
-                    f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
-                    f"🏙 Місто: {data.get('city')}\n"
-                    f"🚗 Клас: {car_class_name}\n"
-                    f"👤 Клієнт: {data.get('name')}\n"
-                    f"📱 Телефон: <code>{masked_phone}</code> 🔒\n\n"
-                    f"📍 Звідки: {data.get('pickup')}{pickup_link}\n"
-                    f"📍 Куди: {data.get('destination')}{dest_link}\n"
-                    f"{distance_info}\n"
-                    f"💬 Коментар: {data.get('comment') or '—'}\n\n"
-                    f"⏰ Час: {datetime.now(timezone.utc).strftime('%H:%M')}\n\n"
-                    f"🏆 <i>Топ-водії вже отримали сповіщення</i>\n"
-                    f"ℹ️ <i>Повний номер буде доступний після прийняття</i>"
+                    f"🚖 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
+                    f"{fare_text}\n"
+                    f"{distance_info}"
+                    f"━━━━━━━━━━━━━━━━━\n\n"
+                    f"📍 <b>МАРШРУТ:</b>\n"
+                    f"🔵 {clean_pickup}\n"
+                    f"🔴 {clean_destination}{route_link}\n\n"
+                    f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
+                    f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
+                    f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {data.get('city')}\n\n"
+                    f"ℹ️ <i>Повний номер після прийняття</i>"
                 )
                 
                 sent_message = await message.bot.send_message(
@@ -1709,21 +1727,31 @@ def create_router(config: AppConfig) -> Router:
                     clean_pickup = clean_address(order.pickup_address)
                     clean_destination = clean_address(order.destination_address)
                     
+                    # Створити посилання на маршрут Google Maps
+                    route_link = ""
+                    if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
+                        route_link = (
+                            f"\n🗺️ <a href='https://www.google.com/maps/dir/?api=1"
+                            f"&origin={order.pickup_lat},{order.pickup_lon}"
+                            f"&destination={order.dest_lat},{order.dest_lon}"
+                            f"&travelmode=driving'>Відкрити маршрут на Google Maps</a>"
+                        )
+                    
                     await call.bot.edit_message_text(
                         chat_id=group_id,
                         message_id=order.group_message_id,
                         text=(
-                            f"💰 <b>ЦІНУ ПІДВИЩЕНО! ЗАМОВЛЕННЯ #{order_id}</b>\n"
-                            f"⬆️ <b>+{increase_amount:.0f} грн до ціни!</b>\n\n"
-                            f"🏙 Місто: {client_city or 'Не вказано'}\n"
-                            f"🚗 Клас: {car_class_name}\n"
-                            f"👤 Клієнт: {order.name}\n"
-                            f"📱 Телефон: <code>{masked_phone}</code> 🔒\n\n"
-                            f"📍 Звідки: {clean_pickup}{pickup_link}\n"
-                            f"📍 Куди: {clean_destination}{dest_link}\n"
-                            f"{distance_info}\n"
-                            f"💰 <b>Нова вартість: {new_fare:.0f} грн</b> 💰\n"
-                            f"💬 Коментар: {order.comment or '—'}\n\n"
+                            f"🚖 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
+                            f"💰 <b>ВАРТІСТЬ: {int(new_fare)} грн</b> 💰\n"
+                            f"⬆️ <b>+{int(increase_amount)} грн</b> (клієнт підвищив!)\n"
+                            f"{distance_info}"
+                            f"━━━━━━━━━━━━━━━━━\n\n"
+                            f"📍 <b>МАРШРУТ:</b>\n"
+                            f"🔵 {clean_pickup}\n"
+                            f"🔴 {clean_destination}{route_link}\n\n"
+                            f"👤 {order.name} • 📱 <code>{masked_phone}</code> 🔒\n"
+                            f"💬 {order.comment or 'Без коментарів'}\n\n"
+                            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or 'Не вказано'}\n\n"
                             f"⚠️ <b>Клієнт готовий платити більше!</b>\n"
                             f"ℹ️ <i>Повний номер після прийняття</i>"
                         ),
