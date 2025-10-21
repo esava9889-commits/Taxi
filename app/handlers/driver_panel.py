@@ -363,7 +363,7 @@ def create_router(config: AppConfig) -> Router:
         else:
             order_status = ""
         
-        # Кнопки
+        # Кнопки (прибрано "Моя локація" та "Налаштування" - тепер в основному меню)
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(
@@ -372,11 +372,7 @@ def create_router(config: AppConfig) -> Router:
                 )],
                 [
                     InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats"),
-                    InlineKeyboardButton(text="📍 Моя локація", callback_data="work:location")
-                ],
-                [
-                    InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings"),
-                    InlineKeyboardButton(text="⚙️ Налаштування", callback_data="work:settings")
+                    InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings")
                 ],
                 [InlineKeyboardButton(text="🔄 Оновити", callback_data="work:refresh")]
             ]
@@ -3024,32 +3020,58 @@ def create_router(config: AppConfig) -> Router:
         # Відсоток відмов
         reject_percent = (rejected_orders / total_orders * 100) if total_orders > 0 else 0
         
+        # Перевірка геолокації
+        from app.utils.location_tracker import check_driver_location_status
+        loc_status = await check_driver_location_status(config.database_path, message.from_user.id)
+        
+        if not loc_status['has_location']:
+            location_text = "📍 Геолокація: ❌ Не встановлена"
+        elif loc_status['is_stale']:
+            hours = loc_status['hours_old']
+            location_text = f"📍 Геолокація: ⚠️ Застаріла ({hours:.0f}год)"
+        else:
+            minutes = loc_status['minutes_old']
+            location_text = f"📍 Геолокація: ✅ Актуальна ({minutes:.0f}хв)"
+        
         text = (
             f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>ОСОБИСТА ІНФОРМАЦІЯ:</b>\n\n"
+            f"👨‍✈️ ПІБ: {driver.full_name}\n"
+            f"📱 Телефон: {driver.phone}\n"
+            f"🏙 Місто: {driver.city or 'Не вказано'}\n"
+            f"🚗 Авто: {driver.car_make} {driver.car_model}\n"
+            f"🔢 Номер: {driver.car_plate}\n"
+            f"🎨 Колір: {driver.car_color or 'Не вказано'}\n"
+            f"💳 Картка: {driver.card_number or 'Не додана'}\n"
+            f"{location_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
             f"{'🔴 Низька!' if karma < 50 else '🟡 Середня' if karma < 80 else '🟢 Відмінна!'}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📊 <b>СТАТИСТИКА:</b>\n\n"
-            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
-            f"✅ <b>Виконано:</b> {completed_orders}\n"
-            f"❌ <b>Відмов:</b> {rejected_orders} ({reject_percent:.1f}%)\n\n"
+            f"📦 Всього замовлень: {total_orders}\n"
+            f"✅ Виконано: {completed_orders}\n"
+            f"❌ Відмов: {rejected_orders} ({reject_percent:.1f}%)\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💰 <b>ЗАРОБІТОК СЬОГОДНІ:</b>\n\n"
-            f"💵 <b>Заробіток:</b> {earnings_today:.0f} грн\n"
-            f"💳 <b>Комісія (2%):</b> {commission_today:.0f} грн\n"
-            f"💰 <b>Чистий:</b> {net_today:.0f} грн\n\n"
+            f"💵 Заробіток: {earnings_today:.0f} грн\n"
+            f"💳 Комісія (2%): {commission_today:.0f} грн\n"
+            f"💰 Чистий: {net_today:.0f} грн\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💡 <b>ЯК ПРАЦЮЄ КАРМА:</b>\n"
             f"• Старт: 100 балів\n"
-            f"• Відмова від замовлення: -5 балів\n"
-            f"• Успішне замовлення: +1 бал (макс 100)\n"
-            f"• Низька карма (<50): ⚠️ Попередження"
+            f"• Відмова: -5 балів\n"
+            f"• Успіх: +1 бал (макс 100)\n"
+            f"• Низька (<50): ⚠️ Попередження"
         )
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
+                [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
+                [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
+                [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="settings:update_location")],
+                [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
             ]
         )
         
