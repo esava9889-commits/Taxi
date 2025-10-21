@@ -2906,8 +2906,14 @@ def create_router(config: AppConfig) -> Router:
         
         # Якщо НЕ водій → помилка
         if not driver:
-            await message.answer("❌ Ви не зареєстровані як водій")
+            logger.warning(f"❌ Користувач {message.from_user.id} не є водієм")
+            await message.answer(
+                "❌ Ви не зареєстровані як водій",
+                reply_markup=driver_panel_keyboard()
+            )
             return
+        
+        logger.info(f"✅ Водій {driver.id} ({driver.full_name}) - генерую налаштування")
         
         # Отримати заробіток сьогодні
         earnings_today, commission_today = await get_driver_earnings_today(
