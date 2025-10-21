@@ -2365,15 +2365,27 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ У вас немає активного замовлення")
             return
         
-        # Завершити замовлення
-        await complete_order(config.database_path, order.id, driver.id)
-        
         # Розрахунок
         fare = order.fare_amount if order.fare_amount else 100.0
         tariff = await get_latest_tariff(config.database_path)
         commission_percent = tariff.commission_percent if tariff else 0.02
         commission = fare * commission_percent
         net_earnings = fare - commission
+        
+        # Дані для завершення
+        distance_m = order.distance_m if order.distance_m else 0
+        duration_s = 0  # Можна додати розрахунок тривалості пізніше
+        
+        # Завершити замовлення
+        await complete_order(
+            config.database_path,
+            order.id,
+            driver.id,
+            fare,
+            distance_m,
+            duration_s,
+            commission
+        )
         
         # Зберегти платіж
         payment = Payment(
