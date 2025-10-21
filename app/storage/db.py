@@ -284,6 +284,43 @@ async def init_db(db_path: str) -> None:
                 logger.info("✅ Додано колонку weather_percent до tariffs")
             except:
                 pass  # Колонка вже існує
+            
+            # ⭐⭐ МІГРАЦІЯ: Додати систему карми
+            try:
+                await db.execute("ALTER TABLE drivers ADD COLUMN karma INTEGER NOT NULL DEFAULT 100")
+                logger.info("✅ Додано колонку karma до drivers")
+            except:
+                pass  # Колонка вже існує
+            
+            try:
+                await db.execute("ALTER TABLE drivers ADD COLUMN total_orders INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Додано колонку total_orders до drivers")
+            except:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE drivers ADD COLUMN rejected_orders INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Додано колонку rejected_orders до drivers")
+            except:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN karma INTEGER NOT NULL DEFAULT 100")
+                logger.info("✅ Додано колонку karma до users")
+            except:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN total_orders INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Додано колонку total_orders до users")
+            except:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN cancelled_orders INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Додано колонку cancelled_orders до users")
+            except:
+                pass
             # Users: registered clients
             await db.execute(
                 """
@@ -986,6 +1023,9 @@ class User:
     created_at: datetime
     city: Optional[str] = None
     language: str = "uk"  # uk, ru, en
+    karma: int = 100  # Карма клієнта (100 = ідеально)
+    total_orders: int = 0  # Всього замовлень
+    cancelled_orders: int = 0  # Скасованих замовлень
 
 
 async def upsert_user(db_path: str, user: User) -> None:
@@ -1070,6 +1110,9 @@ class Driver:
     last_seen_at: Optional[datetime] = None
     car_class: str = "economy"  # economy | standard | comfort | business
     card_number: Optional[str] = None  # Номер картки для оплати
+    karma: int = 100  # Карма водія (100 = ідеально)
+    total_orders: int = 0  # Всього замовлень
+    rejected_orders: int = 0  # Відмов від замовлень
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
@@ -2010,3 +2053,90 @@ async def get_latest_tariff(db_path: str) -> Optional[Tariff]:
             import traceback
             logger.error(traceback.format_exc())
             return None
+
+
+# === СИСТЕМА КАРМИ ===
+
+async def decrease_driver_karma(db_path: str, driver_id: int, amount: int = 5) -> bool:
+    """Зменшити карму водія (за відмову від замовлення)"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            # Зменшити карму, але не нижче 0
+            await db.execute(
+                """
+                UPDATE drivers 
+                SET karma = MAX(0, karma - ?),
+                    rejected_orders = rejected_orders + 1
+                WHERE id = ?
+                """,
+                (amount, driver_id)
+            )
+            await db.commit()
+            logger.info(f"⚠️ Карма водія #{driver_id} зменшена на -{amount}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка зменшення карми водія: {e}")
+            return False
+
+
+async def increase_driver_karma(db_path: str, driver_id: int, amount: int = 1) -> bool:
+    """Збільшити карму водія (за успішне замовлення), макс 100"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            await db.execute(
+                """
+                UPDATE drivers 
+                SET karma = MIN(100, karma + ?),
+                    total_orders = total_orders + 1
+                WHERE id = ?
+                """,
+                (amount, driver_id)
+            )
+            await db.commit()
+            logger.info(f"✅ Карма водія #{driver_id} збільшена на +{amount}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка збільшення карми водія: {e}")
+            return False
+
+
+async def decrease_client_karma(db_path: str, user_id: int, amount: int = 5) -> bool:
+    """Зменшити карму клієнта (за скасування замовлення)"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            await db.execute(
+                """
+                UPDATE users 
+                SET karma = MAX(0, karma - ?),
+                    cancelled_orders = cancelled_orders + 1
+                WHERE user_id = ?
+                """,
+                (amount, user_id)
+            )
+            await db.commit()
+            logger.info(f"⚠️ Карма клієнта #{user_id} зменшена на -{amount}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка зменшення карми клієнта: {e}")
+            return False
+
+
+async def increase_client_karma(db_path: str, user_id: int, amount: int = 1) -> bool:
+    """Збільшити карму клієнта (за успішне замовлення), макс 100"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            await db.execute(
+                """
+                UPDATE users 
+                SET karma = MIN(100, karma + ?),
+                    total_orders = total_orders + 1
+                WHERE user_id = ?
+                """,
+                (amount, user_id)
+            )
+            await db.commit()
+            logger.info(f"✅ Карма клієнта #{user_id} збільшена на +{amount}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка збільшення карми клієнта: {e}")
+            return False

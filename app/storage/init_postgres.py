@@ -186,6 +186,98 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції tariffs: {e}")
         
+        # Міграція 5: Система карми - додати karma, total_orders, rejected_orders до drivers
+        try:
+            has_driver_karma = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'drivers' AND column_name = 'karma'
+                )
+            """)
+            
+            if not has_driver_karma:
+                logger.info("🔄 Міграція drivers: додавання karma...")
+                await conn.execute("ALTER TABLE drivers ADD COLUMN karma INTEGER DEFAULT 100")
+                await conn.execute("UPDATE drivers SET karma = 100 WHERE karma IS NULL")
+                await conn.execute("ALTER TABLE drivers ALTER COLUMN karma SET NOT NULL")
+                logger.info("✅ Колонка drivers.karma додана")
+            
+            has_driver_total = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'drivers' AND column_name = 'total_orders'
+                )
+            """)
+            
+            if not has_driver_total:
+                logger.info("🔄 Міграція drivers: додавання total_orders...")
+                await conn.execute("ALTER TABLE drivers ADD COLUMN total_orders INTEGER DEFAULT 0")
+                await conn.execute("UPDATE drivers SET total_orders = 0 WHERE total_orders IS NULL")
+                await conn.execute("ALTER TABLE drivers ALTER COLUMN total_orders SET NOT NULL")
+                logger.info("✅ Колонка drivers.total_orders додана")
+            
+            has_driver_rejected = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'drivers' AND column_name = 'rejected_orders'
+                )
+            """)
+            
+            if not has_driver_rejected:
+                logger.info("🔄 Міграція drivers: додавання rejected_orders...")
+                await conn.execute("ALTER TABLE drivers ADD COLUMN rejected_orders INTEGER DEFAULT 0")
+                await conn.execute("UPDATE drivers SET rejected_orders = 0 WHERE rejected_orders IS NULL")
+                await conn.execute("ALTER TABLE drivers ALTER COLUMN rejected_orders SET NOT NULL")
+                logger.info("✅ Колонка drivers.rejected_orders додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції drivers (karma): {e}")
+        
+        # Міграція 6: Система карми - додати karma, total_orders, cancelled_orders до users
+        try:
+            has_user_karma = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'karma'
+                )
+            """)
+            
+            if not has_user_karma:
+                logger.info("🔄 Міграція users: додавання karma...")
+                await conn.execute("ALTER TABLE users ADD COLUMN karma INTEGER DEFAULT 100")
+                await conn.execute("UPDATE users SET karma = 100 WHERE karma IS NULL")
+                await conn.execute("ALTER TABLE users ALTER COLUMN karma SET NOT NULL")
+                logger.info("✅ Колонка users.karma додана")
+            
+            has_user_total = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'total_orders'
+                )
+            """)
+            
+            if not has_user_total:
+                logger.info("🔄 Міграція users: додавання total_orders...")
+                await conn.execute("ALTER TABLE users ADD COLUMN total_orders INTEGER DEFAULT 0")
+                await conn.execute("UPDATE users SET total_orders = 0 WHERE total_orders IS NULL")
+                await conn.execute("ALTER TABLE users ALTER COLUMN total_orders SET NOT NULL")
+                logger.info("✅ Колонка users.total_orders додана")
+            
+            has_user_cancelled = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'cancelled_orders'
+                )
+            """)
+            
+            if not has_user_cancelled:
+                logger.info("🔄 Міграція users: додавання cancelled_orders...")
+                await conn.execute("ALTER TABLE users ADD COLUMN cancelled_orders INTEGER DEFAULT 0")
+                await conn.execute("UPDATE users SET cancelled_orders = 0 WHERE cancelled_orders IS NULL")
+                await conn.execute("ALTER TABLE users ALTER COLUMN cancelled_orders SET NOT NULL")
+                logger.info("✅ Колонка users.cancelled_orders додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції users (karma): {e}")
+        
         logger.info("✅ Міграції завершено!")
         
         # === СТВОРЕННЯ ТАБЛИЦЬ ===

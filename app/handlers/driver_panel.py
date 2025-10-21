@@ -71,15 +71,14 @@ def clean_address(address: str) -> str:
 
 
 def driver_panel_keyboard() -> ReplyKeyboardMarkup:
-    """Клавіатура панелі водія"""
+    """Клавіатура панелі водія - НОВА ВЕРСІЯ З КАРМОЮ"""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🚀 Почати роботу")],
-            [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+            [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
             [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
-            [KeyboardButton(text="📊 Розширена аналітика")],
             [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
-            [KeyboardButton(text="📖 Правила користування")]  # ⭐ НОВА КНОПКА
+            [KeyboardButton(text="📖 Правила користування")]
         ],
         resize_keyboard=True
     )
@@ -165,9 +164,8 @@ def create_router(config: AppConfig) -> Router:
         kb = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="🚀 Почати роботу")],
-                [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+                [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
                 [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
-                [KeyboardButton(text="📊 Розширена аналітика")],
                 [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
             ],
             resize_keyboard=True
@@ -747,24 +745,7 @@ def create_router(config: AppConfig) -> Router:
                 "Спробуйте ще раз."
             )
 
-    @router.message(F.text == "📊 Мій заробіток")
-    async def earnings(message: Message) -> None:
-        """Заробіток"""
-        if not message.from_user:
-            return
-        
-        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
-        if not driver:
-            return
-        
-        today, comm = await get_driver_earnings_today(config.database_path, message.from_user.id)
-        
-        await message.answer(
-            f"💰 <b>Заробіток</b>\n\n"
-            f"Сьогодні: {today:.2f} грн\n"
-            f"Комісія: {comm:.2f} грн\n"
-            f"Чистий: {today - comm:.2f} грн"
-        )
+    # ⛔ ВИДАЛЕНО: "Мій заробіток" - тепер в "⚙️ Налаштування"
 
     @router.message(F.text == "💳 Комісія")
     async def commission(message: Message) -> None:
@@ -1668,9 +1649,8 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="🚗 Панель водія"), KeyboardButton(text="🚀 Почати роботу")],
-                    [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
                     [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
-                    [KeyboardButton(text="📊 Розширена аналітика")],
                     [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
                 ],
                 resize_keyboard=True
@@ -2576,5 +2556,133 @@ def create_router(config: AppConfig) -> Router:
             "💡 Це допоможе клієнтам бачити вашу позицію під час поїздки.",
             reply_markup=kb
         )
+    
+    @router.message(F.text == "⚙️ Налаштування")
+    async def driver_settings_menu(message: Message) -> None:
+        """Налаштування водія - НОВА КНОПКА З КАРМОЮ"""
+        if not message.from_user:
+            return
+        
+        # Видалити повідомлення користувача
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Ви не зареєстровані як водій")
+            return
+        
+        # Отримати заробіток сьогодні
+        earnings_today, commission_today = await get_driver_earnings_today(
+            config.database_path,
+            message.from_user.id
+        )
+        net_today = earnings_today - commission_today
+        
+        # Карма (100 - ідеально, мінусується за відмови)
+        karma = driver.karma if hasattr(driver, 'karma') else 100
+        karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
+        
+        # Статистика
+        total_orders = driver.total_orders if hasattr(driver, 'total_orders') else 0
+        rejected_orders = driver.rejected_orders if hasattr(driver, 'rejected_orders') else 0
+        completed_orders = total_orders - rejected_orders
+        
+        # Відсоток відмов
+        reject_percent = (rejected_orders / total_orders * 100) if total_orders > 0 else 0
+        
+        text = (
+            f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
+            f"{'🔴 Низька!' if karma < 50 else '🟡 Середня' if karma < 80 else '🟢 Відмінна!'}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📊 <b>СТАТИСТИКА:</b>\n\n"
+            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
+            f"✅ <b>Виконано:</b> {completed_orders}\n"
+            f"❌ <b>Відмов:</b> {rejected_orders} ({reject_percent:.1f}%)\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 <b>ЗАРОБІТОК СЬОГОДНІ:</b>\n\n"
+            f"💵 <b>Заробіток:</b> {earnings_today:.0f} грн\n"
+            f"💳 <b>Комісія (2%):</b> {commission_today:.0f} грн\n"
+            f"💰 <b>Чистий:</b> {net_today:.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>ЯК ПРАЦЮЄ КАРМА:</b>\n"
+            f"• Старт: 100 балів\n"
+            f"• Відмова від замовлення: -5 балів\n"
+            f"• Успішне замовлення: +1 бал (макс 100)\n"
+            f"• Низька карма (<50): ⚠️ Попередження"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
+            ]
+        )
+        
+        await message.answer(text, reply_markup=kb)
+    
+    @router.callback_query(F.data == "settings:refresh")
+    async def refresh_settings(call: CallbackQuery) -> None:
+        """Оновити налаштування"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Отримати заробіток
+        earnings_today, commission_today = await get_driver_earnings_today(
+            config.database_path,
+            call.from_user.id
+        )
+        net_today = earnings_today - commission_today
+        
+        # Карма
+        karma = driver.karma if hasattr(driver, 'karma') else 100
+        karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
+        
+        # Статистика
+        total_orders = driver.total_orders if hasattr(driver, 'total_orders') else 0
+        rejected_orders = driver.rejected_orders if hasattr(driver, 'rejected_orders') else 0
+        completed_orders = total_orders - rejected_orders
+        reject_percent = (rejected_orders / total_orders * 100) if total_orders > 0 else 0
+        
+        text = (
+            f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
+            f"{'🔴 Низька!' if karma < 50 else '🟡 Середня' if karma < 80 else '🟢 Відмінна!'}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📊 <b>СТАТИСТИКА:</b>\n\n"
+            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
+            f"✅ <b>Виконано:</b> {completed_orders}\n"
+            f"❌ <b>Відмов:</b> {rejected_orders} ({reject_percent:.1f}%)\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 <b>ЗАРОБІТОК СЬОГОДНІ:</b>\n\n"
+            f"💵 <b>Заробіток:</b> {earnings_today:.0f} грн\n"
+            f"💳 <b>Комісія (2%):</b> {commission_today:.0f} грн\n"
+            f"💰 <b>Чистий:</b> {net_today:.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>ЯК ПРАЦЮЄ КАРМА:</b>\n"
+            f"• Старт: 100 балів\n"
+            f"• Відмова від замовлення: -5 балів\n"
+            f"• Успішне замовлення: +1 бал (макс 100)\n"
+            f"• Низька карма (<50): ⚠️ Попередження"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
+            ]
+        )
+        
+        if call.message:
+            await call.message.edit_text(text, reply_markup=kb)
+        await call.answer("✅ Оновлено!")
     
     return router
