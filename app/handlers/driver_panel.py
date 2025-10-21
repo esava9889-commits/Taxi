@@ -2847,57 +2847,6 @@ def create_router(config: AppConfig) -> Router:
             "Гарної поїздки! 🚗"
         )
     
-    @router.callback_query(F.data == "work:location")
-    async def show_work_location(call: CallbackQuery) -> None:
-        """Показати поточну геолокацію водія"""
-        if not call.from_user:
-            return
-        
-        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
-        if not driver:
-            return
-        
-        if driver.last_lat and driver.last_lon:
-            await call.answer("📍 Ваша остання геолокація:")
-            
-            # Надіслати геолокацію
-            await call.bot.send_location(
-                call.from_user.id,
-                latitude=driver.last_lat,
-                longitude=driver.last_lon
-            )
-            
-            # Додати текстове пояснення
-            from datetime import datetime, timezone
-            if driver.last_seen_at:
-                last_seen = driver.last_seen_at
-                if isinstance(last_seen, str):
-                    try:
-                        last_seen = datetime.fromisoformat(last_seen)
-                    except:
-                        pass
-                
-                if isinstance(last_seen, datetime):
-                    time_diff = datetime.now(timezone.utc) - last_seen.replace(tzinfo=timezone.utc)
-                    minutes_ago = int(time_diff.total_seconds() / 60)
-                    time_text = f"(оновлено {minutes_ago} хв тому)"
-                else:
-                    time_text = ""
-            else:
-                time_text = ""
-            
-            await call.bot.send_message(
-                call.from_user.id,
-                f"📍 <b>Ваша остання геолокація</b> {time_text}\n\n"
-                f"💡 Геолокація оновлюється автоматично коли ви активні"
-            )
-        else:
-            await call.answer(
-                "❌ Геолокація недоступна.\n"
-                "Надішліть геолокацію через телефон.",
-                show_alert=True
-            )
-    
     @router.callback_query(F.data == "work:earnings")
     async def show_work_earnings(call: CallbackQuery) -> None:
         """Швидкий перегляд заробітку"""
