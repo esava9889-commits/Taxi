@@ -1418,15 +1418,40 @@ def create_router(config: AppConfig) -> Router:
                 clean_pickup = clean_address(data.get('pickup', ''))
                 clean_destination = clean_address(data.get('destination', ''))
                 
-                # Створити посилання на маршрут Google Maps
+                # Створити посилання на маршрут Google Maps (замовлення: подача → призначення)
                 route_link = ""
                 if pickup_lat and pickup_lon and dest_lat and dest_lon:
                     route_link = (
                         f"\n🗺️ <a href='https://www.google.com/maps/dir/?api=1"
                         f"&origin={pickup_lat},{pickup_lon}"
                         f"&destination={dest_lat},{dest_lon}"
-                        f"&travelmode=driving'>Відкрити маршрут на Google Maps</a>"
+                        f"&travelmode=driving'>Маршрут замовлення (подача → призначення)</a>"
                     )
+                
+                # Знайти найближчого онлайн водія для показу маршруту до клієнта
+                driver_to_client_link = ""
+                if pickup_lat and pickup_lon and online_drivers:
+                    # Знайти найближчого водія з геолокацією
+                    nearest_driver = None
+                    min_distance = float('inf')
+                    
+                    for driver in online_drivers:
+                        if driver.last_lat and driver.last_lon:
+                            # Прості обчислення відстані (в градусах для швидкості)
+                            distance = ((driver.last_lat - pickup_lat)**2 + (driver.last_lon - pickup_lon)**2)**0.5
+                            if distance < min_distance:
+                                min_distance = distance
+                                nearest_driver = driver
+                    
+                    # Якщо знайшли найближчого водія - додати маршрут
+                    if nearest_driver and nearest_driver.last_lat and nearest_driver.last_lon:
+                        driver_to_client_link = (
+                            f"\n🚗 <a href='https://www.google.com/maps/dir/?api=1"
+                            f"&origin={nearest_driver.last_lat},{nearest_driver.last_lon}"
+                            f"&destination={pickup_lat},{pickup_lon}"
+                            f"&travelmode=driving'>Маршрут від найближчого водія до клієнта</a>"
+                        )
+                        logger.info(f"📍 Найближчий водій #{nearest_driver.id} до замовлення #{order_id}")
                 
                 # Форматування вартості для візуального виділення
                 fare_amount = data.get('fare_amount', 0)
@@ -1439,7 +1464,7 @@ def create_router(config: AppConfig) -> Router:
                     f"━━━━━━━━━━━━━━━━━\n\n"
                     f"📍 <b>МАРШРУТ:</b>\n"
                     f"🔵 {clean_pickup}\n"
-                    f"🔴 {clean_destination}{route_link}\n\n"
+                    f"🔴 {clean_destination}{route_link}{driver_to_client_link}\n\n"
                     f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
                     f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
                     f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {data.get('city')}\n\n"
@@ -1732,15 +1757,43 @@ def create_router(config: AppConfig) -> Router:
                     clean_pickup = clean_address(order.pickup_address)
                     clean_destination = clean_address(order.destination_address)
                     
-                    # Створити посилання на маршрут Google Maps
+                    # Створити посилання на маршрут Google Maps (замовлення: подача → призначення)
                     route_link = ""
                     if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
                         route_link = (
                             f"\n🗺️ <a href='https://www.google.com/maps/dir/?api=1"
                             f"&origin={order.pickup_lat},{order.pickup_lon}"
                             f"&destination={order.dest_lat},{order.dest_lon}"
-                            f"&travelmode=driving'>Відкрити маршрут на Google Maps</a>"
+                            f"&travelmode=driving'>Маршрут замовлення (подача → призначення)</a>"
                         )
+                    
+                    # Знайти найближчого онлайн водія для показу маршруту до клієнта
+                    driver_to_client_link = ""
+                    if order.pickup_lat and order.pickup_lon:
+                        from app.storage.db import get_online_drivers
+                        online_drivers_for_route = await get_online_drivers(config.database_path, client_city)
+                        
+                        if online_drivers_for_route:
+                            # Знайти найближчого водія з геолокацією
+                            nearest_driver = None
+                            min_distance = float('inf')
+                            
+                            for driver in online_drivers_for_route:
+                                if driver.last_lat and driver.last_lon:
+                                    # Прості обчислення відстані (в градусах для швидкості)
+                                    distance = ((driver.last_lat - order.pickup_lat)**2 + (driver.last_lon - order.pickup_lon)**2)**0.5
+                                    if distance < min_distance:
+                                        min_distance = distance
+                                        nearest_driver = driver
+                            
+                            # Якщо знайшли найближчого водія - додати маршрут
+                            if nearest_driver and nearest_driver.last_lat and nearest_driver.last_lon:
+                                driver_to_client_link = (
+                                    f"\n🚗 <a href='https://www.google.com/maps/dir/?api=1"
+                                    f"&origin={nearest_driver.last_lat},{nearest_driver.last_lon}"
+                                    f"&destination={order.pickup_lat},{order.pickup_lon}"
+                                    f"&travelmode=driving'>Маршрут від найближчого водія до клієнта</a>"
+                                )
                     
                     await call.bot.edit_message_text(
                         chat_id=group_id,
@@ -1753,7 +1806,7 @@ def create_router(config: AppConfig) -> Router:
                             f"━━━━━━━━━━━━━━━━━\n\n"
                             f"📍 <b>МАРШРУТ:</b>\n"
                             f"🔵 {clean_pickup}\n"
-                            f"🔴 {clean_destination}{route_link}\n\n"
+                            f"🔴 {clean_destination}{route_link}{driver_to_client_link}\n\n"
                             f"👤 {order.name} • 📱 <code>{masked_phone}</code> 🔒\n"
                             f"💬 {order.comment or 'Без коментарів'}\n\n"
                             f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or 'Не вказано'}\n\n"
