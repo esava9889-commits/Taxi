@@ -244,11 +244,23 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
+        # Посилання на групу водіїв для міста
+        city_invite_link = None
+        if driver.city and driver.city in config.city_invite_links:
+            city_invite_link = config.city_invite_links[driver.city]
+        
+        # Текст про групу
+        if city_invite_link:
+            group_text = f"📢 <a href=\"{city_invite_link}\">Група водіїв {driver.city}</a>\n"
+        else:
+            group_text = f"📢 Група: {driver.city or 'не налаштовано'}\n"
+        
         text = (
             f"🚀 <b>МЕНЮ КЕРУВАННЯ РОБОТОЮ</b>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>Водій:</b> {driver.full_name}\n"
-            f"🏙 <b>Місто:</b> {driver.city or 'Не вказано'}\n"
+            f"🏙 <b>Місто:</b> {driver.city or '❌ Не вказано'}\n"
+            f"{group_text}"
             f"📊 <b>Статус:</b> {status}\n\n"
             f"👥 <b>Водіїв онлайн:</b> {online} чол.\n"
             f"💰 <b>Заробіток сьогодні:</b> {earnings_today:.0f} грн\n"
@@ -257,7 +269,7 @@ def create_router(config: AppConfig) -> Router:
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💡 <b>Швидкі дії:</b>\n"
             f"• Увімкніть 🟢 Онлайн щоб отримувати замовлення\n"
-            f"• Замовлення надходять в групу <b>{driver.city}</b>\n"
+            f"• Замовлення надходять в групу <b>{driver.city or 'вашого міста'}</b>\n"
             f"• Перший хто натисне ✅ Прийняти - отримує замовлення\n\n"
             f"Оберіть дію:"
         )
@@ -395,11 +407,23 @@ def create_router(config: AppConfig) -> Router:
             ]
         )
         
+        # Посилання на групу водіїв для міста
+        city_invite_link = None
+        if driver.city and driver.city in config.city_invite_links:
+            city_invite_link = config.city_invite_links[driver.city]
+        
+        # Текст про групу
+        if city_invite_link:
+            group_text = f"📢 <a href=\"{city_invite_link}\">Група водіїв {driver.city}</a>\n"
+        else:
+            group_text = f"📢 Група: {driver.city or 'не налаштовано'}\n"
+        
         text = (
             f"🚀 <b>МЕНЮ КЕРУВАННЯ РОБОТОЮ</b>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>Водій:</b> {driver.full_name}\n"
-            f"🏙 <b>Місто:</b> {driver.city or 'Не вказано'}\n"
+            f"🏙 <b>Місто:</b> {driver.city or '❌ Не вказано'}\n"
+            f"{group_text}"
             f"📊 <b>Статус:</b> {status}\n\n"
             f"👥 <b>Водіїв онлайн:</b> {online} чол.\n"
             f"💰 <b>Заробіток сьогодні:</b> {earnings_today:.0f} грн\n"
@@ -408,7 +432,7 @@ def create_router(config: AppConfig) -> Router:
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💡 <b>Швидкі дії:</b>\n"
             f"• Увімкніть 🟢 Онлайн щоб отримувати замовлення\n"
-            f"• Замовлення надходять в групу <b>{driver.city}</b>\n"
+            f"• Замовлення надходять в групу <b>{driver.city or 'вашого міста'}</b>\n"
             f"• Перший хто натисне ✅ Прийняти - отримує замовлення\n\n"
             f"Оберіть дію:"
         )
@@ -430,6 +454,210 @@ def create_router(config: AppConfig) -> Router:
         )
         if call.message:
             await call.message.edit_text("📊 <b>Статистика</b>\n\nОберіть період:", reply_markup=kb)
+        await call.answer()
+    
+    @router.callback_query(F.data == "stats:today")
+    async def show_stats_today(call: CallbackQuery) -> None:
+        """Статистика за сьогодні"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Отримати статистику за сьогодні
+        from datetime import datetime, timedelta, timezone
+        from app.storage.db import get_driver_order_history
+        
+        # Сьогодні з початку дня
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Всі замовлення водія
+        all_orders = await get_driver_order_history(config.database_path, driver.tg_user_id, limit=100)
+        
+        # Фільтрувати за сьогодні
+        today_orders = []
+        for order in all_orders:
+            if order.created_at:
+                order_time = order.created_at
+                if isinstance(order_time, str):
+                    try:
+                        order_time = datetime.fromisoformat(order_time)
+                    except:
+                        continue
+                
+                if isinstance(order_time, datetime):
+                    if order_time.replace(tzinfo=timezone.utc) >= today_start:
+                        today_orders.append(order)
+        
+        # Підрахунок
+        total_orders = len(today_orders)
+        completed_orders = len([o for o in today_orders if o.status == 'completed'])
+        cancelled_orders = len([o for o in today_orders if o.status == 'cancelled'])
+        
+        earnings = sum(o.fare_amount for o in today_orders if o.status == 'completed' and o.fare_amount)
+        commission = earnings * 0.02  # 2% комісія
+        net = earnings - commission
+        
+        text = (
+            f"📊 <b>СТАТИСТИКА ЗА СЬОГОДНІ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
+            f"✅ <b>Виконано:</b> {completed_orders}\n"
+            f"❌ <b>Скасовано:</b> {cancelled_orders}\n\n"
+            f"💰 <b>Заробіток:</b> {earnings:.0f} грн\n"
+            f"💳 <b>Комісія (2%):</b> {commission:.0f} грн\n"
+            f"💵 <b>Чистий:</b> {net:.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📅 Дата: {datetime.now().strftime('%d.%m.%Y')}"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="« Назад", callback_data="work:stats")]
+            ]
+        )
+        
+        if call.message:
+            await call.message.edit_text(text, reply_markup=kb)
+        await call.answer()
+    
+    @router.callback_query(F.data == "stats:week")
+    async def show_stats_week(call: CallbackQuery) -> None:
+        """Статистика за тиждень"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        from datetime import datetime, timedelta, timezone
+        from app.storage.db import get_driver_order_history
+        
+        # 7 днів тому
+        week_start = datetime.now(timezone.utc) - timedelta(days=7)
+        
+        all_orders = await get_driver_order_history(config.database_path, driver.tg_user_id, limit=200)
+        
+        week_orders = []
+        for order in all_orders:
+            if order.created_at:
+                order_time = order.created_at
+                if isinstance(order_time, str):
+                    try:
+                        order_time = datetime.fromisoformat(order_time)
+                    except:
+                        continue
+                
+                if isinstance(order_time, datetime):
+                    if order_time.replace(tzinfo=timezone.utc) >= week_start:
+                        week_orders.append(order)
+        
+        total_orders = len(week_orders)
+        completed_orders = len([o for o in week_orders if o.status == 'completed'])
+        cancelled_orders = len([o for o in week_orders if o.status == 'cancelled'])
+        
+        earnings = sum(o.fare_amount for o in week_orders if o.status == 'completed' and o.fare_amount)
+        commission = earnings * 0.02
+        net = earnings - commission
+        
+        # Середнє за день
+        avg_per_day = earnings / 7 if earnings > 0 else 0
+        
+        text = (
+            f"📊 <b>СТАТИСТИКА ЗА ТИЖДЕНЬ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
+            f"✅ <b>Виконано:</b> {completed_orders}\n"
+            f"❌ <b>Скасовано:</b> {cancelled_orders}\n\n"
+            f"💰 <b>Заробіток:</b> {earnings:.0f} грн\n"
+            f"💳 <b>Комісія (2%):</b> {commission:.0f} грн\n"
+            f"💵 <b>Чистий:</b> {net:.0f} грн\n\n"
+            f"📈 <b>Середнє/день:</b> {avg_per_day:.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📅 Період: останні 7 днів"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="« Назад", callback_data="work:stats")]
+            ]
+        )
+        
+        if call.message:
+            await call.message.edit_text(text, reply_markup=kb)
+        await call.answer()
+    
+    @router.callback_query(F.data == "stats:month")
+    async def show_stats_month(call: CallbackQuery) -> None:
+        """Статистика за місяць"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        from datetime import datetime, timedelta, timezone
+        from app.storage.db import get_driver_order_history
+        
+        # 30 днів тому
+        month_start = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        all_orders = await get_driver_order_history(config.database_path, driver.tg_user_id, limit=500)
+        
+        month_orders = []
+        for order in all_orders:
+            if order.created_at:
+                order_time = order.created_at
+                if isinstance(order_time, str):
+                    try:
+                        order_time = datetime.fromisoformat(order_time)
+                    except:
+                        continue
+                
+                if isinstance(order_time, datetime):
+                    if order_time.replace(tzinfo=timezone.utc) >= month_start:
+                        month_orders.append(order)
+        
+        total_orders = len(month_orders)
+        completed_orders = len([o for o in month_orders if o.status == 'completed'])
+        cancelled_orders = len([o for o in month_orders if o.status == 'cancelled'])
+        
+        earnings = sum(o.fare_amount for o in month_orders if o.status == 'completed' and o.fare_amount)
+        commission = earnings * 0.02
+        net = earnings - commission
+        
+        # Середнє за день
+        avg_per_day = earnings / 30 if earnings > 0 else 0
+        
+        text = (
+            f"📊 <b>СТАТИСТИКА ЗА МІСЯЦЬ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
+            f"✅ <b>Виконано:</b> {completed_orders}\n"
+            f"❌ <b>Скасовано:</b> {cancelled_orders}\n\n"
+            f"💰 <b>Заробіток:</b> {earnings:.0f} грн\n"
+            f"💳 <b>Комісія (2%):</b> {commission:.0f} грн\n"
+            f"💵 <b>Чистий:</b> {net:.0f} грн\n\n"
+            f"📈 <b>Середнє/день:</b> {avg_per_day:.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📅 Період: останні 30 днів"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="« Назад", callback_data="work:stats")]
+            ]
+        )
+        
+        if call.message:
+            await call.message.edit_text(text, reply_markup=kb)
         await call.answer()
 
     @router.message(F.location)
@@ -829,6 +1057,18 @@ def create_router(config: AppConfig) -> Router:
             await call.answer(
                 "❌ Ви не зареєстровані як водій.\n"
                 "Зареєструйтесь через /start → Стати водієм",
+                show_alert=True
+            )
+            return
+        
+        # ⚠️ ПЕРЕВІРКА: Водій має бути ОНЛАЙН щоб прийняти замовлення
+        if not driver.online:
+            logger.warning(f"⚠️ Driver {call.from_user.id} tried to accept order while OFFLINE")
+            await call.answer(
+                "❌ Ви не можете прийняти замовлення!\n\n"
+                "Причина: Ви в статусі 🔴 ОФЛАЙН\n\n"
+                "💡 Увімкніть 🟢 Онлайн в меню:\n"
+                "🚗 Панель водія → 🚀 Почати роботу → 🟢 УВІМКНУТИ ОНЛАЙН",
                 show_alert=True
             )
             return
