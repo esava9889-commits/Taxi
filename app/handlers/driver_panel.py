@@ -2584,7 +2584,7 @@ def create_router(config: AppConfig) -> Router:
     
     @router.message(F.text == "⚙️ Налаштування")
     async def driver_settings_menu(message: Message) -> None:
-        """Налаштування водія - НОВА КНОПКА З КАРМОЮ"""
+        """Налаштування водія - КАРМА, СТАТИСТИКА, ЗАРОБІТОК"""
         if not message.from_user:
             return
         
@@ -2594,24 +2594,11 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
         
-        # Перевірити чи це адмін
-        is_admin = message.from_user.id in config.bot.admin_ids
-        
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         
-        # Якщо НЕ водій І НЕ адмін → помилка
-        if not driver and not is_admin:
+        # Якщо НЕ водій → помилка
+        if not driver:
             await message.answer("❌ Ви не зареєстровані як водій")
-            return
-        
-        # Якщо адмін але не водій → показати адмінські налаштування
-        if is_admin and not driver:
-            await message.answer(
-                "⚙️ <b>НАЛАШТУВАННЯ АДМІНА</b>\n\n"
-                "Ви адміністратор, але не зареєстровані як водій.\n\n"
-                "💡 Щоб побачити налаштування водія, зареєструйтесь:\n"
-                "/start → Стати водієм"
-            )
             return
         
         # Отримати заробіток сьогодні
