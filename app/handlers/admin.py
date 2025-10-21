@@ -593,10 +593,10 @@ def create_router(config: AppConfig) -> Router:
             logger.error(f"Error in driver moderation: {e}")
             await call.answer("❌ Помилка при обробці", show_alert=True)
 
-    @router.message(F.text == "⚙️ Налаштування")
+    @router.message(F.text == "⚙️ Налаштування", lambda m: m.from_user and is_admin(m.from_user.id))
     async def show_settings(message: Message) -> None:
-        """Показати меню налаштувань"""
-        if not message.from_user or not is_admin(message.from_user.id):
+        """Показати меню налаштувань (ТІЛЬКИ для адмінів)"""
+        if not message.from_user:
             return
         
         # Отримати поточні налаштування з БД
