@@ -1089,77 +1089,110 @@ def create_router(config: AppConfig) -> Router:
             
             await call.answer("✅ Прийнято!", show_alert=True)
             
-            # ⭐ ЗАПРОСИТИ У ВОДІЯ ГЕОЛОКАЦІЮ (обов'язково для відправки клієнту)
-            # Надіслати повідомлення водію з проханням поділитися локацією
-            location_shared = False
+            # ⭐ НАДІСЛАТИ LIVE ГЕОЛОКАЦІЮ ВОДІЯ КЛІЄНТУ
+            location_message_sent = False
             if driver.last_lat and driver.last_lon:
                 try:
-                    # Надіслати live location клієнту
+                    # Надіслати live location клієнту (15 хвилин трансляції)
                     await call.bot.send_location(
                         order.user_id,
                         latitude=driver.last_lat,
                         longitude=driver.last_lon,
                         live_period=900,  # 15 хвилин
                     )
-                    location_shared = True
-                    logger.info(f"📍 Auto-sent live location to client for order #{order_id}")
+                    location_message_sent = True
+                    logger.info(f"📍 Live location sent to client for order #{order_id}")
                 except Exception as e:
-                    logger.error(f"Failed to send live location: {e}")
+                    logger.error(f"❌ Failed to send live location: {e}")
             
-            # Якщо геолокація не надіслана - попросити водія поділитися
-            if not location_shared:
+            # Якщо геолокація не надіслана
+            if not location_message_sent:
                 logger.warning(f"⚠️ Водій #{driver.id} не має збереженої геолокації для замовлення #{order_id}")
-                # Клієнт все одно отримає повідомлення, але без live location
             
-            # Якщо оплата карткою - показати картку водія
+            # Розрахувати відстань і час
+            distance_text = ""
+            eta_text = ""
+            if order.distance_m:
+                km = order.distance_m / 1000.0
+                distance_text = f"\n📏 <b>Відстань:</b> {km:.1f} км"
+                # Орієнтовний час (припустимо 50 км/год в місті)
+                eta_minutes = int((km / 50) * 60)
+                if eta_minutes > 0:
+                    eta_text = f"\n⏱ <b>Орієнтовний час:</b> {eta_minutes} хв"
+            
+            # Очистити адреси від Plus Codes
+            clean_pickup = clean_address(order.pickup_address)
+            clean_destination = clean_address(order.destination_address)
+            
+            # Текст про геолокацію
+            location_status = "📍 <b>Трансляція геолокації активна</b> ⬆️" if location_message_sent else "⚠️ <b>Геолокація водія тимчасово недоступна</b>"
+            
+            # Текст про оплату
+            payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+            payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+            
+            # Кнопки для клієнта
+            kb_client_buttons = []
+            
+            # Кнопка картки (якщо оплата карткою)
             if order.payment_method == "card" and driver.card_number:
-                kb_client = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(
-                            text="🗺️ Відкрити в Google Maps",
-                            url=f"https://www.google.com/maps/dir/?api=1&destination={driver.last_lat},{driver.last_lon}"
-                        )] if driver.last_lat and driver.last_lon else [],
-                        [InlineKeyboardButton(text="💳 Сплатити поїздку", callback_data=f"pay:{order_id}")]
-                    ]
-                )
-                location_text = "\n📍 <b>Локація водія надіслана вище</b>\n" if driver.last_lat and driver.last_lon else ""
-                await call.bot.send_message(
-                    order.user_id,
-                    f"✅ <b>Водій прийняв замовлення!</b>\n\n"
-                    f"🚗 {driver.full_name}\n"
-                    f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
-                    f"📱 <code>{driver.phone}</code>\n\n"
-                    f"{location_text}\n"
-                    f"💳 <b>Картка для оплати:</b>\n"
-                    f"<code>{driver.card_number}</code>\n\n"
-                    f"💰 До сплати: {int(order.fare_amount):.0f} грн" if order.fare_amount is not None else "💰 Вартість: уточнюється",
-                    reply_markup=kb_client
-                )
-            else:
-                kb_client = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(
-                            text="🗺️ Відкрити в Google Maps",
-                            url=f"https://www.google.com/maps/dir/?api=1&destination={driver.last_lat},{driver.last_lon}"
-                        )]
-                    ]
-                ) if driver.last_lat and driver.last_lon else None
-                
-                location_text = "\n📍 <b>Локація водія надіслана вище</b>\n" if driver.last_lat and driver.last_lon else ""
-                
-                await call.bot.send_message(
-                    order.user_id,
-                    (
-                        f"✅ <b>Водій прийняв замовлення!</b>\n\n"
-                        f"🚗 {driver.full_name}\n"
-                        f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
-                        f"📱 <code>{driver.phone}</code>\n\n"
-                        f"{location_text}\n"
-                        f"💵 Оплата готівкою\n\n"
-                        f"🚗 Водій уже в дорозі. Очікуйте!"
-                    ),
-                    reply_markup=kb_client
-                )
+                kb_client_buttons.append([
+                    InlineKeyboardButton(text="💳 Картка водія", callback_data=f"show_card:{order_id}")
+                ])
+            
+            # Кнопка зв'язку з водієм
+            kb_client_buttons.append([
+                InlineKeyboardButton(text="📞 Зв'язатися з водієм", url=f"tel:{driver.phone}")
+            ])
+            
+            # Кнопка маршруту
+            if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
+                kb_client_buttons.append([
+                    InlineKeyboardButton(
+                        text="🗺️ Маршрут на карті",
+                        url=f"https://www.google.com/maps/dir/?api=1&origin={order.pickup_lat},{order.pickup_lon}&destination={order.dest_lat},{order.dest_lon}"
+                    )
+                ])
+            
+            # Кнопка де зараз водій
+            if driver.last_lat and driver.last_lon:
+                kb_client_buttons.append([
+                    InlineKeyboardButton(
+                        text="📍 Де зараз водій?",
+                        url=f"https://www.google.com/maps?q={driver.last_lat},{driver.last_lon}"
+                    )
+                ])
+            
+            kb_client = InlineKeyboardMarkup(inline_keyboard=kb_client_buttons)
+            
+            # РОЗШИРЕНЕ повідомлення для клієнта
+            client_message = (
+                f"✅ <b>ВОДІЙ ПРИЙНЯВ ВАШЕ ЗАМОВЛЕННЯ!</b>\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"👤 <b>Водій:</b> {driver.full_name}\n"
+                f"🚗 <b>Автомобіль:</b> {driver.car_make} {driver.car_model}\n"
+                f"🔢 <b>Номер:</b> {driver.car_plate}\n"
+                f"📱 <b>Телефон:</b> <code>{driver.phone}</code>\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📍 <b>Звідки:</b> {clean_pickup}\n"
+                f"🎯 <b>Куди:</b> {clean_destination}"
+                f"{distance_text}"
+                f"{eta_text}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
+                f"{payment_emoji} <b>Оплата:</b> {payment_text}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{location_status}\n\n"
+                f"💡 <b>Водій вже їде до вас!</b>\n"
+                f"Ви можете відслідковувати його місцезнаходження в реальному часі.\n\n"
+                f"🚗 Гарної поїздки!"
+            )
+            
+            await call.bot.send_message(
+                order.user_id,
+                client_message,
+                reply_markup=kb_client
+            )
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
             if call.message and order.group_message_id:
@@ -2323,6 +2356,95 @@ def create_router(config: AppConfig) -> Router:
             await call.message.delete()
         except:
             pass
+    
+    @router.callback_query(F.data.startswith("show_card:"))
+    async def show_card_to_client(call: CallbackQuery) -> None:
+        """Показати картку водія клієнту"""
+        if not call.from_user:
+            return
+        
+        try:
+            order_id = int(call.data.split(":")[1])
+        except:
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if not order.driver_id:
+            await call.answer("❌ Водій не призначений", show_alert=True)
+            return
+        
+        driver = await get_driver_by_id(config.database_path, order.driver_id)
+        if not driver or not driver.card_number:
+            await call.answer("❌ Картка водія недоступна", show_alert=True)
+            return
+        
+        await call.answer()
+        
+        card_message = (
+            f"💳 <b>КАРТКА ДЛЯ ОПЛАТИ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Водій:</b> {driver.full_name}\n"
+            f"💳 <b>Номер картки:</b>\n"
+            f"<code>{driver.card_number}</code>\n\n"
+            f"💰 <b>До сплати:</b> {int(order.fare_amount):.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Натисніть на номер картки щоб скопіювати</b>\n\n"
+            f"⚠️ Після оплати обов'язково повідомте водія!"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Я оплатив(ла)", callback_data=f"paid:confirm:{order_id}")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"back_to_order:{order_id}")]
+            ]
+        )
+        
+        await call.message.edit_text(card_message, reply_markup=kb)
+    
+    @router.callback_query(F.data.startswith("paid:confirm:"))
+    async def confirm_payment(call: CallbackQuery) -> None:
+        """Клієнт підтвердив оплату"""
+        if not call.from_user:
+            return
+        
+        try:
+            order_id = int(call.data.split(":")[2])
+        except:
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        await call.answer("✅ Дякуємо! Водій отримає повідомлення", show_alert=True)
+        
+        # Сповістити водія
+        if order.driver_id:
+            driver = await get_driver_by_id(config.database_path, order.driver_id)
+            if driver:
+                try:
+                    await call.bot.send_message(
+                        driver.tg_user_id,
+                        f"💳 <b>КЛІЄНТ ПІДТВЕРДИВ ОПЛАТУ!</b>\n\n"
+                        f"Замовлення #{order_id}\n"
+                        f"💰 Сума: {int(order.fare_amount):.0f} грн\n\n"
+                        f"⚠️ Перевірте надходження коштів на картку!"
+                    )
+                except:
+                    pass
+        
+        await call.message.edit_text(
+            "✅ <b>ДЯКУЄМО ЗА ОПЛАТУ!</b>\n\n"
+            "Водій отримав повідомлення.\n"
+            "Гарної поїздки! 🚗"
+        )
     
     @router.callback_query(F.data == "work:location")
     async def show_work_location(call: CallbackQuery) -> None:
