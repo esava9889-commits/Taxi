@@ -1824,6 +1824,8 @@ def create_router(config: AppConfig) -> Router:
                     client_city = user.city if user and user.city else None
                     group_id = get_city_group_id(config, client_city)
                     
+                    logger.info(f"🔔 Скасування (підвищення ціни) #{order_id}: group_id={group_id}, city={client_city}, msg_id={order.group_message_id}")
+                    
                     if group_id:
                         await call.bot.edit_message_text(
                             chat_id=group_id,
@@ -1831,12 +1833,15 @@ def create_router(config: AppConfig) -> Router:
                             text=f"❌ <b>ЗАМОВЛЕННЯ #{order_id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
                                  f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
                         )
+                        logger.info(f"✅ Скасування #{order_id} надіслано в групу")
+                    else:
+                        logger.warning(f"⚠️ Група для міста '{client_city}' не знайдена")
                 except Exception as e:
                     # Якщо повідомлення вже видалене - це не помилка
                     if "message to edit not found" in str(e).lower() or "message can't be edited" in str(e).lower():
-                        logger.info(f"ℹ️ Group message #{order.group_message_id} already deleted (order #{order_id})")
+                        logger.info(f"ℹ️ Повідомлення #{order.group_message_id} вже видалене (замовлення #{order_id})")
                     else:
-                        logger.error(f"Failed to update group message: {e}")
+                        logger.error(f"❌ Помилка оновлення групи: {e}")
             
             # Відправити підтвердження
             await call.bot.send_message(
