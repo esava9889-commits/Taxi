@@ -851,7 +851,7 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
                        license_photo_file_id, city, status, created_at, updated_at, online,
-                       last_lat, last_lon, last_seen_at, car_class, card_number
+                       last_lat, last_lon, last_seen_at, car_class, card_number, car_color
                 FROM drivers
                 WHERE online = 1 AND status = 'approved' AND city = ?
                 ORDER BY last_seen_at DESC
@@ -861,7 +861,7 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
                        license_photo_file_id, city, status, created_at, updated_at, online,
-                       last_lat, last_lon, last_seen_at, car_class, card_number
+                       last_lat, last_lon, last_seen_at, car_class, card_number, car_color
                 FROM drivers
                 WHERE online = 1 AND status = 'approved'
                 ORDER BY last_seen_at DESC
@@ -1218,7 +1218,7 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color
             FROM drivers
             WHERE status = 'pending'
             ORDER BY id ASC
@@ -1249,6 +1249,7 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
                 last_seen_at=(_parse_datetime(r[15]) if r[15] else None),
                 car_class=r[16] if r[16] else "economy",
                 card_number=r[17],
+                car_color=r[18] if len(r) > 18 else None,  # ← ДОДАНО
             )
         )
     return drivers
@@ -1541,7 +1542,7 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color
             FROM drivers WHERE status = 'approved' AND online = 1
             ORDER BY last_seen_at DESC
             LIMIT ?
@@ -1571,6 +1572,7 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
                 last_seen_at=(_parse_datetime(r[15]) if r[15] else None),
                 car_class=r[16] if r[16] else "economy",
                 card_number=r[17],
+                car_color=r[18] if len(r) > 18 else None,  # ← ДОДАНО
             )
         )
     return drivers
