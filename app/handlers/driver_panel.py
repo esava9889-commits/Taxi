@@ -1137,7 +1137,10 @@ def create_router(config: AppConfig) -> Router:
         orders = await get_driver_order_history(config.database_path, message.from_user.id, limit=5)
         
         if not orders:
-            await message.answer("📜 Поки немає поїздок")
+            await message.answer(
+                "📜 Поки немає поїздок",
+                reply_markup=driver_panel_keyboard()
+            )
             return
         
         text = "📜 <b>Останні 5 поїздок:</b>\n\n"
@@ -1145,7 +1148,7 @@ def create_router(config: AppConfig) -> Router:
             text += f"{i}. {o.pickup_address[:20]}... → {o.destination_address[:20]}...\n"
             text += f"   💰 {o.fare_amount or 0:.0f} грн\n\n"
         
-        await message.answer(text)
+        await message.answer(text, reply_markup=driver_panel_keyboard())
 
     # Обробники замовлень
     @router.callback_query(F.data.startswith("accept_order:"))
