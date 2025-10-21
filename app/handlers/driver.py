@@ -871,42 +871,46 @@ def create_router(config: AppConfig) -> Router:
             return
         
         await state.update_data(car_plate=car_plate)
-        await state.set_state(DriverRegStates.car_class)
         
+        # Отримати дані перед зміною стану
         data = await state.get_data()
         car_make = data.get("car_make", "")
         car_model = data.get("car_model", "")
+        reg_message_id = data.get("reg_message_id")
         
-        # Вибір класу авто
-        from app.handlers.car_classes import CAR_CLASSES
+        # Змінити стан на КОЛІР (крок 7/9)
+        await state.set_state(DriverRegStates.car_color)
         
-        buttons = []
-        for class_code, class_info in CAR_CLASSES.items():
-            mult_percent = int((class_info['multiplier']-1)*100)
-            mult_text = f"+{mult_percent}%" if mult_percent > 0 else "базовий"
-            buttons.append([
-                InlineKeyboardButton(
-                    text=f"{class_info['name_uk']} ({mult_text})",
-                    callback_data=f"driver_car_class:{class_code}"
-                )
-            ])
+        # Видалити попереднє повідомлення
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
         
-        # Додати кнопку "Назад"
-        buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="driver:back_to_color")])
-        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")])
+        # Видалити повідомлення користувача
+        try:
+            await message.delete()
+        except:
+            pass
         
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        # Кнопки з кольорами
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Чорний"), KeyboardButton(text="Білий")],
+                [KeyboardButton(text="Сірий"), KeyboardButton(text="Синій")],
+                [KeyboardButton(text="Червоний"), KeyboardButton(text="Зелений")],
+                [KeyboardButton(text="Срібний"), KeyboardButton(text="Жовтий")],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
         
         msg = await message.answer(
-            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n"
-            f"🎨 <b>Колір:</b> {car_color}\n\n"
-            "🚗 <b>Крок 8/9: Клас автомобіля</b>\n\n"
-            "Оберіть клас вашого авто:\n\n"
-            "• 🚗 Економ - базовий тариф\n"
-            "• 🚙 Стандарт - +30% до тарифу\n"
-            "• 🚘 Комфорт - +60% до тарифу\n"
-            "• 🏆 Бізнес - +100% до тарифу\n\n"
-            "Це вплине на вартість поїздок та ваш заробіток.",
+            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n\n"
+            "🎨 <b>Крок 7/9: Колір автомобіля</b>\n\n"
+            "Оберіть колір зі списку або введіть свій:",
             reply_markup=kb
         )
         await state.update_data(reg_message_id=msg.message_id)
