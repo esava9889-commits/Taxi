@@ -3049,7 +3049,7 @@ def create_router(config: AppConfig) -> Router:
                 f"• Старт: 100 балів\n"
                 f"• Відмова: -5 балів\n"
                 f"• Успіх: +1 бал (макс 100)\n"
-                f"• Низька (<50): ⚠️ Попередження"
+                f"• Низька (&lt;50): ⚠️ Попередження"
             )
             logger.info(f"✅ Текст сформовано, довжина: {len(text)}")
         except Exception as e:
