@@ -3079,64 +3079,29 @@ def create_router(config: AppConfig) -> Router:
     
     @router.callback_query(F.data == "settings:refresh")
     async def refresh_settings(call: CallbackQuery) -> None:
-        """Оновити налаштування"""
+        """Оновити налаштування - викликати driver_settings_menu"""
         if not call.from_user:
             return
         
-        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
-        if not driver:
-            await call.answer("❌ Водія не знайдено", show_alert=True)
-            return
+        await call.answer("🔄 Оновлюю...")
         
-        # Отримати заробіток
-        earnings_today, commission_today = await get_driver_earnings_today(
-            config.database_path,
-            call.from_user.id
-        )
-        net_today = earnings_today - commission_today
+        # Видалити попереднє повідомлення
+        try:
+            await call.message.delete()
+        except:
+            pass
         
-        # Карма
-        karma = driver.karma if hasattr(driver, 'karma') else 100
-        karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
-        
-        # Статистика
-        total_orders = driver.total_orders if hasattr(driver, 'total_orders') else 0
-        rejected_orders = driver.rejected_orders if hasattr(driver, 'rejected_orders') else 0
-        completed_orders = total_orders - rejected_orders
-        reject_percent = (rejected_orders / total_orders * 100) if total_orders > 0 else 0
-        
-        text = (
-            f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
-            f"{'🔴 Низька!' if karma < 50 else '🟡 Середня' if karma < 80 else '🟢 Відмінна!'}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📊 <b>СТАТИСТИКА:</b>\n\n"
-            f"📦 <b>Всього замовлень:</b> {total_orders}\n"
-            f"✅ <b>Виконано:</b> {completed_orders}\n"
-            f"❌ <b>Відмов:</b> {rejected_orders} ({reject_percent:.1f}%)\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💰 <b>ЗАРОБІТОК СЬОГОДНІ:</b>\n\n"
-            f"💵 <b>Заробіток:</b> {earnings_today:.0f} грн\n"
-            f"💳 <b>Комісія (2%):</b> {commission_today:.0f} грн\n"
-            f"💰 <b>Чистий:</b> {net_today:.0f} грн\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💡 <b>ЯК ПРАЦЮЄ КАРМА:</b>\n"
-            f"• Старт: 100 балів\n"
-            f"• Відмова від замовлення: -5 балів\n"
-            f"• Успішне замовлення: +1 бал (макс 100)\n"
-            f"• Низька карма (<50): ⚠️ Попередження"
+        # Створити fake message для виклику driver_settings_menu
+        fake_msg = Message(
+            message_id=call.message.message_id if call.message else 0,
+            date=call.message.date if call.message else datetime.now(timezone.utc),
+            chat=call.message.chat if call.message else call.from_user,
+            from_user=call.from_user,
+            text="⚙️ Налаштування"
         )
         
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
-            ]
-        )
-        
-        if call.message:
-            await call.message.edit_text(text, reply_markup=kb)
-        await call.answer("✅ Оновлено!")
+        # Викликати основний обробник налаштувань
+        await driver_settings_menu(fake_msg)
     
     # ==================== ЗАПОВНЕННЯ ПРОФІЛЮ ====================
     
