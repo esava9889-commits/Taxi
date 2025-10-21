@@ -1079,10 +1079,11 @@ def create_router(config: AppConfig) -> Router:
         from app.handlers.car_classes import get_car_class_name
         car_class = data.get("car_class", "economy")
         
-        # Отримати місто з користувача
-        from app.storage.db import get_user_by_id
-        user = await get_user_by_id(config.database_path, user_id)
-        city = user.city if user and user.city else None
+        # ✅ ВИПРАВЛЕНО: Отримати місто з FSM state (не з users!)
+        # Водій НЕ є клієнтом, місто зберігається в state.update_data(city=...)
+        city = data.get("city")
+        
+        logger.info(f"🔍 FINALIZE: user_id={user_id}, city from state={city}, full_data={data}")
         
         driver = Driver(
             id=None,
