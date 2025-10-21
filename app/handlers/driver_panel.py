@@ -86,6 +86,13 @@ def driver_panel_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+# FSM стани для заповнення профілю водія
+class DriverProfileStates(StatesGroup):
+    waiting_for_city = State()
+    waiting_for_color = State()
+    waiting_for_card = State()
+
+
 def create_router(config: AppConfig) -> Router:
     router = Router(name="driver_panel")
 
