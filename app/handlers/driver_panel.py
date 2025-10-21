@@ -429,7 +429,7 @@ def create_router(config: AppConfig) -> Router:
         if not driver:
             return
         
-        # ВАЛІДАЦІЯ ПРОФІЛЮ перед увімкненням онлайн
+        # ВАЛІДАЦІЯ ПРОФІЛЮ перед увімкненням онлайн (БЕЗ геолокації!)
         if not driver.online:  # Якщо намагається увімкнути онлайн
             car_color = getattr(driver, 'car_color', None)
             missing = []
@@ -439,8 +439,7 @@ def create_router(config: AppConfig) -> Router:
                 missing.append("💳 Картка для переказів")
             if not car_color:
                 missing.append("🎨 Колір авто")
-            if not driver.last_lat:
-                missing.append("📍 Геолокація")
+            # ❌ ВИДАЛЕНО: Перевірка геолокації - не обов'язкова для онлайн
             
             if missing:
                 await call.answer(
@@ -2935,14 +2934,17 @@ def create_router(config: AppConfig) -> Router:
     @router.message(F.text == "⚙️ Налаштування")
     async def driver_settings_menu(message: Message) -> None:
         """Налаштування водія - КАРМА, СТАТИСТИКА, ЗАРОБІТОК"""
+        logger.info(f"🔧 Налаштування: отримано запит від {message.from_user.id if message.from_user else 'Unknown'}")
+        
         if not message.from_user:
+            logger.error("❌ Налаштування: message.from_user is None!")
             return
         
         # Видалити повідомлення користувача
         try:
             await message.delete()
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося видалити повідомлення: {e}")
         
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         
@@ -2956,6 +2958,7 @@ def create_router(config: AppConfig) -> Router:
             return
         
         logger.info(f"✅ Водій {driver.id} ({driver.full_name}) - генерую налаштування")
+        logger.info(f"📊 Водій дані: city={driver.city}, card={driver.card_number}, karma={getattr(driver, 'karma', None)}")
         
         # Отримати заробіток сьогодні
         earnings_today, commission_today = await get_driver_earnings_today(
@@ -2999,8 +3002,7 @@ def create_router(config: AppConfig) -> Router:
             missing_fields.append("💳 Картка")
         if not car_color:
             missing_fields.append("🎨 Колір авто")
-        if not driver.last_lat:
-            missing_fields.append("📍 Геолокація")
+        # ❌ ВИДАЛЕНО: Геолокація не обов'язкова для онлайн
         
         # Попередження якщо профіль неповний
         profile_warning = ""
@@ -3059,8 +3061,7 @@ def create_router(config: AppConfig) -> Router:
                 buttons.append([InlineKeyboardButton(text="💳 ⚠️ ДОДАТИ КАРТКУ", callback_data="settings:card")])
             if not car_color:
                 buttons.append([InlineKeyboardButton(text="🎨 ⚠️ ВКАЗАТИ КОЛІР АВТО", callback_data="settings:set_color")])
-            if not driver.last_lat:
-                buttons.append([InlineKeyboardButton(text="📍 ⚠️ ОНОВИТИ ГЕОЛОКАЦІЮ", callback_data="settings:update_location")])
+            # ❌ ВИДАЛЕНО: Попередження про геолокацію - не обов'язкова
             buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
         
         # Завжди показати всі налаштування
@@ -3075,7 +3076,17 @@ def create_router(config: AppConfig) -> Router:
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await message.answer(text, reply_markup=kb)
+        logger.info(f"📤 Надсилаю налаштування водію {driver.id}, довжина тексту: {len(text)} символів")
+        
+        try:
+            sent = await message.answer(text, reply_markup=kb)
+            logger.info(f"✅ Налаштування надіслано успішно, message_id={sent.message_id}")
+        except Exception as e:
+            logger.error(f"❌ ПОМИЛКА надсилання налаштувань: {e}", exc_info=True)
+            await message.answer(
+                "❌ Помилка завантаження налаштувань. Спробуйте ще раз.",
+                reply_markup=driver_panel_keyboard()
+            )
     
     @router.callback_query(F.data == "settings:refresh")
     async def refresh_settings(call: CallbackQuery) -> None:
