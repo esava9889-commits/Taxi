@@ -2040,6 +2040,11 @@ def create_router(config: AppConfig) -> Router:
         success = await cancel_order_by_driver(config.database_path, order.id, driver.id, "Водій відмовився")
         
         if success:
+            # ⚠️ ЗМЕНШИТИ КАРМУ ВОДІЯ за відмову
+            from app.storage.db import decrease_driver_karma
+            await decrease_driver_karma(config.database_path, driver.id, amount=5)
+            logger.warning(f"⚠️ Водій #{driver.id} відмовився від замовлення #{order.id}, карма -5")
+            
             # Повідомити клієнта
             try:
                 await message.bot.send_message(
