@@ -106,6 +106,9 @@ def create_router(config: AppConfig) -> Router:
             )
             return
         
+        # ⭐ ПЕРЕВІРКА АКТИВНОГО ЗАМОВЛЕННЯ
+        active_order = await get_active_order_for_driver(config.database_path, driver.id)
+        
         # Заробіток
         earnings, commission = await get_driver_earnings_today(config.database_path, message.from_user.id)
         net = earnings - commission
@@ -156,22 +159,159 @@ def create_router(config: AppConfig) -> Router:
             f"💸 Комісія до сплати: {commission:.2f} грн\n"
             f"💵 Чистий заробіток: {net:.2f} грн\n"
             f"💝 Чайові (всього): {tips:.2f} грн\n\n"
-            "ℹ️ Замовлення надходять у групу водіїв.\n\n"
-            "👇 Натисніть '🚀 Почати роботу' для керування"
         )
         
-        # КЛАВІАТУРА БЕЗ кнопки поділитися локацією (вона тепер в активному замовленні)
-        kb = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="🚀 Почати роботу")],
-                [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
-                [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
-                [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
-            ],
-            resize_keyboard=True
-        )
+        # ⭐ ЯКЩО Є АКТИВНЕ ЗАМОВЛЕННЯ - показати попередження
+        if active_order:
+            order_status_emoji = "✅" if active_order.status == "accepted" else "🚗"
+            order_status_text = "Прийнято" if active_order.status == "accepted" else "В дорозі"
+            
+            text += (
+                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"⚠️ <b>У ВАС Є АКТИВНЕ ЗАМОВЛЕННЯ!</b>\n\n"
+                f"{order_status_emoji} Замовлення #{active_order.id}\n"
+                f"📊 Статус: {order_status_text}\n"
+                f"👤 Клієнт: {active_order.name}\n"
+                f"💰 Вартість: {int(active_order.fare_amount):.0f} грн\n\n"
+                f"👇 <b>Натисніть кнопку нижче для керування!</b>"
+            )
+        else:
+            text += "ℹ️ Замовлення надходять у групу водіїв.\n\n👇 Натисніть '🚀 Почати роботу' для керування"
+        
+        # ⭐ КЛАВІАТУРА - різна для активного замовлення і без
+        if active_order:
+            kb = ReplyKeyboardMarkup(
+                keyboard=[
+                    # ВЕЛИКА КНОПКА для повернення до замовлення
+                    [KeyboardButton(text="🚗 КЕРУВАТИ ЗАМОВЛЕННЯМ")],
+                    [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
+                    [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
+                ],
+                resize_keyboard=True
+            )
+        else:
+            kb = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="🚀 Почати роботу")],
+                    [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
+                    [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
+                ],
+                resize_keyboard=True
+            )
         
         await message.answer(text, reply_markup=kb)
+
+    @router.message(F.text == "🚗 КЕРУВАТИ ЗАМОВЛЕННЯМ")
+    async def manage_active_order(message: Message) -> None:
+        """Повернутися до керування активним замовленням"""
+        if not message.from_user:
+            return
+        
+        # Видалити повідомлення користувача
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Водія не знайдено")
+            return
+        
+        # Отримати активне замовлення
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer(
+                "❌ У вас немає активного замовлення.\n\n"
+                "Замовлення надходять у групу водіїв."
+            )
+            return
+        
+        # ⭐ Очистити адреси і створити посилання
+        clean_pickup = clean_address(order.pickup_address)
+        clean_destination = clean_address(order.destination_address)
+        
+        pickup_link = ""
+        destination_link = ""
+        
+        if order.pickup_lat and order.pickup_lon:
+            pickup_link = f"<a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>📍 Відкрити на карті</a>"
+        
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"<a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>📍 Відкрити на карті</a>"
+        
+        # Відстань
+        distance_text = ""
+        if order.distance_m:
+            km = order.distance_m / 1000.0
+            distance_text = f"\n📏 Відстань: {km:.1f} км"
+        
+        # Спосіб оплати
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+        
+        # Статус замовлення
+        status_emoji = "✅" if order.status == "accepted" else "🚗"
+        status_text = "Прийнято" if order.status == "accepted" else "В дорозі"
+        
+        # ПОВІДОМЛЕННЯ
+        text = (
+            f"{status_emoji} <b>АКТИВНЕ ЗАМОВЛЕННЯ #{order.id}</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📋 ІНФОРМАЦІЯ:</b>\n\n"
+            f"📊 Статус: <b>{status_text}</b>\n"
+            f"👤 Клієнт: {order.name}\n"
+            f"📱 Телефон: <code>{order.phone}</code>\n\n"
+            f"📍 <b>Звідки забрати:</b>\n{clean_pickup}\n"
+            f"{pickup_link}\n\n"
+            f"🎯 <b>Куди везти:</b>\n{clean_destination}\n"
+            f"{destination_link}{distance_text}\n\n"
+            f"💰 Вартість: <b>{int(order.fare_amount):.0f} грн</b>\n"
+            f"{payment_emoji} Оплата: {payment_text}\n"
+        )
+        
+        if order.comment:
+            text += f"\n💬 <b>Коментар клієнта:</b>\n<i>{order.comment}</i>\n"
+        
+        text += (
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📍 ЕТАПИ ВИКОНАННЯ:</b>\n\n"
+            f"1️⃣ <b>Їдьте до клієнта</b>\n"
+            f"   Натисніть: <b>📍 Я НА МІСЦІ ПОДАЧІ</b>\n\n"
+            f"2️⃣ <b>Клієнт сів в авто</b>\n"
+            f"   Натисніть: <b>✅ КЛІЄНТ В АВТО</b>\n\n"
+            f"3️⃣ <b>Довезли до місця призначення</b>\n"
+            f"   Натисніть: <b>🏁 ЗАВЕРШИТИ ПОЇЗДКУ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Використовуйте кнопки внизу для керування!</b>"
+        )
+        
+        # КЛАВІАТУРА для керування
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                # ======== ОСНОВНЕ КЕРУВАННЯ ========
+                [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                
+                # ======== ДОДАТКОВІ ФУНКЦІЇ ========
+                [
+                    KeyboardButton(text="📞 Клієнт"),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Керування поїздкою"
+        )
+        
+        await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
 
     @router.message(F.text == "🚀 Почати роботу")
     async def start_work(message: Message) -> None:
@@ -2090,6 +2230,7 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ Не вдалося скасувати замовлення")
     
     @router.message(F.text == "📞 Зв'язатися з клієнтом")
+    @router.message(F.text == "📞 Клієнт")
     async def trip_contact_client_button(message: Message) -> None:
         """Показати контакти клієнта"""
         if not message.from_user:
@@ -2110,6 +2251,54 @@ def create_router(config: AppConfig) -> Router:
             f"📱 Телефон: <code>{order.phone}</code>\n\n"
             f"💡 Натисніть на номер щоб скопіювати"
         )
+    
+    @router.message(F.text == "🗺️ Маршрут")
+    async def show_route_map(message: Message) -> None:
+        """Показати маршрут на карті"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Створити посилання на Google Maps маршрут
+        if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
+            maps_url = (
+                f"https://www.google.com/maps/dir/?api=1"
+                f"&origin={order.pickup_lat},{order.pickup_lon}"
+                f"&destination={order.dest_lat},{order.dest_lon}"
+                f"&travelmode=driving"
+            )
+            
+            clean_pickup = clean_address(order.pickup_address)
+            clean_destination = clean_address(order.destination_address)
+            
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🗺️ Відкрити маршрут на Google Maps", url=maps_url)]
+                ]
+            )
+            
+            await message.answer(
+                f"🗺️ <b>Маршрут поїздки:</b>\n\n"
+                f"📍 <b>Звідки:</b>\n{clean_pickup}\n\n"
+                f"🎯 <b>Куди:</b>\n{clean_destination}\n\n"
+                f"💡 Натисніть кнопку нижче щоб відкрити маршрут",
+                reply_markup=kb
+            )
+        else:
+            await message.answer(
+                "⚠️ Координати маршруту відсутні.\n\n"
+                "Використовуйте адреси:\n"
+                f"📍 Звідки: {order.pickup_address}\n"
+                f"🎯 Куди: {order.destination_address}"
+            )
     
     @router.message(F.text == "ℹ️ Допомога")
     async def trip_help_button(message: Message) -> None:
