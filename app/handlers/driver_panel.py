@@ -2181,6 +2181,7 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order.id} повністю завершено. Водій {driver.id} повернувся до панелі.")
     
+    @router.message(F.text == "❌ Скасувати замовлення")
     @router.message(F.text == "❌ Відмовитися")
     async def trip_cancel_button(message: Message) -> None:
         """Водій відмовляється від замовлення"""
@@ -2217,8 +2218,6 @@ def create_router(config: AppConfig) -> Router:
             except Exception as e:
                 logger.error(f"Failed to notify client: {e}")
             
-            # Оновити статистику водія (відмова)
-            # Це можна додати до бази даних для аналітики
             logger.warning(f"⚠️ Водій {driver.full_name} відмовився від замовлення #{order.id}")
             
             await message.answer(

@@ -2155,27 +2155,6 @@ async def increase_driver_karma(db_path: str, driver_id: int, amount: int = 1) -
             return False
 
 
-async def decrease_client_karma(db_path: str, user_id: int, amount: int = 5) -> bool:
-    """Зменшити карму клієнта (за скасування замовлення)"""
-    async with db_manager.connect(db_path) as db:
-        try:
-            await db.execute(
-                """
-                UPDATE users 
-                SET karma = MAX(0, karma - ?),
-                    cancelled_orders = cancelled_orders + 1
-                WHERE user_id = ?
-                """,
-                (amount, user_id)
-            )
-            await db.commit()
-            logger.info(f"⚠️ Карма клієнта #{user_id} зменшена на -{amount}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка зменшення карми клієнта: {e}")
-            return False
-
-
 async def increase_client_karma(db_path: str, user_id: int, amount: int = 1) -> bool:
     """Збільшити карму клієнта (за успішне замовлення), макс 100"""
     async with db_manager.connect(db_path) as db:
