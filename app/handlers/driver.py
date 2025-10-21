@@ -48,6 +48,7 @@ class DriverRegStates(StatesGroup):
     car_make = State()
     car_model = State()
     car_plate = State()
+    car_color = State()  # ← ДОДАНО: Колір авто
     car_class = State()
     license_photo = State()
     confirm = State()
@@ -400,6 +401,37 @@ def create_router(config: AppConfig) -> Router:
             "🚙 <b>Крок 5/8: Модель автомобіля</b>\n\n"
             "Введіть модель вашого авто:\n\n"
             "Приклад: Camry, Passat, X5",
+            reply_markup=kb
+        )
+        await state.update_data(reg_message_id=msg.message_id)
+    
+    @router.callback_query(F.data == "driver:back_to_color")
+    async def back_to_color(call: CallbackQuery, state: FSMContext) -> None:
+        """Назад до введення кольору"""
+        await call.answer()
+        await state.set_state(DriverRegStates.car_color)
+        
+        data = await state.get_data()
+        car_make = data.get("car_make", "")
+        car_model = data.get("car_model", "")
+        car_plate = data.get("car_plate", "")
+        
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Чорний"), KeyboardButton(text="Білий")],
+                [KeyboardButton(text="Сірий"), KeyboardButton(text="Синій")],
+                [KeyboardButton(text="Червоний"), KeyboardButton(text="Зелений")],
+                [KeyboardButton(text="Срібний"), KeyboardButton(text="Жовтий")],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        msg = await call.message.answer(
+            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n\n"
+            "🎨 <b>Крок 7/9: Колір автомобіля</b>\n\n"
+            "Оберіть колір зі списку або введіть свій:",
             reply_markup=kb
         )
         await state.update_data(reg_message_id=msg.message_id)
@@ -860,28 +892,14 @@ def create_router(config: AppConfig) -> Router:
             ])
         
         # Додати кнопку "Назад"
-        buttons.append([InlineKeyboardButton(text="⬅️ Назад до моделі", callback_data="driver:back_to_model")])
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="driver:back_to_color")])
         buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")])
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        # Видалити попереднє повідомлення
-        reg_message_id = data.get("reg_message_id")
-        if reg_message_id:
-            try:
-                await message.bot.delete_message(message.chat.id, reg_message_id)
-            except:
-                pass
-        
-        # Видалити повідомлення користувача
-        try:
-            await message.delete()
-        except:
-            pass
-        
         msg = await message.answer(
-            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n\n"
-            "🚗 <b>Крок 7/8: Клас автомобіля</b>\n\n"
+            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate}) - {car_color}\n\n"
+            "🚗 <b>Крок 8/9: Клас автомобіля</b>\n\n"
             "Оберіть клас вашого авто:\n\n"
             "• 🚗 Економ - базовий тариф\n"
             "• 🚙 Стандарт - +30% до тарифу\n"
@@ -1003,6 +1021,7 @@ def create_router(config: AppConfig) -> Router:
             status="pending",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
+            car_color=str(data.get("car_color", "")),  # ✅ ДОДАНО: Колір авто
         )
         driver_id = await create_driver_application(config.database_path, driver)
         await state.clear()
@@ -1137,8 +1156,20 @@ def create_router(config: AppConfig) -> Router:
                         "• Переглядати історію поїздок\n\n"
                     )
                     
-                    # Додати посилання на групу водіїв, якщо воно є
-                    if config.driver_group_invite_link:
+                    # ✅ ДОДАТИ ПОСИЛАННЯ НА ГРУПУ МІСТА ВОДІЯ
+                    city_invite = None
+                    if drv.city and drv.city in config.city_invite_links:
+                        city_invite = config.city_invite_links[drv.city]
+                    
+                    if city_invite:
+                        welcome_text += (
+                            f"📱 <b>Долучайтесь до групи водіїв міста {drv.city}:</b>\n"
+                            f"{city_invite}\n\n"
+                            f"⚠️ Всі замовлення вашого міста публікуються в цій групі.\n"
+                            f"Обов'язково приєднайтесь!\n\n"
+                        )
+                    elif config.driver_group_invite_link:
+                        # Fallback: загальна група якщо немає групи міста
                         welcome_text += (
                             f"📱 <b>Долучайтесь до групи водіїв:</b>\n"
                             f"{config.driver_group_invite_link}\n\n"
@@ -1280,8 +1311,20 @@ def create_router(config: AppConfig) -> Router:
                     "• Переглядати історію поїздок\n\n"
                 )
                 
-                # Додати посилання на групу водіїв, якщо воно є
-                if config.driver_group_invite_link:
+                # ✅ ДОДАТИ ПОСИЛАННЯ НА ГРУПУ МІСТА ВОДІЯ
+                city_invite = None
+                if drv.city and drv.city in config.city_invite_links:
+                    city_invite = config.city_invite_links[drv.city]
+                
+                if city_invite:
+                    welcome_text += (
+                        f"📱 <b>Долучайтесь до групи водіїв міста {drv.city}:</b>\n"
+                        f"{city_invite}\n\n"
+                        f"⚠️ Всі замовлення вашого міста публікуються в цій групі.\n"
+                        f"Обов'язково приєднайтесь!\n\n"
+                    )
+                elif config.driver_group_invite_link:
+                    # Fallback: загальна група якщо немає групи міста
                     welcome_text += (
                         f"📱 <b>Долучайтесь до групи водіїв:</b>\n"
                         f"{config.driver_group_invite_link}\n\n"

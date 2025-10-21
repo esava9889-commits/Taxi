@@ -1147,30 +1147,58 @@ class Driver:
     karma: int = 100  # Карма водія (100 = ідеально)
     total_orders: int = 0  # Всього замовлень
     rejected_orders: int = 0  # Відмов від замовлень
+    car_color: Optional[str] = None  # ✅ ДОДАНО: Колір авто
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
     async with db_manager.connect(db_path) as db:
-        cursor = await db.execute(
-            """
-            INSERT INTO drivers (
-                tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, city, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                driver.tg_user_id,
-                driver.full_name,
-                driver.phone,
-                driver.car_make,
-                driver.car_model,
-                driver.car_plate,
-                driver.license_photo_file_id,
-                driver.city,
-                driver.status,
-                driver.created_at,
-                driver.updated_at,
-            ),
-        )
+        # Спробувати з car_color (нова колонка)
+        try:
+            cursor = await db.execute(
+                """
+                INSERT INTO drivers (
+                    tg_user_id, full_name, phone, car_make, car_model, car_plate, car_color, license_photo_file_id, city, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    driver.tg_user_id,
+                    driver.full_name,
+                    driver.phone,
+                    driver.car_make,
+                    driver.car_model,
+                    driver.car_plate,
+                    driver.car_color,  # ← ДОДАНО
+                    driver.license_photo_file_id,
+                    driver.city,
+                    driver.status,
+                    driver.created_at,
+                    driver.updated_at,
+                ),
+            )
+        except Exception as e:
+            # Fallback: Колонки car_color немає в БД
+            import logging
+            logging.getLogger(__name__).warning(f"⚠️ car_color не в БД, fallback: {e}")
+            cursor = await db.execute(
+                """
+                INSERT INTO drivers (
+                    tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, city, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    driver.tg_user_id,
+                    driver.full_name,
+                    driver.phone,
+                    driver.car_make,
+                    driver.car_model,
+                    driver.car_plate,
+                    driver.license_photo_file_id,
+                    driver.city,
+                    driver.status,
+                    driver.created_at,
+                    driver.updated_at,
+                ),
+            )
         await db.commit()
         return cursor.lastrowid
 
