@@ -531,11 +531,7 @@ def create_router(config: AppConfig) -> Router:
                 )],
                 [
                     InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats"),
-                    InlineKeyboardButton(text="📍 Моя локація", callback_data="work:location")
-                ],
-                [
-                    InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings"),
-                    InlineKeyboardButton(text="⚙️ Налаштування", callback_data="work:settings")
+                    InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings")
                 ],
                 [InlineKeyboardButton(text="🔄 Оновити", callback_data="work:refresh")]
             ]
@@ -2923,43 +2919,6 @@ def create_router(config: AppConfig) -> Router:
             show_alert=True
         )
     
-    @router.callback_query(F.data == "work:settings")
-    async def show_work_settings(call: CallbackQuery) -> None:
-        """Налаштування роботи"""
-        if not call.from_user:
-            return
-        
-        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
-        if not driver:
-            return
-        
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
-                [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
-                [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="settings:update_location")],
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="work:refresh")]
-            ]
-        )
-        
-        car_class_text = {
-            'economy': '💺 Економ',
-            'standard': '🚗 Стандарт', 
-            'comfort': '🚙 Комфорт',
-            'business': '💼 Бізнес'
-        }.get(driver.car_class, driver.car_class)
-        
-        text = (
-            f"⚙️ <b>НАЛАШТУВАННЯ</b>\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🚗 <b>Клас авто:</b> {car_class_text}\n"
-            f"💳 <b>Картка:</b> {driver.card_number or 'Не вказано'}\n"
-            f"📍 <b>Геолокація:</b> {'✅ Активна' if driver.last_lat else '❌ Не оновлювалась'}\n\n"
-            f"Оберіть що налаштувати:"
-        )
-        
-        await call.message.edit_text(text, reply_markup=kb)
-        await call.answer()
     
     @router.callback_query(F.data == "settings:update_location")
     async def update_location_prompt(call: CallbackQuery) -> None:
