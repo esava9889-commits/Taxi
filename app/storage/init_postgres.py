@@ -232,7 +232,23 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції drivers (karma): {e}")
         
-        # Міграція 6: Система карми - додати karma, total_orders, cancelled_orders до users
+        # Міграція 6: Додати car_color до drivers
+        try:
+            has_car_color = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'drivers' AND column_name = 'car_color'
+                )
+            """)
+            
+            if not has_car_color:
+                logger.info("🔄 Міграція drivers: додавання car_color...")
+                await conn.execute("ALTER TABLE drivers ADD COLUMN car_color TEXT")
+                logger.info("✅ Колонка drivers.car_color додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції drivers (car_color): {e}")
+        
+        # Міграція 7: Система карми - додати karma, total_orders, cancelled_orders до users
         try:
             has_user_karma = await conn.fetchval("""
                 SELECT EXISTS (
