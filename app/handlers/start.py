@@ -396,13 +396,17 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Замовлення не знайдено", show_alert=True)
             return
         
-        if order.status != "pending":
-            await call.answer("❌ Замовлення вже не можна скасувати", show_alert=True)
+        if order.status not in ("pending", "accepted"):
+            await call.answer("❌ Замовлення вже не можна скасувати (воно в дорозі або завершено)", show_alert=True)
             return
         
         success = await cancel_order_by_client(config.database_path, order_id, call.from_user.id)
         
         if success:
+            # ⚠️ ЗМЕНШИТИ КАРМУ КЛІЄНТА за скасування
+            from app.storage.db import decrease_client_karma
+            await decrease_client_karma(config.database_path, call.from_user.id)
+            
             await call.answer("✅ Замовлення скасовано", show_alert=True)
             await call.message.answer("✅ <b>Замовлення скасовано</b>\n\nВи можете створити нове замовлення будь-коли.")
             

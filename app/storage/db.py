@@ -587,13 +587,47 @@ async def increase_order_fare(db_path: str, order_id: int, increase_amount: floa
 
 
 async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> bool:
-    """Скасувати замовлення клієнтом (тільки якщо pending)"""
+    """
+    Скасувати замовлення клієнтом.
+    
+    Можна скасувати якщо статус:
+    - pending (очікує водія)
+    - accepted (водій прийняв, але ще не в дорозі)
+    
+    НЕМОЖНА скасувати якщо:
+    - in_progress (вже везуть)
+    - completed (завершено)
+    - cancelled (вже скасовано)
+    """
     async with db_manager.connect(db_path) as db:
+        # Спочатку отримати замовлення щоб зменшити карму водія якщо він був призначений
         cur = await db.execute(
-            "UPDATE orders SET status = 'cancelled', finished_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'",
+            "SELECT driver_id, status FROM orders WHERE id = ? AND user_id = ?",
+            (order_id, user_id)
+        )
+        row = await cur.fetchone()
+        
+        if not row:
+            return False
+        
+        driver_id, status = row[0], row[1]
+        
+        # Перевірити чи можна скасувати
+        if status not in ('pending', 'accepted'):
+            return False
+        
+        # Скасувати замовлення
+        cur = await db.execute(
+            "UPDATE orders SET status = 'cancelled', finished_at = ? WHERE id = ? AND user_id = ? AND status IN ('pending', 'accepted')",
             (datetime.now(timezone.utc), order_id, user_id),
         )
         await db.commit()
+        
+        # Якщо водій був призначений - зменшити його карму
+        if driver_id and status == 'accepted':
+            logger.warning(f"⚠️ Клієнт скасував замовлення #{order_id}, водій #{driver_id} втрачає карму")
+            # Тут не зменшуємо карму водія, бо це клієнт скасував, не водій
+        
         return cur.rowcount > 0
 
 
@@ -2076,6 +2110,27 @@ async def decrease_driver_karma(db_path: str, driver_id: int, amount: int = 5) -
             return True
         except Exception as e:
             logger.error(f"❌ Помилка зменшення карми водія: {e}")
+            return False
+
+
+async def decrease_client_karma(db_path: str, user_id: int, amount: int = 5) -> bool:
+    """Зменшити карму клієнта (за скасування замовлення)"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            await db.execute(
+                """
+                UPDATE users 
+                SET karma = MAX(0, karma - ?),
+                    cancelled_orders = cancelled_orders + 1
+                WHERE user_id = ?
+                """,
+                (amount, user_id)
+            )
+            await db.commit()
+            logger.info(f"⚠️ Карма клієнта #{user_id} зменшена на -{amount}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка зменшення карми клієнта: {e}")
             return False
 
 

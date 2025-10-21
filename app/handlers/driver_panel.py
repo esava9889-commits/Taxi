@@ -2229,6 +2229,211 @@ def create_router(config: AppConfig) -> Router:
         else:
             await message.answer("❌ Не вдалося скасувати замовлення")
     
+    @router.message(F.text == "📍 Я НА МІСЦІ ПОДАЧІ")
+    async def driver_arrived_at_pickup(message: Message) -> None:
+        """Водій прибув на місце подачі"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Повідомити клієнта
+        try:
+            await message.bot.send_message(
+                order.user_id,
+                f"📍 <b>Водій на місці подачі!</b>\n\n"
+                f"🚗 {driver.full_name}\n"
+                f"🚙 {driver.car_make} {driver.car_model}\n"
+                f"🔢 {driver.car_plate}\n\n"
+                f"📱 <code>{driver.phone}</code>\n\n"
+                f"💡 Водій очікує вас на адресі:\n"
+                f"📍 {order.pickup_address}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify client: {e}")
+        
+        # Оновлена клавіатура - прибрати кнопку "Я на місці"
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                [
+                    KeyboardButton(text="📞 Клієнт"),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        await message.answer(
+            f"✅ <b>Ви на місці подачі!</b>\n\n"
+            f"👋 Очікуйте клієнта:\n"
+            f"👤 {order.name}\n"
+            f"📱 <code>{order.phone}</code>\n\n"
+            f"📍 {order.pickup_address}\n\n"
+            f"💡 Клієнт отримав сповіщення.\n"
+            f"👇 Коли клієнт сяде - натисніть <b>✅ КЛІЄНТ В АВТО</b>",
+            reply_markup=kb
+        )
+    
+    @router.message(F.text == "✅ КЛІЄНТ В АВТО")
+    async def client_in_car(message: Message) -> None:
+        """Клієнт сів в авто - початок поїздки"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Оновити статус на "in_progress"
+        await start_order(config.database_path, order.id, driver.id)
+        
+        # Повідомити клієнта
+        try:
+            clean_destination = clean_address(order.destination_address)
+            await message.bot.send_message(
+                order.user_id,
+                f"🚗 <b>Поїздка почалася!</b>\n\n"
+                f"Водій везе вас до місця призначення:\n"
+                f"🎯 {clean_destination}\n\n"
+                f"💰 Вартість: {int(order.fare_amount):.0f} грн\n\n"
+                f"🚗 Гарної дороги!"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify client: {e}")
+        
+        # Оновлена клавіатура - прибрати "Клієнт в авто"
+        kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                [
+                    KeyboardButton(text="📞 Клієнт"),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        
+        clean_destination = clean_address(order.destination_address)
+        destination_link = ""
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Відкрити на карті</a>"
+        
+        await message.answer(
+            f"🚗 <b>Поїздка розпочата!</b>\n\n"
+            f"🎯 <b>Напрямок:</b>\n"
+            f"{clean_destination}{destination_link}\n\n"
+            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n\n"
+            f"👇 Коли доїдете - натисніть <b>🏁 ЗАВЕРШИТИ ПОЇЗДКУ</b>",
+            reply_markup=kb
+        )
+    
+    @router.message(F.text == "🏁 ЗАВЕРШИТИ ПОЇЗДКУ")
+    async def finish_trip(message: Message) -> None:
+        """Завершити поїздку"""
+        if not message.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        order = await get_active_order_for_driver(config.database_path, driver.id)
+        if not order:
+            await message.answer("❌ У вас немає активного замовлення")
+            return
+        
+        # Завершити замовлення
+        await complete_order(config.database_path, order.id, driver.id)
+        
+        # Розрахунок
+        fare = order.fare_amount if order.fare_amount else 100.0
+        tariff = await get_latest_tariff(config.database_path)
+        commission_percent = tariff.commission_percent if tariff else 0.02
+        commission = fare * commission_percent
+        net_earnings = fare - commission
+        
+        # Зберегти платіж
+        payment = Payment(
+            id=None,
+            driver_id=driver.id,
+            order_id=order.id,
+            amount=fare,
+            commission=commission,
+            commission_paid=False,
+            created_at=datetime.now(timezone.utc)
+        )
+        await insert_payment(config.database_path, payment)
+        
+        # ⭐ ЗБІЛЬШИТИ КАРМУ ВОДІЯ за успішне замовлення
+        from app.storage.db import increase_driver_karma
+        await increase_driver_karma(config.database_path, driver.id)
+        
+        # Повідомити клієнта з кнопками оцінки
+        try:
+            payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+            payment_text = "готівкою" if order.payment_method == "cash" else "на картку"
+            
+            # Кнопки для оцінки водія
+            kb_rating = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.tg_user_id}:1:{order.id}"),
+                        InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:2:{order.id}"),
+                        InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:3:{order.id}"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:4:{order.id}"),
+                        InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:5:{order.id}"),
+                    ],
+                    [InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order.id}")]
+                ]
+            )
+            
+            await message.bot.send_message(
+                order.user_id,
+                f"🏁 <b>Поїздка завершена!</b>\n\n"
+                f"💰 До оплати: <b>{int(fare):.0f} грн</b>\n"
+                f"{payment_emoji} Оплата: {payment_text}\n\n"
+                f"⭐ <b>Будь ласка, оцініть водія:</b>",
+                reply_markup=kb_rating
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify client: {e}")
+        
+        # Повернути панель водія
+        await message.answer(
+            f"✅ <b>Поїздку завершено!</b>\n\n"
+            f"💰 Заробіток: {int(fare):.0f} грн\n"
+            f"💸 Комісія (2%): {int(commission):.0f} грн\n"
+            f"💵 Чистий: {int(net_earnings):.0f} грн\n\n"
+            f"🌟 Дякуємо за роботу!",
+            reply_markup=driver_panel_keyboard()
+        )
+    
     @router.message(F.text == "📞 Зв'язатися з клієнтом")
     @router.message(F.text == "📞 Клієнт")
     async def trip_contact_client_button(message: Message) -> None:
