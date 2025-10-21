@@ -40,9 +40,10 @@ def main_menu_keyboard(
         return ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="🚗 Панель водія")],
-                [KeyboardButton(text="📊 Мій заробіток"), KeyboardButton(text="💳 Комісія")],
+                [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
                 [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
-                [KeyboardButton(text="📊 Розширена аналітика"), KeyboardButton(text="ℹ️ Допомога")],
+                [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
+                [KeyboardButton(text="📖 Правила користування")],
             ],
             resize_keyboard=True,
             one_time_keyboard=False,

@@ -1078,50 +1078,6 @@ def create_router(config: AppConfig) -> Router:
     async def close_stats(call: CallbackQuery) -> None:
         """Закрити вікно статистики"""
         await call.message.delete()
-    
-    @router.message(F.text == "⚙️ Налаштування")
-    async def show_settings(message: Message) -> None:
-        """Налаштування системи"""
-        if not message.from_user or not is_admin(message.from_user.id):
-            return
-        
-        from app.storage.db import get_online_drivers_count
-        online_count = await get_online_drivers_count(config.database_path)
-        
-        # Отримати кількість водіїв за статусами
-        from app.storage.db_connection import db_manager
-        async with db_manager.connect(config.database_path) as db:
-            async with db.execute("SELECT status, COUNT(*) FROM drivers GROUP BY status") as cur:
-                status_counts = dict(await cur.fetchall())
-            
-            # Загальна кількість користувачів
-            async with db.execute("SELECT COUNT(*) FROM users") as cur:
-                users_count = (await cur.fetchone())[0]
-            
-            # Загальна кількість замовлень
-            async with db.execute("SELECT COUNT(*) FROM orders") as cur:
-                orders_count = (await cur.fetchone())[0]
-        
-        approved_count = status_counts.get("approved", 0)
-        pending_count = status_counts.get("pending", 0)
-        rejected_count = status_counts.get("rejected", 0)
-        
-        text = (
-            "⚙️ <b>Налаштування системи</b>\n\n"
-            f"📊 <b>Статистика:</b>\n"
-            f"   👥 Користувачів: {users_count}\n"
-            f"   📦 Замовлень: {orders_count}\n\n"
-            f"🚗 <b>Водії:</b>\n"
-            f"   ✅ Активні: {approved_count}\n"
-            f"   ⏳ На модерації: {pending_count}\n"
-            f"   ❌ Заблоковані: {rejected_count}\n"
-            f"   🟢 Онлайн: {online_count}\n\n"
-            f"🌐 <b>Міста:</b> {', '.join(AVAILABLE_CITIES)}\n"
-            f"💳 <b>Картка:</b> {config.payment_card or 'Не налаштована'}\n"
-            f"👥 <b>Група:</b> {'Налаштована' if config.driver_group_chat_id else 'Не налаштована'}\n"
-            f"🗺️ <b>Google Maps:</b> {'Підключено ✅' if config.google_maps_api_key else 'Не підключено ❌'}\n\n"
-            f"💡 Для зміни налаштувань використовуйте ENV змінні на Render"
-        )
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
