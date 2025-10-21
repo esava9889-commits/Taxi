@@ -914,6 +914,78 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=kb
         )
         await state.update_data(reg_message_id=msg.message_id)
+    
+    @router.message(DriverRegStates.car_color)
+    async def take_car_color(message: Message, state: FSMContext) -> None:
+        """Зберегти колір і перейти до класу авто"""
+        from aiogram.types import ReplyKeyboardRemove
+        
+        car_color = message.text.strip() if message.text else ""
+        if len(car_color) < 2:
+            await message.answer(
+                "❌ <b>Невірний формат</b>\n\n"
+                "Введіть колір вашого авто (мінімум 2 символи):"
+            )
+            return
+        
+        await state.update_data(car_color=car_color)
+        
+        # Отримати дані
+        data = await state.get_data()
+        car_make = data.get("car_make", "")
+        car_model = data.get("car_model", "")
+        car_plate = data.get("car_plate", "")
+        reg_message_id = data.get("reg_message_id")
+        
+        # Змінити стан на КЛАС авто
+        await state.set_state(DriverRegStates.car_class)
+        
+        # Видалити попереднє повідомлення
+        if reg_message_id:
+            try:
+                await message.bot.delete_message(message.chat.id, reg_message_id)
+            except:
+                pass
+        
+        # Видалити повідомлення користувача
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        # Вибір класу авто
+        from app.handlers.car_classes import CAR_CLASSES
+        
+        buttons = []
+        for class_code, class_info in CAR_CLASSES.items():
+            mult_percent = int((class_info['multiplier']-1)*100)
+            mult_text = f"+{mult_percent}%" if mult_percent > 0 else "базовий"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{class_info['name_uk']} ({mult_text})",
+                    callback_data=f"driver_car_class:{class_code}"
+                )
+            ])
+        
+        # Додати кнопку "Назад"
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад до кольору", callback_data="driver:back_to_color")])
+        buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="driver_reg:cancel_start")])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        msg = await message.answer(
+            f"✅ <b>Авто:</b> {car_make} {car_model} ({car_plate})\n"
+            f"🎨 <b>Колір:</b> {car_color}\n\n"
+            "🚗 <b>Крок 8/9: Клас автомобіля</b>\n\n"
+            "Оберіть клас вашого авто:\n\n"
+            "• 🚗 Економ - базовий тариф\n"
+            "• 🚙 Стандарт - +30% до тарифу\n"
+            "• 🚘 Комфорт - +60% до тарифу\n"
+            "• 🏆 Бізнес - +100% до тарифу\n\n"
+            "Це вплине на вартість поїздок та ваш заробіток.",
+            reply_markup=kb
+        )
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.callback_query(F.data.startswith("driver_car_class:"))
     async def save_driver_car_class(call: CallbackQuery, state: FSMContext) -> None:
