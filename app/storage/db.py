@@ -35,7 +35,24 @@ def _parse_datetime(value: Union[str, datetime, None]) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):
-        return _parse_datetime(value)
+        try:
+            # Спробувати ISO 8601 (SQLite зберігає через isoformat)
+            return datetime.fromisoformat(value)
+        except Exception:
+            # Спробувати кілька відомих форматів
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S%z",
+                "%Y-%m-%d %H:%M:%S.%f%z",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M:%S.%f",
+            ):
+                try:
+                    return datetime.strptime(value, fmt)
+                except Exception:
+                    continue
+            # Якщо не вдалося розпарсити – повернути None щоб не падати
+            logger.debug(f"_parse_datetime: unsupported format '{value}'")
+            return None
     return value
 
 def _is_postgres() -> bool:
@@ -1040,7 +1057,6 @@ async def get_pending_orders(db_path: str, city: Optional[str] = None) -> List[O
                     car_class=row[21] if row[21] else "economy",
                     tip_amount=row[22] if row[22] is not None else 0.0,
                     payment_method=row[23] if row[23] else "cash",
-                    city=None,
             )
         )
     return orders

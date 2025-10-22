@@ -1284,28 +1284,34 @@ def create_router(config: AppConfig) -> Router:
         )
         
         order_id = await insert_order(config.database_path, order)
-        await state.clear()
-        
-        # ⭐ НОВА ЛОГІКА: Відправка замовлення у групу МІСТА КЛІЄНТА
-        # Отримати місто клієнта
+
+        # Визначити місто клієнта ДО очищення state (щоб мати надійний fallback)
+        resolved_city = (data.get("city") or "").strip() or None
+
+        # Отримати місто клієнта з профілю як основне джерело правди
         from app.storage.db import get_user_by_id
         user = await get_user_by_id(config.database_path, message.from_user.id)
-        client_city = user.city if user and user.city else None
+        client_city = (user.city.strip() if (user and user.city) else None) or resolved_city
+
+        # Очистити стан після того, як зняли всі необхідні дані
+        await state.clear()
         
+        # ⭐ Відправка замовлення у групу МІСТА КЛІЄНТА
+        # Отримати групу міста через helper з урахуванням fallback
+        from app.config.config import get_city_group_id
+        city_group_id = get_city_group_id(config, client_city)
+
         # DEBUG: Логування для діагностики
-        logger.info(f"🔍 DEBUG: user_id={message.from_user.id}, user={user}, user.city={user.city if user else 'NO USER'}, client_city={client_city}")
+        logger.info(
+            f"🔍 DEBUG: order_confirm city resolution → user_id={message.from_user.id}, "
+            f"user_city={(user.city if user else None)}, state_city={resolved_city}, resolved_city={client_city}"
+        )
         logger.info(f"🔍 DEBUG: config.city_groups={config.city_groups}")
-        
-        # Знайти групу для цього міста
-        city_group_id = None
-        if client_city and client_city in config.city_groups:
-            city_group_id = config.city_groups[client_city]
-            logger.info(f"✅ Знайдено групу для міста '{client_city}': {city_group_id}")
-        
-        # Fallback на стару групу якщо немає city-specific
-        if not city_group_id and config.driver_group_chat_id:
-            city_group_id = config.driver_group_chat_id
-            logger.warning(f"⚠️ Група для міста '{client_city}' не налаштована. Використовую загальну групу {city_group_id}.")
+        if city_group_id:
+            if client_city in config.city_groups and config.city_groups.get(client_city):
+                logger.info(f"✅ Використовую групу міста '{client_city}': {city_group_id}")
+            else:
+                logger.warning(f"⚠️ Для міста '{client_city}' немає окремої групи, використовую fallback: {city_group_id}")
         
         if city_group_id:
             try:
@@ -1350,7 +1356,7 @@ def create_router(config: AppConfig) -> Router:
                         from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
                         from app.storage.db import get_online_drivers_count
                         
-                        city = data.get('city', 'Київ')
+                        city = client_city or data.get('city', 'Київ')
                         online_count = await get_online_drivers_count(config.database_path, city)
                         
                         # НЕ перераховуємо ціну — беремо зафіксовану
@@ -1375,7 +1381,7 @@ def create_router(config: AppConfig) -> Router:
                 from app.storage.db import get_online_drivers
                 from app.handlers.driver_priority import get_top_drivers
                 
-                online_drivers = await get_online_drivers(config.database_path, data.get('city'))
+                online_drivers = await get_online_drivers(config.database_path, client_city or data.get('city'))
                 top_drivers = await get_top_drivers(config.database_path, online_drivers, limit=5)
                 
                 # Якщо є топ водії - надіслати їм особисто перші
@@ -1442,7 +1448,7 @@ def create_router(config: AppConfig) -> Router:
                     f"🔴 {clean_destination}{route_link}\n\n"
                     f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
                     f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
-                    f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {data.get('city')}\n\n"
+                    f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
                     f"ℹ️ <i>Повний номер після прийняття</i>"
                 )
                 
@@ -1800,8 +1806,8 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Це не ваше замовлення", show_alert=True)
             return
         
-        # Скасувати замовлення
-        success = await cancel_order_by_client(config.database_path, order_id)
+        # Скасувати замовлення (обов'язково з user_id для безпеки)
+        success = await cancel_order_by_client(config.database_path, order_id, call.from_user.id)
         
         if success:
             # Скасувати таймер
