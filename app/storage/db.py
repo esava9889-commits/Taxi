@@ -1430,8 +1430,15 @@ async def accept_order(db_path: str, order_id: int, driver_id: int) -> bool:
         # Нова логіка: замовлення має status='pending' і driver_id=NULL
         # Перший водій хто клікне - отримує замовлення
         cur = await db.execute(
-            "UPDATE orders SET status = 'accepted', driver_id = ? WHERE id = ? AND status = 'pending' AND driver_id IS NULL",
-            (driver_id, order_id),
+            (
+                "UPDATE orders \n"
+                "SET status = 'accepted', driver_id = ? \n"
+                "WHERE id = ? \n"
+                "  AND status = 'pending' \n"
+                "  AND driver_id IS NULL \n"
+                "  AND (SELECT car_class FROM drivers WHERE id = ?) = car_class"
+            ),
+            (driver_id, order_id, driver_id),
         )
         await db.commit()
         return cur.rowcount > 0

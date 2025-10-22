@@ -1233,6 +1233,23 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Вже прийнято", show_alert=True)
             return
         
+        # Перевірка відповідності класу авто до клієнтського
+        driver_class = (driver.car_class or 'economy')
+        order_class = (order.car_class or 'economy')
+        if driver_class != order_class:
+            # Повідомлення з підказкою змінити клас авто в налаштуваннях
+            from app.handlers.car_classes import get_car_class_name
+            d_name = get_car_class_name(driver_class)
+            o_name = get_car_class_name(order_class)
+            await call.answer(
+                "❌ Це замовлення для іншого класу авто\n\n"
+                f"🔘 Ваш клас: {d_name}\n"
+                f"🎯 Потрібний клас: {o_name}\n\n"
+                "Якщо бажаєте приймати такі замовлення — змініть клас авто у Налаштуваннях (🚗 Змінити клас авто)",
+                show_alert=True
+            )
+            return
+
         success = await accept_order(config.database_path, order_id, driver.id)
         
         if success:
