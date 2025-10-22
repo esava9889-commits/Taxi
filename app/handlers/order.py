@@ -1452,24 +1452,49 @@ def create_router(config: AppConfig) -> Router:
                     f"ℹ️ <i>Повний номер після прийняття</i>"
                 )
                 
-                sent_message = await message.bot.send_message(
-                    city_group_id,
-                    group_message,
-                    reply_markup=kb,
-                    disable_web_page_preview=True
-                )
+                # Надіслати в обрану міську групу з автоматичним fallback на загальну
+                successfully_sent = False
+                used_group_id = city_group_id
+                try:
+                    sent_message = await message.bot.send_message(
+                        city_group_id,
+                        group_message,
+                        reply_markup=kb,
+                        disable_web_page_preview=True
+                    )
+                    successfully_sent = True
+                except Exception as e:
+                    err_text = str(e).lower()
+                    logger.error(f"Failed to send order to city group {city_group_id}: {e}")
+                    # Спробувати fallback якщо чат не знайдено/бот не має доступу
+                    if ("chat not found" in err_text or "forbidden" in err_text) and config.driver_group_chat_id and config.driver_group_chat_id != city_group_id:
+                        try:
+                            logger.warning(f"⚠️ Fallback: надсилаю замовлення #{order_id} у загальну групу {config.driver_group_chat_id}")
+                            sent_message = await message.bot.send_message(
+                                config.driver_group_chat_id,
+                                group_message,
+                                reply_markup=kb,
+                                disable_web_page_preview=True
+                            )
+                            used_group_id = config.driver_group_chat_id
+                            successfully_sent = True
+                        except Exception as e2:
+                            logger.error(f"❌ Fallback також не вдався: {e2}")
+                
+                if not successfully_sent:
+                    raise RuntimeError("Не вдалося надіслати повідомлення у жодну групу")
                 
                 # Зберегти ID повідомлення в БД
                 await update_order_group_message(config.database_path, order_id, sent_message.message_id)
                 
-                logger.info(f"✅ Замовлення {order_id} відправлено в групу міста '{client_city}' (ID: {city_group_id})")
+                logger.info(f"✅ Замовлення {order_id} відправлено в групу (ID: {used_group_id})")
                 
                 # ЗАПУСТИТИ ТАЙМЕР: Якщо замовлення не прийнято за 3 хв - перепропонувати
                 await start_order_timeout(
                     message.bot,
                     order_id,
                     config.database_path,
-                    city_group_id,  # ⭐ Використовуємо city_group_id
+                    used_group_id,
                     sent_message.message_id
                 )
                 logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
@@ -1625,15 +1650,29 @@ def create_router(config: AppConfig) -> Router:
                     user = await get_user_by_id(config.database_path, order.user_id)
                     client_city = user.city if user and user.city else None
                     group_id = get_city_group_id(config, client_city)
-                    
+
+                    async def _try_edit(chat_id: int) -> bool:
+                        try:
+                            await call.bot.edit_message_text(
+                                "❌ <b>ЗАМОВЛЕННЯ СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                                f"Замовлення #{order_id} скасовано клієнтом.",
+                                chat_id=chat_id,
+                                message_id=order.group_message_id
+                            )
+                            return True
+                        except Exception as ee:
+                            logger.error(f"❌ Не вдалося оновити повідомлення в групі {chat_id}: {ee}")
+                            return False
+
+                    updated = False
                     if group_id:
-                        await call.bot.edit_message_text(
-                            "❌ <b>ЗАМОВЛЕННЯ СКАСОВАНО КЛІЄНТОМ</b>\n\n"
-                            f"Замовлення #{order_id} скасовано клієнтом.",
-                            chat_id=group_id,
-                            message_id=order.group_message_id
-                        )
-                        logger.info(f"Order #{order_id} cancellation sent to group (city: {client_city})")
+                        updated = await _try_edit(group_id)
+                    # Fallback на загальну групу, якщо міська недоступна
+                    if not updated and config.driver_group_chat_id and config.driver_group_chat_id != group_id:
+                        if await _try_edit(config.driver_group_chat_id):
+                            logger.info(f"✅ Скасування #{order_id} оновлено у fallback групі {config.driver_group_chat_id}")
+                        else:
+                            logger.warning(f"⚠️ Не вдалося оновити повідомлення ні в міській, ні в fallback групі")
                 except Exception as e:
                     logger.error(f"Failed to update group message about cancellation: {e}")
             
@@ -1829,19 +1868,28 @@ def create_router(config: AppConfig) -> Router:
                     user = await get_user_by_id(config.database_path, order.user_id)
                     client_city = user.city if user and user.city else None
                     group_id = get_city_group_id(config, client_city)
-                    
-                    logger.info(f"🔔 Скасування (підвищення ціни) #{order_id}: group_id={group_id}, city={client_city}, msg_id={order.group_message_id}")
-                    
+
+                    async def _try_edit(chat_id: int) -> bool:
+                        try:
+                            await call.bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=order.group_message_id,
+                                text=f"❌ <b>ЗАМОВЛЕННЯ #{order_id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
+                                     f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
+                            )
+                            return True
+                        except Exception as ee:
+                            logger.error(f"❌ Не вдалося оновити повідомлення в групі {chat_id}: {ee}")
+                            return False
+
+                    updated = False
                     if group_id:
-                        await call.bot.edit_message_text(
-                            chat_id=group_id,
-                            message_id=order.group_message_id,
-                            text=f"❌ <b>ЗАМОВЛЕННЯ #{order_id} СКАСОВАНО КЛІЄНТОМ</b>\n\n"
-                                 f"📍 Маршрут: {order.pickup_address} → {order.destination_address}"
-                        )
-                        logger.info(f"✅ Скасування #{order_id} надіслано в групу")
-                    else:
-                        logger.warning(f"⚠️ Група для міста '{client_city}' не знайдена")
+                        updated = await _try_edit(group_id)
+                    if not updated and config.driver_group_chat_id and config.driver_group_chat_id != group_id:
+                        if await _try_edit(config.driver_group_chat_id):
+                            logger.info(f"✅ Скасування #{order_id} оновлено у fallback групі {config.driver_group_chat_id}")
+                        else:
+                            logger.warning("⚠️ Не вдалося оновити повідомлення ні в міській, ні в fallback групі")
                 except Exception as e:
                     # Якщо повідомлення вже видалене - це не помилка
                     if "message to edit not found" in str(e).lower() or "message can't be edited" in str(e).lower():
