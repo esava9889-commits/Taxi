@@ -320,6 +320,23 @@ async def init_db(db_path: str) -> None:
                 logger.info("✅ Додано колонку rejected_orders до drivers")
             except:
                 pass
+
+        # ⭐ Додати колонку priority до drivers, якщо немає
+        try:
+            await db.execute("ALTER TABLE drivers ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            logger.info("✅ Додано колонку priority до drivers")
+        except:
+            pass
+
+        # Глобальні налаштування (app_settings)
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+            """
+        )
             
             try:
                 await db.execute("ALTER TABLE users ADD COLUMN karma INTEGER NOT NULL DEFAULT 100")
@@ -373,7 +390,8 @@ async def init_db(db_path: str) -> None:
                     last_lon REAL,
                     last_seen_at TEXT,
                     car_class TEXT NOT NULL DEFAULT 'economy',
-                    card_number TEXT
+                    card_number TEXT,
+                    priority INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -385,6 +403,7 @@ async def init_db(db_path: str) -> None:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user ON drivers(tg_user_id)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_drivers_priority ON drivers(priority)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_saved_addresses_user ON saved_addresses(user_id)")
         
             # Ratings table
@@ -1164,6 +1183,7 @@ class Driver:
     total_orders: int = 0  # Всього замовлень
     rejected_orders: int = 0  # Відмов від замовлень
     car_color: Optional[str] = None  # ✅ ДОДАНО: Колір авто
+    priority: int = 0  # 1 = пріоритетний для прямих DM
 
 
 async def create_driver_application(db_path: str, driver: Driver) -> int:
@@ -1234,7 +1254,7 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
             FROM drivers
             WHERE status = 'pending'
             ORDER BY id ASC
@@ -1266,6 +1286,7 @@ async def fetch_pending_drivers(db_path: str, limit: int = 20) -> List[Driver]:
                 car_class=r[16] if r[16] else "economy",
                 card_number=r[17],
                 car_color=r[18] if len(r) > 18 else None,  # ← ДОДАНО
+                priority=(r[19] if len(r) > 19 else 0),
             )
         )
     return drivers
@@ -1276,7 +1297,7 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
             FROM drivers WHERE id = ?
             """,
             (driver_id,),
@@ -1304,6 +1325,7 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         car_class=row[16] if row[16] else "economy",
         card_number=row[17],
         car_color=row[18] if len(row) > 18 else None,  # ← ДОДАНО з fallback
+        priority=(row[19] if len(row) > 19 else 0),
     )
 
 
@@ -1363,7 +1385,7 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
             FROM drivers WHERE tg_user_id = ? ORDER BY id DESC LIMIT 1
             """,
             (tg_user_id,),
@@ -1391,6 +1413,7 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         car_class=row[16] if row[16] else "economy",
         card_number=row[17],
         car_color=row[18] if len(row) > 18 else None,  # ← ДОДАНО з fallback
+        priority=(row[19] if len(row) > 19 else 0),
     )
 
 
@@ -1565,7 +1588,7 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
             FROM drivers WHERE status = 'approved' AND online = 1
             ORDER BY last_seen_at DESC
             LIMIT ?
@@ -1596,6 +1619,7 @@ async def fetch_online_drivers(db_path: str, limit: int = 50) -> List[Driver]:
                 car_class=r[16] if r[16] else "economy",
                 card_number=r[17],
                 car_color=r[18] if len(r) > 18 else None,  # ← ДОДАНО
+                priority=(r[19] if len(r) > 19 else 0),
             )
         )
     return drivers
