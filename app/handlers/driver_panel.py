@@ -2497,6 +2497,7 @@ def create_router(config: AppConfig) -> Router:
             amount=fare,
             commission=commission,
             commission_paid=False,
+            payment_method=order.payment_method or 'cash',
             created_at=datetime.now(timezone.utc)
         )
         await insert_payment(config.database_path, payment)
