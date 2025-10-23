@@ -1419,123 +1419,123 @@ def create_router(config: AppConfig) -> Router:
                 if not sent_to_priority:
                     from app.handlers.car_classes import get_car_class_name
                     car_class_name = get_car_class_name(data.get('car_class', 'economy'))
-                
-                # Створити посилання на Google Maps
-                pickup_lat = data.get('pickup_lat')
-                pickup_lon = data.get('pickup_lon')
-                dest_lat = data.get('dest_lat')
-                dest_lon = data.get('dest_lon')
-                
-                pickup_link = ""
-                dest_link = ""
-                
-                if pickup_lat and pickup_lon:
-                    pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={pickup_lat},{pickup_lon}'>Геолокація подачі (відкрити карту)</a>"
-                
-                if dest_lat and dest_lon:
-                    dest_link = f"\n📍 <a href='https://www.google.com/maps?q={dest_lat},{dest_lon}'>Геолокація прибуття (відкрити карту)</a>"
-                
-                # БЕЗПЕКА: Маскуємо номер телефону в групі (показуємо тільки останні 2 цифри)
-                masked_phone = mask_phone_number(str(data.get('phone', '')), show_last_digits=2)
-                
-                # Очистити адреси від Plus Codes
-                from app.handlers.driver_panel import clean_address
-                clean_pickup = clean_address(data.get('pickup', ''))
-                clean_destination = clean_address(data.get('destination', ''))
-                
-                # Створити посилання на маршрут Google Maps
-                route_link = ""
-                if pickup_lat and pickup_lon and dest_lat and dest_lon:
-                    route_link = (
-                        f"\n🗺️ <a href='https://www.google.com/maps/dir/?api=1"
-                        f"&origin={pickup_lat},{pickup_lon}"
-                        f"&destination={dest_lat},{dest_lon}"
-                        f"&travelmode=driving'>Відкрити маршрут на Google Maps</a>"
-                    )
-                
-                    # Форматування вартості для візуального виділення
-                    fare_amount = data.get('fare_amount', 0)
-                    fare_text = f"💰 <b>ВАРТІСТЬ: {int(fare_amount)} грн</b> 💰" if fare_amount else ""
                     
-                    group_message = (
-                        f"🚖 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
-                        f"{fare_text}\n"
-                        f"{distance_info}"
-                        f"━━━━━━━━━━━━━━━━━\n\n"
-                        f"📍 <b>МАРШРУТ:</b>\n"
-                        f"🔵 {clean_pickup}\n"
-                        f"🔴 {clean_destination}{route_link}\n\n"
-                        f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
-                        f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
-                        f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
-                        f"ℹ️ <i>Повний номер після прийняття</i>"
-                    )
+                    # Створити посилання на Google Maps
+                    pickup_lat = data.get('pickup_lat')
+                    pickup_lon = data.get('pickup_lon')
+                    dest_lat = data.get('dest_lat')
+                    dest_lon = data.get('dest_lon')
                     
-                    # Надіслати в обрану міську групу з автоматичним fallback на загальну
-                    successfully_sent = False
-                    used_group_id = city_group_id
-                    try:
-                        sent_message = await message.bot.send_message(
-                            city_group_id,
-                            group_message,
-                            reply_markup=kb,
-                            disable_web_page_preview=True
+                    pickup_link = ""
+                    dest_link = ""
+                    
+                    if pickup_lat and pickup_lon:
+                        pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={pickup_lat},{pickup_lon}'>Геолокація подачі (відкрити карту)</a>"
+                    
+                    if dest_lat and dest_lon:
+                        dest_link = f"\n📍 <a href='https://www.google.com/maps?q={dest_lat},{dest_lon}'>Геолокація прибуття (відкрити карту)</a>"
+                    
+                    # БЕЗПЕКА: Маскуємо номер телефону в групі (показуємо тільки останні 2 цифри)
+                    masked_phone = mask_phone_number(str(data.get('phone', '')), show_last_digits=2)
+                    
+                    # Очистити адреси від Plus Codes
+                    from app.handlers.driver_panel import clean_address
+                    clean_pickup = clean_address(data.get('pickup', ''))
+                    clean_destination = clean_address(data.get('destination', ''))
+                    
+                    # Створити посилання на маршрут Google Maps
+                    route_link = ""
+                    if pickup_lat and pickup_lon and dest_lat and dest_lon:
+                        route_link = (
+                            f"\n🗺️ <a href='https://www.google.com/maps/dir/?api=1"
+                            f"&origin={pickup_lat},{pickup_lon}"
+                            f"&destination={dest_lat},{dest_lon}"
+                            f"&travelmode=driving'>Відкрити маршрут на Google Maps</a>"
                         )
-                        successfully_sent = True
-                    except Exception as e:
-                        err_text = str(e).lower()
-                        logger.error(f"Failed to send order to city group {city_group_id}: {e}")
-                        # Спробувати fallback якщо чат не знайдено/бот не має доступу
-                        if ("chat not found" in err_text or "forbidden" in err_text) and config.driver_group_chat_id and config.driver_group_chat_id != city_group_id:
-                            try:
-                                logger.warning(f"⚠️ Fallback: надсилаю замовлення #{order_id} у загальну групу {config.driver_group_chat_id}")
-                                sent_message = await message.bot.send_message(
-                                    config.driver_group_chat_id,
-                                    group_message,
-                                    reply_markup=kb,
-                                    disable_web_page_preview=True
-                                )
-                                used_group_id = config.driver_group_chat_id
-                                successfully_sent = True
-                            except Exception as e2:
-                                logger.error(f"❌ Fallback також не вдався: {e2}")
                     
-                    if not successfully_sent:
-                        raise RuntimeError("Не вдалося надіслати повідомлення у жодну групу")
+                        # Форматування вартості для візуального виділення
+                        fare_amount = data.get('fare_amount', 0)
+                        fare_text = f"💰 <b>ВАРТІСТЬ: {int(fare_amount)} грн</b> 💰" if fare_amount else ""
+                        
+                        group_message = (
+                            f"🚖 <b>ЗАМОВЛЕННЯ #{order_id}</b>\n\n"
+                            f"{fare_text}\n"
+                            f"{distance_info}"
+                            f"━━━━━━━━━━━━━━━━━\n\n"
+                            f"📍 <b>МАРШРУТ:</b>\n"
+                            f"🔵 {clean_pickup}\n"
+                            f"🔴 {clean_destination}{route_link}\n\n"
+                            f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
+                            f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
+                            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
+                            f"ℹ️ <i>Повний номер після прийняття</i>"
+                        )
+                        
+                        # Надіслати в обрану міську групу з автоматичним fallback на загальну
+                        successfully_sent = False
+                        used_group_id = city_group_id
+                        try:
+                            sent_message = await message.bot.send_message(
+                                city_group_id,
+                                group_message,
+                                reply_markup=kb,
+                                disable_web_page_preview=True
+                            )
+                            successfully_sent = True
+                        except Exception as e:
+                            err_text = str(e).lower()
+                            logger.error(f"Failed to send order to city group {city_group_id}: {e}")
+                            # Спробувати fallback якщо чат не знайдено/бот не має доступу
+                            if ("chat not found" in err_text or "forbidden" in err_text) and config.driver_group_chat_id and config.driver_group_chat_id != city_group_id:
+                                try:
+                                    logger.warning(f"⚠️ Fallback: надсилаю замовлення #{order_id} у загальну групу {config.driver_group_chat_id}")
+                                    sent_message = await message.bot.send_message(
+                                        config.driver_group_chat_id,
+                                        group_message,
+                                        reply_markup=kb,
+                                        disable_web_page_preview=True
+                                    )
+                                    used_group_id = config.driver_group_chat_id
+                                    successfully_sent = True
+                                except Exception as e2:
+                                    logger.error(f"❌ Fallback також не вдався: {e2}")
+                        
+                        if not successfully_sent:
+                            raise RuntimeError("Не вдалося надіслати повідомлення у жодну групу")
+                        
+                        # Зберегти ID повідомлення в БД
+                        await update_order_group_message(config.database_path, order_id, sent_message.message_id)
+                        
+                        logger.info(f"✅ Замовлення {order_id} відправлено в групу (ID: {used_group_id})")
+                        
+                        # ЗАПУСТИТИ ТАЙМЕР: Якщо замовлення не прийнято за 3 хв - перепропонувати
+                        await start_order_timeout(
+                            message.bot,
+                            order_id,
+                            config.database_path,
+                            used_group_id,
+                            sent_message.message_id
+                        )
+                        logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
+                        
+                        # ⭐ Відповідь клієнту (зберегти message_id для підвищення ціни)
+                        from app.handlers.keyboards import main_menu_keyboard
+                        is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
+                        client_message = await message.answer(
+                            f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
+                            "🔍 Шукаємо водія...\n\n"
+                            "Ваше замовлення надіслано водіям.\n"
+                            "Очікуйте підтвердження! ⏱",
+                            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+                        )
+                        
+                        # Зберегти message_id для пізнішого оновлення (пропозиція підняти ціну)
+                        await state.update_data(
+                            client_waiting_message_id=client_message.message_id,
+                            order_id=order_id,
+                            fare_increase=0  # Скільки грн додано до ціни
+                        )
                     
-                    # Зберегти ID повідомлення в БД
-                    await update_order_group_message(config.database_path, order_id, sent_message.message_id)
-                    
-                    logger.info(f"✅ Замовлення {order_id} відправлено в групу (ID: {used_group_id})")
-                    
-                    # ЗАПУСТИТИ ТАЙМЕР: Якщо замовлення не прийнято за 3 хв - перепропонувати
-                    await start_order_timeout(
-                        message.bot,
-                        order_id,
-                        config.database_path,
-                        used_group_id,
-                        sent_message.message_id
-                    )
-                    logger.info(f"⏱️ Таймер запущено для замовлення #{order_id}")
-                    
-                    # ⭐ Відповідь клієнту (зберегти message_id для підвищення ціни)
-                    from app.handlers.keyboards import main_menu_keyboard
-                    is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
-                    client_message = await message.answer(
-                        f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
-                        "🔍 Шукаємо водія...\n\n"
-                        "Ваше замовлення надіслано водіям.\n"
-                        "Очікуйте підтвердження! ⏱",
-                        reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
-                    )
-                    
-                    # Зберегти message_id для пізнішого оновлення (пропозиція підняти ціну)
-                    await state.update_data(
-                        client_waiting_message_id=client_message.message_id,
-                        order_id=order_id,
-                        fare_increase=0  # Скільки грн додано до ціни
-                    )
-                
             except Exception as e:
                 logger.error(f"Failed to send order to group: {e}")
                 from app.handlers.keyboards import main_menu_keyboard

@@ -1501,12 +1501,13 @@ def create_router(config: AppConfig) -> Router:
                 disable_web_page_preview=True
             )
             
-            # Видалити повідомлення в групі (якщо це група)
-            if call.message:
+            # Видалити повідомлення з приватного чату водія (якщо це було пріоритетне замовлення в ДМ)
+            if call.message and call.message.chat.type == "private":
                 try:
                     await call.message.delete()
-                except:
-                    pass
+                    logger.info(f"✅ Повідомлення про пріоритетне замовлення #{order_id} видалено з ДМ водія {driver.tg_user_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не вдалося видалити повідомлення з ДМ: {e}")
     
     @router.callback_query(F.data.startswith("reject_order:"))
     async def reject_order_handler(call: CallbackQuery) -> None:
