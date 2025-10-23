@@ -2816,6 +2816,72 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
     
+    @router.callback_query(F.data == "driver:panel")
+    async def back_to_driver_panel(call: CallbackQuery) -> None:
+        """Повернення до панелі водія"""
+        if not call.from_user:
+            return
+        
+        await call.answer("✅")
+        
+        # Видалити поточне повідомлення
+        try:
+            await call.message.delete()
+        except:
+            pass
+        
+        # Отримати інформацію про водія
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver or driver.status != "approved":
+            await call.message.answer(
+                "❌ Ви не зареєстровані як водій або ваша заявка ще не підтверджена."
+            )
+            return
+        
+        # Перевірка активного замовлення
+        active_order = await get_active_order_for_driver(config.database_path, driver.id)
+        
+        # Заробіток
+        earnings, commission = await get_driver_earnings_today(config.database_path, call.from_user.id)
+        net = earnings - commission
+        
+        # Чайові
+        tips = 0.0
+        try:
+            tips = await get_driver_tips_total(config.database_path, call.from_user.id)
+        except:
+            tips = 0.0
+        
+        # Статус
+        status = "🟢 Онлайн" if driver.online else "🔴 Офлайн"
+        
+        # Текст повідомлення
+        text = (
+            f"🚗 <b>ПАНЕЛЬ ВОДІЯ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Водій:</b> {driver.full_name}\n"
+            f"📱 <b>Телефон:</b> {driver.phone}\n"
+            f"🏙 <b>Місто:</b> {driver.city or 'Не вказано'}\n"
+            f"🚗 <b>Авто:</b> {driver.car_make} {driver.car_model}\n"
+            f"🔖 <b>Номер:</b> {driver.car_plate}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📊 <b>Статус:</b> {status}\n\n"
+            f"💰 <b>Заробіток сьогодні:</b>\n"
+            f"   • Загальний: {earnings:.2f} грн\n"
+            f"   • Комісія: {commission:.2f} грн\n"
+            f"   • Чистий: {net:.2f} грн\n"
+            f"   • Чайові: {tips:.2f} грн\n\n"
+        )
+        
+        if active_order:
+            text += (
+                f"🔴 <b>АКТИВНЕ ЗАМОВЛЕННЯ #{active_order.id}</b>\n"
+                f"Статус: {active_order.status}\n\n"
+            )
+        
+        # Клавіатура
+        await call.message.answer(text, reply_markup=driver_panel_keyboard())
+    
     @router.callback_query(F.data.startswith("show_card:"))
     async def show_card_to_client(call: CallbackQuery) -> None:
         """Показати картку водія клієнту"""

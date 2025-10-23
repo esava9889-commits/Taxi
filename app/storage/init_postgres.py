@@ -248,6 +248,22 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції drivers (car_color): {e}")
         
+        # Міграція 6.5: Додати priority до drivers
+        try:
+            has_priority = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'drivers' AND column_name = 'priority'
+                )
+            """)
+            
+            if not has_priority:
+                logger.info("🔄 Міграція drivers: додавання priority...")
+                await conn.execute("ALTER TABLE drivers ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Колонка drivers.priority додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції drivers (priority): {e}")
+        
         # Міграція 7: Система карми - додати karma, total_orders, cancelled_orders до users
         try:
             has_user_karma = await conn.fetchval("""
@@ -391,7 +407,9 @@ async def init_postgres_db(database_url: str) -> None:
                 last_lon DOUBLE PRECISION,
                 last_seen_at TIMESTAMP WITH TIME ZONE,
                 car_class TEXT NOT NULL DEFAULT 'economy',
-                card_number TEXT
+                card_number TEXT,
+                car_color TEXT,
+                priority INTEGER NOT NULL DEFAULT 0
             )
         """)
         
