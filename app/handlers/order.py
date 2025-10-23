@@ -1505,6 +1505,7 @@ def create_router(config: AppConfig) -> Router:
                         
                         # Зберегти ID повідомлення в БД
                         await update_order_group_message(config.database_path, order_id, sent_message.message_id)
+                        logger.info(f"💾 group_message_id збережено: order_id={order_id}, message_id={sent_message.message_id}, group_id={used_group_id}")
                         
                         logger.info(f"✅ Замовлення {order_id} відправлено в групу (ID: {used_group_id})")
                         

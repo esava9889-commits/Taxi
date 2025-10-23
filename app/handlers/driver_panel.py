@@ -1315,11 +1315,6 @@ def create_router(config: AppConfig) -> Router:
                     InlineKeyboardButton(text="💳 Картка водія", callback_data=f"show_card:{order_id}")
                 ])
             
-            # Кнопка зв'язку з водієм
-            kb_client_buttons.append([
-                InlineKeyboardButton(text="📞 Зв'язатися з водієм", url=f"tel:{driver.phone}")
-            ])
-            
             # Кнопка маршруту
             if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
                 kb_client_buttons.append([
@@ -1363,13 +1358,19 @@ def create_router(config: AppConfig) -> Router:
                 f"🚗 Гарної поїздки!"
             )
             
-            await call.bot.send_message(
-                order.user_id,
-                client_message,
-                reply_markup=kb_client
-            )
+            # Відправити повідомлення клієнту
+            try:
+                await call.bot.send_message(
+                    order.user_id,
+                    client_message,
+                    reply_markup=kb_client
+                )
+                logger.info(f"✅ Повідомлення про прийняття відправлено клієнту {order.user_id}")
+            except Exception as e:
+                logger.error(f"❌ Не вдалося відправити повідомлення клієнту: {e}")
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
+            logger.info(f"🔍 DEBUG: Спроба видалити з групи - order_id={order_id}, group_message_id={order.group_message_id}")
             if order.group_message_id:
                 try:
                     # Отримати ID групи міста клієнта
