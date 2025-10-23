@@ -89,10 +89,10 @@ def create_router(config: AppConfig) -> Router:
         distance_km = None
         duration_minutes = None
         
-        if pickup_lat and pickup_lon and dest_lat and dest_lon and config.google_maps_api_key:
-            logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
+        if pickup_lat and pickup_lon and dest_lat and dest_lon:
+            logger.info(f"📏 Розраховую відстань через OSRM: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
             result = await get_distance_and_duration(
-                config.google_maps_api_key,
+                "",  # api_key не потрібен для OSRM
                 pickup_lat, pickup_lon,
                 dest_lat, dest_lon
             )
@@ -817,26 +817,23 @@ def create_router(config: AppConfig) -> Router:
         
         loc = message.location
         
-        # ⭐ REVERSE GEOCODING + PLACES: Координати → Текстова адреса з об'єктами поруч
+        # ⭐ REVERSE GEOCODING через Nominatim (OpenStreetMap) - БЕЗКОШТОВНО!
         pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
         
-        if config.google_maps_api_key:
-            try:
-                # Використовуємо нову функцію з Places API
-                readable_address = await reverse_geocode_with_places(
-                    config.google_maps_api_key,
-                    loc.latitude,
-                    loc.longitude
-                )
-                if readable_address:
-                    pickup = readable_address
-                    logger.info(f"✅ Reverse geocoded pickup з об'єктами: {pickup}")
-                else:
-                    logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
-            except Exception as e:
-                logger.error(f"❌ Помилка reverse geocoding: {e}")
-        else:
-            logger.warning("⚠️ Google Maps API ключ відсутній, зберігаю координати")
+        try:
+            # Nominatim не потребує API ключа!
+            readable_address = await reverse_geocode(
+                "",  # api_key не потрібен
+                loc.latitude,
+                loc.longitude
+            )
+            if readable_address:
+                pickup = readable_address
+                logger.info(f"✅ Nominatim reverse geocoded pickup: {pickup}")
+            else:
+                logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+        except Exception as e:
+            logger.error(f"❌ Помилка reverse geocoding: {e}")
         
         await state.update_data(pickup=pickup, pickup_lat=loc.latitude, pickup_lon=loc.longitude)
         
@@ -879,25 +876,21 @@ def create_router(config: AppConfig) -> Router:
         
         pickup = cleaned_address
         
-        # Спроба геокодувати адресу в координати
-        coords = None
-        if config.google_maps_api_key:
-            logger.info(f"🔍 Геокодую адресу: {pickup}")
-            coords = await geocode_address(config.google_maps_api_key, pickup)
-            if coords:
-                lat, lon = coords
-                await state.update_data(pickup=pickup, pickup_lat=lat, pickup_lon=lon)
-                logger.info(f"✅ Геокодовано адресу: {pickup} → {lat},{lon}")
-            else:
-                logger.warning(f"❌ Не вдалося геокодувати адресу: {pickup}")
-                await state.update_data(pickup=pickup)
-                await message.answer(
-                    "⚠️ Не вдалося визначити координати адреси.\n"
-                    "Для точного розрахунку використовуйте геолокацію 📍"
-                )
+        # Спроба геокодувати адресу в координати через Nominatim (безкоштовно!)
+        logger.info(f"🔍 Геокодую адресу через Nominatim: {pickup}")
+        coords = await geocode_address("", pickup)  # api_key не потрібен для Nominatim
+        
+        if coords:
+            lat, lon = coords
+            await state.update_data(pickup=pickup, pickup_lat=lat, pickup_lon=lon)
+            logger.info(f"✅ Nominatim геокодував адресу: {pickup} → {lat},{lon}")
         else:
-            logger.warning(f"⚠️ Google Maps API не налаштований, адреса не геокодується: {pickup}")
+            logger.warning(f"❌ Не вдалося геокодувати адресу: {pickup}")
             await state.update_data(pickup=pickup)
+            await message.answer(
+                "⚠️ Не вдалося визначити координати адреси.\n"
+                "Для точного розрахунку використовуйте геолокацію 📍"
+            )
         
         await state.set_state(OrderStates.destination)
         await message.answer(
@@ -914,26 +907,23 @@ def create_router(config: AppConfig) -> Router:
         
         loc = message.location
         
-        # ⭐ REVERSE GEOCODING + PLACES: Координати → Текстова адреса з об'єктами поруч
+        # ⭐ REVERSE GEOCODING через Nominatim (OpenStreetMap) - БЕЗКОШТОВНО!
         destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
         
-        if config.google_maps_api_key:
-            try:
-                # Використовуємо нову функцію з Places API
-                readable_address = await reverse_geocode_with_places(
-                    config.google_maps_api_key,
-                    loc.latitude,
-                    loc.longitude
-                )
-                if readable_address:
-                    destination = readable_address
-                    logger.info(f"✅ Reverse geocoded destination з об'єктами: {destination}")
-                else:
-                    logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
-            except Exception as e:
-                logger.error(f"❌ Помилка reverse geocoding: {e}")
-        else:
-            logger.warning("⚠️ Google Maps API ключ відсутній, зберігаю координати")
+        try:
+            # Nominatim не потребує API ключа!
+            readable_address = await reverse_geocode(
+                "",  # api_key не потрібен
+                loc.latitude,
+                loc.longitude
+            )
+            if readable_address:
+                destination = readable_address
+                logger.info(f"✅ Nominatim reverse geocoded destination: {destination}")
+            else:
+                logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+        except Exception as e:
+            logger.error(f"❌ Помилка reverse geocoding: {e}")
         
         await state.update_data(
             destination=destination,
@@ -1127,15 +1117,16 @@ def create_router(config: AppConfig) -> Router:
         distance_text = ""
         fare_estimate = ""
         
-        # Якщо немає координат але є текстові адреси - геокодувати
-        if (not pickup_lat or not dest_lat) and config.google_maps_api_key:
+        # Якщо немає координат але є текстові адреси - геокодувати через Nominatim
+        if not pickup_lat or not dest_lat:
             pickup_addr = data.get('pickup')
             dest_addr = data.get('destination')
             
             if pickup_addr and dest_addr and '📍' not in str(pickup_addr):
-                # Геокодувати адреси
-                pickup_coords = await geocode_address(config.google_maps_api_key, str(pickup_addr))
-                dest_coords = await geocode_address(config.google_maps_api_key, str(dest_addr))
+                # Геокодувати адреси через Nominatim (безкоштовно!)
+                logger.info(f"🔍 Геокодую адреси через Nominatim...")
+                pickup_coords = await geocode_address("", str(pickup_addr))
+                dest_coords = await geocode_address("", str(dest_addr))
                 
                 if pickup_coords and dest_coords:
                     pickup_lat, pickup_lon = pickup_coords
@@ -1144,30 +1135,27 @@ def create_router(config: AppConfig) -> Router:
                         pickup_lat=pickup_lat, pickup_lon=pickup_lon,
                         dest_lat=dest_lat, dest_lon=dest_lon
                     )
+                    logger.info(f"✅ Обидві адреси геокодовані через Nominatim")
         
-        # Якщо є координати - розрахувати відстань (ціна вже зафіксована в estimated_fare)
+        # Якщо є координати - розрахувати відстань через OSRM (безкоштовно!)
         if pickup_lat and pickup_lon and dest_lat and dest_lon:
-            if config.google_maps_api_key:
-                logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
-                result = await get_distance_and_duration(
-                    config.google_maps_api_key,
-                    pickup_lat, pickup_lon,
-                    dest_lat, dest_lon
-                )
-                if result:
-                    distance_m, duration_s = result
-                    # Зберегти в state для пізнішого використання
-                    await state.update_data(distance_m=distance_m, duration_s=duration_s)
-                    
-                    km = distance_m / 1000.0
-                    minutes = duration_s / 60.0
-                    distance_text = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n\n"
-                    logger.info(f"✅ Розраховано відстань: {km:.1f} км, {int(minutes)} хв")
-                    # Ціну вже було зафіксовано при виборі класу, не перераховуємо
-                else:
-                    logger.warning(f"❌ Google Maps Distance Matrix API не повернув результат")
+            logger.info(f"📏 Розраховую відстань через OSRM: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
+            result = await get_distance_and_duration(
+                "",  # api_key не потрібен для OSRM
+                pickup_lat, pickup_lon,
+                dest_lat, dest_lon
+            )
+            if result:
+                distance_m, duration_s = result
+                # Зберегти в state для пізнішого використання
+                await state.update_data(distance_m=distance_m, duration_s=duration_s)
+                
+                km = distance_m / 1000.0
+                minutes = duration_s / 60.0
+                distance_text = f"📏 Відстань: {km:.1f} км (~{int(minutes)} хв)\n\n"
+                logger.info(f"✅ OSRM розрахував відстань: {km:.1f} км, {int(minutes)} хв")
             else:
-                logger.warning(f"⚠️ Google Maps API не налаштований, відстань не розраховується")
+                logger.warning(f"❌ OSRM не повернув результат")
         else:
             logger.warning(f"⚠️ Немає всіх координат для розрахунку: pickup({pickup_lat},{pickup_lon}), dest({dest_lat},{dest_lon})")
         

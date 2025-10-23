@@ -2,248 +2,223 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 import aiohttp
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Затримка між запитами до Nominatim (обов'язкова згідно з правилами)
+_last_nominatim_request = 0
+NOMINATIM_DELAY = 1.0  # 1 секунда між запитами
+
+
+async def _wait_for_nominatim():
+    """Затримка між запитами до Nominatim (1 запит/сек)"""
+    global _last_nominatim_request
+    import time
+    
+    now = time.time()
+    time_since_last = now - _last_nominatim_request
+    
+    if time_since_last < NOMINATIM_DELAY:
+        await asyncio.sleep(NOMINATIM_DELAY - time_since_last)
+    
+    _last_nominatim_request = time.time()
 
 
 async def get_distance_and_duration(
-    api_key: str,
+    api_key: str,  # Не використовується, залишено для сумісності
     origin_lat: float,
     origin_lon: float,
     dest_lat: float,
     dest_lon: float
 ) -> Optional[Tuple[int, int]]:
     """
-    Get distance (meters) and duration (seconds) from Google Distance Matrix API
+    Розрахувати відстань та час через OSRM (Open Source Routing Machine)
+    БЕЗКОШТОВНО, без API ключа!
+    
     Returns (distance_meters, duration_seconds) or None
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    origins = f"{origin_lat},{origin_lon}"
-    destinations = f"{dest_lat},{dest_lon}"
-    
-    url = (
-        "https://maps.googleapis.com/maps/api/distancematrix/json"
-        f"?origins={origins}&destinations={destinations}&key={api_key}&mode=driving"
-    )
-    
     try:
+        # OSRM API - безкоштовний, публічний
+        url = (
+            f"http://router.project-osrm.org/route/v1/driving/"
+            f"{origin_lon},{origin_lat};{dest_lon},{dest_lat}"
+            f"?overview=false&steps=false"
+        )
+        
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as resp:
+            async with session.get(url, timeout=15) as resp:
                 if resp.status != 200:
-                    logger.error(f"Distance Matrix API HTTP error: {resp.status}")
+                    logger.error(f"OSRM API HTTP error: {resp.status}")
                     return None
                 data = await resp.json()
         
-        status = data.get("status")
-        
-        if status == "REQUEST_DENIED":
-            error_message = data.get("error_message", "Unknown error")
-            logger.error(f"❌ Distance Matrix API REQUEST_DENIED: {error_message}")
-            logger.error(f"Перевірте що Distance Matrix API увімкнений в Google Cloud Console")
+        if data.get("code") != "Ok":
+            logger.warning(f"⚠️ OSRM API код: {data.get('code')}")
             return None
         
-        if status != "OK":
-            logger.warning(f"⚠️ Distance Matrix API status: {status}")
+        routes = data.get("routes", [])
+        if not routes:
+            logger.warning("⚠️ OSRM API: порожні маршрути")
             return None
         
-        rows = data.get("rows", [])
-        if not rows:
-            logger.warning(f"⚠️ Distance Matrix API: порожні rows")
-            return None
-        
-        elements = rows[0].get("elements", [])
-        if not elements:
-            logger.warning(f"⚠️ Distance Matrix API: порожні elements")
-            return None
-        
-        element = elements[0]
-        element_status = element.get("status")
-        
-        if element_status != "OK":
-            logger.warning(f"⚠️ Distance Matrix API element status: {element_status}")
-            return None
-        
-        distance = element.get("distance", {}).get("value")
-        duration = element.get("duration", {}).get("value")
+        route = routes[0]
+        distance = route.get("distance")  # в метрах
+        duration = route.get("duration")  # в секундах
         
         if distance is None or duration is None:
-            logger.warning(f"⚠️ Distance Matrix API: немає distance/duration")
+            logger.warning("⚠️ OSRM API: немає distance/duration")
             return None
         
+        logger.info(f"✅ OSRM: {distance:.0f}м, {duration:.0f}сек")
         return (int(distance), int(duration))
+        
     except Exception as e:
-        logger.error(f"❌ Distance Matrix API exception: {type(e).__name__}: {str(e)}")
+        logger.error(f"❌ OSRM API exception: {type(e).__name__}: {str(e)}")
         return None
 
 
 async def geocode_address(api_key: str, address: str) -> Optional[Tuple[float, float]]:
     """
-    Convert address to coordinates using Google Geocoding API
+    Конвертувати адресу в координати через Nominatim (OpenStreetMap)
+    БЕЗКОШТОВНО, без API ключа!
+    
     Returns (lat, lon) or None
     """
-    import logging
     import urllib.parse
-    logger = logging.getLogger(__name__)
     
     # Додаємо країну якщо не вказана
     if "україна" not in address.lower() and "ukraine" not in address.lower():
         address = f"{address}, Україна"
     
+    # Затримка для Nominatim
+    await _wait_for_nominatim()
+    
     encoded_address = urllib.parse.quote(address)
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={encoded_address}&key={api_key}"
+    url = (
+        f"https://nominatim.openstreetmap.org/search?"
+        f"q={encoded_address}&format=json&limit=1&addressdetails=1"
+    )
+    
+    headers = {
+        'User-Agent': 'TaxiBot/1.0 (Ukrainian Taxi Service)'  # Обов'язково!
+    }
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as resp:
+            async with session.get(url, headers=headers, timeout=15) as resp:
                 if resp.status != 200:
-                    logger.error(f"Geocoding API HTTP error: {resp.status}")
+                    logger.error(f"Nominatim Geocoding HTTP error: {resp.status}")
                     return None
                 data = await resp.json()
         
-        status = data.get("status")
-        
-        if status == "REQUEST_DENIED":
-            error_message = data.get("error_message", "Unknown error")
-            logger.error(f"❌ Geocoding API REQUEST_DENIED: {error_message}")
-            logger.error(f"Перевірте що Geocoding API увімкнений в Google Cloud Console")
+        if not data or len(data) == 0:
+            logger.warning(f"⚠️ Nominatim не знайшов адресу: {address}")
             return None
         
-        if status == "ZERO_RESULTS":
-            logger.warning(f"⚠️ Geocoding API не знайшов адресу: {address}")
+        result = data[0]
+        lat = result.get("lat")
+        lon = result.get("lon")
+        
+        if lat is None or lon is None:
+            logger.warning(f"⚠️ Nominatim: немає координат в результаті")
             return None
         
-        if status == "OVER_QUERY_LIMIT":
-            logger.error(f"❌ Geocoding API: перевищено ліміт запитів")
-            return None
+        logger.info(f"✅ Nominatim geocoded: {address} → {lat},{lon}")
+        return (float(lat), float(lon))
         
-        if status != "OK":
-            logger.warning(f"⚠️ Geocoding API status: {status}")
-            return None
-        
-        results = data.get("results", [])
-        if not results:
-            logger.warning(f"⚠️ Geocoding API: порожні результати")
-            return None
-        
-        location = results[0].get("geometry", {}).get("location", {})
-        lat = location.get("lat")
-        lng = location.get("lng")
-        
-        if lat is None or lng is None:
-            logger.warning(f"⚠️ Geocoding API: немає координат в результаті")
-            return None
-        
-        return (float(lat), float(lng))
     except Exception as e:
-        logger.error(f"❌ Geocoding API exception: {type(e).__name__}: {str(e)}")
+        logger.error(f"❌ Nominatim Geocoding exception: {type(e).__name__}: {str(e)}")
+        return None
+
+
+async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]:
+    """
+    Конвертувати координати в адресу через Nominatim (OpenStreetMap)
+    БЕЗКОШТОВНО, без API ключа!
+    
+    Returns address string or None
+    """
+    # Затримка для Nominatim
+    await _wait_for_nominatim()
+    
+    url = (
+        f"https://nominatim.openstreetmap.org/reverse?"
+        f"lat={lat}&lon={lon}&format=json&addressdetails=1&accept-language=uk"
+    )
+    
+    headers = {
+        'User-Agent': 'TaxiBot/1.0 (Ukrainian Taxi Service)'  # Обов'язково!
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=15) as resp:
+                if resp.status != 200:
+                    logger.error(f"Nominatim Reverse Geocoding HTTP error: {resp.status}")
+                    return None
+                data = await resp.json()
+        
+        # Отримати адресу
+        display_name = data.get("display_name")
+        
+        if not display_name:
+            logger.warning("⚠️ Nominatim: порожня адреса")
+            return None
+        
+        # Спробувати отримати структуровану адресу для кращого форматування
+        address = data.get("address", {})
+        
+        # Сформувати адресу в українському форматі
+        parts = []
+        
+        # Вулиця та номер будинку
+        road = address.get("road")
+        house_number = address.get("house_number")
+        if road:
+            if house_number:
+                parts.append(f"{road}, {house_number}")
+            else:
+                parts.append(road)
+        
+        # Район/квартал
+        suburb = address.get("suburb") or address.get("neighbourhood")
+        if suburb and suburb not in parts:
+            parts.append(suburb)
+        
+        # Місто
+        city = (
+            address.get("city") or 
+            address.get("town") or 
+            address.get("village") or
+            address.get("municipality")
+        )
+        if city and city not in parts:
+            parts.append(city)
+        
+        # Якщо є структурована адреса - використати її
+        if parts:
+            formatted = ", ".join(parts)
+            logger.info(f"✅ Nominatim reverse: {lat},{lon} → {formatted}")
+            return formatted
+        
+        # Fallback на display_name (якщо структура недоступна)
+        logger.info(f"✅ Nominatim reverse (fallback): {lat},{lon} → {display_name}")
+        return display_name
+        
+    except Exception as e:
+        logger.error(f"❌ Nominatim Reverse Geocoding exception: {type(e).__name__}: {str(e)}")
         return None
 
 
 async def reverse_geocode_with_places(api_key: str, lat: float, lon: float) -> Optional[str]:
     """
-    Отримати адресу з об'єктами поруч (Places API).
+    Отримати адресу (з Nominatim, Places не використовується)
     
-    Використовує Google Maps Geocoding API + Places Nearby Search.
-    Повертає адресу з найближчими визначними місцями.
-    
-    Args:
-        api_key: Google Maps API ключ
-        lat: Широта
-        lon: Довгота
-    
-    Returns:
-        Адреса з об'єктами поруч, наприклад:
-        "вул. Хрещатик, 1, Київ (поруч: McDonald's, Кінотеатр Київ)"
+    Для сумісності з існуючим кодом. Просто викликає reverse_geocode.
     """
-    try:
-        # 1. Отримати адресу (reverse geocoding)
-        address = await reverse_geocode(api_key, lat, lon)
-        if not address:
-            return None
-        
-        # 2. Пошук об'єктів поруч (Places Nearby Search)
-        import aiohttp
-        
-        places_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        params = {
-            "location": f"{lat},{lon}",
-            "radius": 100,  # 100 метрів
-            "key": api_key,
-            "language": "uk"  # Українська мова
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(places_url, params=params) as response:
-                if response.status != 200:
-                    logger.warning(f"Places API error: {response.status}")
-                    return address  # Повернути просто адресу без places
-                
-                data = await response.json()
-                
-                if data.get("status") != "OK":
-                    return address  # Без places
-                
-                # Взяти перші 2-3 найближчі об'єкти
-                places = data.get("results", [])[:3]
-                
-                if places:
-                    place_names = [p.get("name") for p in places if p.get("name")]
-                    if place_names:
-                        places_text = ", ".join(place_names[:2])  # Максимум 2 об'єкти
-                        return f"{address} (поруч: {places_text})"
-                
-                return address
-    
-    except Exception as e:
-        logger.error(f"Error in reverse_geocode_with_places: {e}")
-        return await reverse_geocode(api_key, lat, lon)  # Fallback без places
-
-
-async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]:
-    """
-    Convert coordinates to address using Google Reverse Geocoding API
-    Returns address string or None
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={api_key}&language=uk"
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as resp:
-                if resp.status != 200:
-                    logger.error(f"Reverse Geocoding API HTTP error: {resp.status}")
-                    return None
-                data = await resp.json()
-        
-        status = data.get("status")
-        
-        if status == "REQUEST_DENIED":
-            error_message = data.get("error_message", "Unknown error")
-            logger.error(f"❌ Reverse Geocoding API REQUEST_DENIED: {error_message}")
-            logger.error(f"Перевірте що Geocoding API увімкнений в Google Cloud Console")
-            return None
-        
-        if status != "OK":
-            logger.warning(f"⚠️ Reverse Geocoding API status: {status}")
-            return None
-        
-        results = data.get("results", [])
-        if not results:
-            logger.warning(f"⚠️ Reverse Geocoding: порожні результати")
-            return None
-        
-        # Взяти першу (найточнішу) адресу
-        formatted_address = results[0].get("formatted_address")
-        
-        if formatted_address:
-            return formatted_address
-        
-        return None
-    except Exception as e:
-        logger.error(f"❌ Reverse Geocoding API exception: {type(e).__name__}: {str(e)}")
-        return None
+    return await reverse_geocode(api_key, lat, lon)
 
 
 def generate_static_map_url(
@@ -255,15 +230,85 @@ def generate_static_map_url(
     width: int = 600,
     height: int = 400
 ) -> str:
-    """Generate URL for static map image with route"""
-    markers = (
-        f"markers=color:green|label:A|{origin_lat},{origin_lon}&"
-        f"markers=color:red|label:B|{dest_lat},{dest_lon}"
-    )
+    """
+    Генерувати URL для статичної карти через OpenStreetMap
+    БЕЗКОШТОВНО!
+    """
+    # Використовуємо StaticMap від OpenStreetMap
+    # Центр між двома точками
+    center_lat = (origin_lat + dest_lat) / 2
+    center_lon = (origin_lon + dest_lon) / 2
     
+    # Приблизний zoom (можна налаштувати)
+    zoom = 13
+    
+    # URL для StaticMap
     return (
-        f"https://maps.googleapis.com/maps/api/staticmap?"
-        f"{markers}&"
+        f"https://staticmap.openstreetmap.de/staticmap.php?"
+        f"center={center_lat},{center_lon}&"
+        f"zoom={zoom}&"
         f"size={width}x{height}&"
-        f"key={api_key}"
+        f"markers={origin_lat},{origin_lon},greena&"
+        f"markers={dest_lat},{dest_lon},redb"
     )
+
+
+async def search_places_nearby(lat: float, lon: float, radius: int = 100) -> list:
+    """
+    Пошук об'єктів поруч через Overpass API (OpenStreetMap)
+    БЕЗКОШТОВНО!
+    
+    Args:
+        lat: Широта
+        lon: Довгота
+        radius: Радіус пошуку в метрах
+    
+    Returns:
+        Список назв об'єктів поруч
+    """
+    # Затримка
+    await _wait_for_nominatim()
+    
+    # Overpass API для пошуку об'єктів
+    overpass_url = "https://overpass-api.de/api/interpreter"
+    
+    # Пошук магазинів, ресторанів, визначних місць
+    query = f"""
+    [out:json][timeout:10];
+    (
+      node["amenity"](around:{radius},{lat},{lon});
+      node["shop"](around:{radius},{lat},{lon});
+      node["tourism"](around:{radius},{lat},{lon});
+    );
+    out body 5;
+    """
+    
+    headers = {
+        'User-Agent': 'TaxiBot/1.0'
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                overpass_url, 
+                data={"data": query},
+                headers=headers,
+                timeout=15
+            ) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        
+        elements = data.get("elements", [])
+        places = []
+        
+        for elem in elements:
+            name = elem.get("tags", {}).get("name")
+            if name:
+                places.append(name)
+        
+        return places[:3]  # Максимум 3 об'єкти
+        
+    except Exception as e:
+        logger.debug(f"Overpass API помилка: {e}")
+        return []
