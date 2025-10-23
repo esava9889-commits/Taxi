@@ -1370,18 +1370,27 @@ def create_router(config: AppConfig) -> Router:
             )
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
-            if call.message and order.group_message_id:
+            if order.group_message_id:
                 try:
-                    # Відредагувати повідомлення в групі
-                    await call.bot.edit_message_text(
-                        chat_id=call.message.chat.id,
-                        message_id=order.group_message_id,
-                        text="✅ <b>Замовлення вже виконується</b>\n\n"
-                             f"Водій: {driver.full_name}\n"
-                             f"Статус: В роботі"
-                    )
+                    # Отримати ID групи міста клієнта
+                    from app.config.config import get_city_group_id
+                    from app.storage.db import get_user_by_id
+                    
+                    user = await get_user_by_id(config.database_path, order.user_id)
+                    client_city = user.city if user and user.city else None
+                    group_id = get_city_group_id(config, client_city)
+                    
+                    if group_id:
+                        # Видалити повідомлення з групи водіїв
+                        await call.bot.delete_message(
+                            chat_id=group_id,
+                            message_id=order.group_message_id
+                        )
+                        logger.info(f"✅ Повідомлення про замовлення #{order_id} видалено з групи {group_id} (місто: {client_city})")
+                    else:
+                        logger.warning(f"⚠️ Не знайдено ID групи для міста {client_city}")
                 except Exception as e:
-                    logger.error(f"Не вдалося відредагувати повідомлення в групі: {e}")
+                    logger.error(f"❌ Не вдалося видалити повідомлення з групи: {e}")
             
             # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню з Reply Keyboard
             
