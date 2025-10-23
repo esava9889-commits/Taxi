@@ -1377,12 +1377,19 @@ def create_router(config: AppConfig) -> Router:
                 else:
                     logger.warning(f"⚠️ Відстань не розрахована, відправка в групу без distance_info")
                 
-                # Отримати онлайн водіїв для пріоритизації
+                # Отримати онлайн водіїв для пріоритизації (лише якщо увімкнено режим пріоритету)
                 from app.storage.db import get_online_drivers
                 from app.handlers.driver_priority import get_top_drivers
+                from app.storage.db_connection import db_manager
                 
+                priority_enabled = False
+                async with db_manager.connect(config.database_path) as db:
+                    async with db.execute("SELECT value FROM app_settings WHERE key = 'priority_mode'") as cur:
+                        row = await cur.fetchone()
+                        priority_enabled = bool(row and str(row[0]).lower() in ("1","true","on","yes"))
+
                 online_drivers = await get_online_drivers(config.database_path, client_city or data.get('city'))
-                top_drivers = await get_top_drivers(config.database_path, online_drivers, limit=5)
+                top_drivers = await get_top_drivers(config.database_path, online_drivers, limit=5) if priority_enabled else []
                 
                 # Якщо є топ водії - надіслати їм особисто перші
                 for driver in top_drivers[:3]:  # Топ 3 отримують особисто

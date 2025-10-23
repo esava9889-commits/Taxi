@@ -100,6 +100,40 @@ def create_router(config: AppConfig) -> Router:
             )
             await db.commit()
 
+    @router.callback_query(F.data.startswith("admin:priority_mode_toggle:"))
+    async def priority_mode_toggle(call: CallbackQuery) -> None:
+        """Глобальний тумблер режиму пріоритизації водіїв"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        parts = (call.data or "").split(":")
+        if len(parts) < 3:
+            await call.answer("❌ Невірний формат", show_alert=True)
+            return
+        new_value = parts[2]
+        enabled = str(new_value) in ("1", "true", "on", "yes")
+        await set_priority_mode(enabled)
+        await call.answer("✅ Глобальний пріоритет увімкнено" if enabled else "✅ Глобальний пріоритет вимкнено", show_alert=True)
+
+        # Оновити кнопку у цьому ж повідомленні
+        kb_mode = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=("🔓 Вимкнути глобальний пріоритет" if enabled else "🔒 Увімкнути глобальний пріоритет"),
+                    callback_data=f"admin:priority_mode_toggle:{0 if enabled else 1}")]
+            ]
+        )
+        try:
+            base_text = call.message.text or "✅ <b>Активні водії</b>\n\n"
+            if "Глобальний пріоритет:" in base_text:
+                prefix = base_text.split("Глобальний пріоритет:")[0]
+                new_text = prefix + f"Глобальний пріоритет: <b>{'Увімкнено' if enabled else 'Вимкнено'}</b>"
+            else:
+                new_text = base_text + f"\nГлобальний пріоритет: <b>{'Увімкнено' if enabled else 'Вимкнено'}</b>"
+            await call.message.edit_text(new_text, reply_markup=kb_mode, parse_mode="HTML")
+        except Exception:
+            await call.message.edit_reply_markup(reply_markup=kb_mode)
+
     @router.message(Command("admin"))
     @router.message(F.text == "⚙️ Адмін-панель")
     async def admin_panel(message: Message) -> None:
@@ -350,11 +384,11 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db_connection import db_manager
         
         async with db_manager.connect(config.database_path) as db:
-            # Отримати всіх водіїв
+            # Отримати всіх водіїв (додаємо поле priority)
             async with db.execute(
                 """
-                SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, 
-                       car_class, status, city, online, created_at
+                SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
+                       car_class, status, city, online, created_at, priority
                 FROM drivers
                 ORDER BY 
                     CASE status
@@ -384,39 +418,66 @@ def create_router(config: AppConfig) -> Router:
         
         # Відправити кожну категорію окремо
         if approved_drivers:
+            # Показати стан глобального тумблера пріоритизації
+            priority_mode = await get_priority_mode()
+            kb_mode = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text=("🔓 Вимкнути глобальний пріоритет" if priority_mode else "🔒 Увімкнути глобальний пріоритет"),
+                        callback_data=f"admin:priority_mode_toggle:{1 if not priority_mode else 0}")]
+                ]
+            )
             await message.answer(
-                f"✅ <b>Активні водії ({len(approved_drivers)})</b>\n\n"
-                "Натисніть на водія для управління:",
+                (
+                    f"✅ <b>Активні водії ({len(approved_drivers)})</b>\n\n"
+                    f"Глобальний пріоритет: <b>{'Увімкнено' if priority_mode else 'Вимкнено'}</b>"
+                ),
+                reply_markup=kb_mode,
                 parse_mode="HTML"
             )
             for d in approved_drivers:
-                driver_id, tg_user_id, full_name, phone, car_make, car_model, car_plate, \
-                    car_class, status, city, online, created_at = d
-                
+                (
+                    driver_id,
+                    tg_user_id,
+                    full_name,
+                    phone,
+                    car_make,
+                    car_model,
+                    car_plate,
+                    car_class,
+                    status,
+                    city,
+                    online,
+                    created_at,
+                    priority,
+                ) = d
+
                 online_status = "🟢 Онлайн" if online else "🔴 Офлайн"
-                
-                priority_badge = "⭐" if False else ""
+                priority_badge = "⭐" if (priority or 0) > 0 else ""
+                toggle_text = "⭐ Вимкнути пріоритет" if (priority or 0) > 0 else "⭐ Увімкнути пріоритет"
+
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
                             InlineKeyboardButton(text="🚫 Заблокувати", callback_data=f"admin_driver:block:{driver_id}"),
                             InlineKeyboardButton(text="💬 Написати", url=f"tg://user?id={tg_user_id}")
                         ],
-                        [InlineKeyboardButton(text="⭐ Перемикач пріоритету", callback_data=f"admin_driver:priority_toggle:{driver_id}")],
+                        [InlineKeyboardButton(text=toggle_text, callback_data=f"admin_driver:priority_toggle:{driver_id}")],
                         [InlineKeyboardButton(text="📊 Статистика", callback_data=f"admin_driver:stats:{driver_id}")],
                         [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"admin_driver:delete:{driver_id}")]
                     ]
                 )
-                
+
                 text = (
-                    f"👤 <b>{full_name}</b> {online_status}\n"
+                    f"👤 <b>{full_name}</b> {priority_badge} {online_status}\n"
                     f"📱 {phone}\n"
                     f"🏙️ {city or 'Не вказано'}\n"
                     f"🚗 {car_make} {car_model} ({car_plate})\n"
                     f"🎯 Клас: {car_class}\n"
+                    f"⭐ Пріоритет: {'Увімкнено' if (priority or 0) > 0 else 'Вимкнено'}\n"
                     f"🆔 ID: {driver_id}"
                 )
-                
+
                 await message.answer(text, reply_markup=kb, parse_mode="HTML")
         
         if pending_drivers:
@@ -1009,6 +1070,51 @@ def create_router(config: AppConfig) -> Router:
                 
                 logger.info(f"Admin {call.from_user.id} unblocked driver {driver_id}")
             
+            elif action == "priority_toggle":
+                # Перемикач пріоритетності водія (0/1)
+                from app.storage.db_connection import db_manager
+                new_priority = 0 if (driver.priority or 0) > 0 else 1
+                async with db_manager.connect(config.database_path) as db:
+                    await db.execute("UPDATE drivers SET priority = ? WHERE id = ?", (new_priority, driver_id))
+                    await db.commit()
+
+                await call.answer(
+                    "✅ Пріоритет увімкнено" if new_priority else "✅ Пріоритет вимкнено",
+                    show_alert=True,
+                )
+
+                # Оновити повідомлення з актуальним станом кнопки
+                toggle_text = "⭐ Вимкнути пріоритет" if new_priority else "⭐ Увімкнути пріоритет"
+                kb_updated = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="🚫 Заблокувати", callback_data=f"admin_driver:block:{driver_id}"),
+                            InlineKeyboardButton(text="💬 Написати", url=f"tg://user?id={driver.tg_user_id}")
+                        ],
+                        [InlineKeyboardButton(text=toggle_text, callback_data=f"admin_driver:priority_toggle:{driver_id}")],
+                        [InlineKeyboardButton(text="📊 Статистика", callback_data=f"admin_driver:stats:{driver_id}")],
+                        [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"admin_driver:delete:{driver_id}")]
+                    ]
+                )
+
+                text_updated = (
+                    f"👤 <b>{driver.full_name}</b> {'⭐' if new_priority else ''} {'🟢 Онлайн' if driver.online else '🔴 Офлайн'}\n"
+                    f"📱 {driver.phone}\n"
+                    f"🏙️ {driver.city or 'Не вказано'}\n"
+                    f"🚗 {driver.car_make} {driver.car_model}\n"
+                    f"🎯 Клас: {driver.car_class}\n"
+                    f"⭐ Пріоритет: {'Увімкнено' if new_priority else 'Вимкнено'}\n"
+                    f"🆔 ID: {driver.id}"
+                )
+
+                try:
+                    await call.message.edit_text(text_updated, reply_markup=kb_updated, parse_mode="HTML")
+                except Exception:
+                    # Якщо не можна редагувати (старе повідомлення), просто надішлемо нове
+                    await call.message.answer(text_updated, reply_markup=kb_updated, parse_mode="HTML")
+
+                logger.info(f"Admin {call.from_user.id} toggled priority for driver {driver_id} to {new_priority}")
+
             elif action == "stats":
                 # Показати статистику водія
                 from app.storage.db_connection import db_manager
@@ -1101,14 +1207,6 @@ def create_router(config: AppConfig) -> Router:
     async def close_stats(call: CallbackQuery) -> None:
         """Закрити вікно статистики"""
         await call.message.delete()
-        
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Оновити", callback_data="settings:refresh")]
-            ]
-        )
-        
-        await message.answer(text, reply_markup=kb, parse_mode="HTML")
     
     @router.callback_query(F.data == "settings:refresh")
     async def refresh_settings(call: CallbackQuery) -> None:

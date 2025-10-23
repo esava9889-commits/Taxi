@@ -321,22 +321,22 @@ async def init_db(db_path: str) -> None:
             except:
                 pass
 
-        # ⭐ Додати колонку priority до drivers, якщо немає
-        try:
-            await db.execute("ALTER TABLE drivers ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
-            logger.info("✅ Додано колонку priority до drivers")
-        except:
-            pass
+            # ⭐ Додати колонку priority до drivers, якщо немає
+            try:
+                await db.execute("ALTER TABLE drivers ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Додано колонку priority до drivers")
+            except:
+                pass
 
-        # Глобальні налаштування (app_settings)
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
+            # Глобальні налаштування (app_settings)
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+                """
             )
-            """
-        )
             
             try:
                 await db.execute("ALTER TABLE users ADD COLUMN karma INTEGER NOT NULL DEFAULT 100")
