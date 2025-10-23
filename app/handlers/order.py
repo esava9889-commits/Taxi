@@ -231,15 +231,10 @@ def create_router(config: AppConfig) -> Router:
                 "in_progress": "виконується"
             }.get(existing_order.status, existing_order.status)
             
-            # Очистити адреси від координат
-            from app.handlers.driver_panel import clean_address
-            clean_pickup = clean_address(existing_order.pickup_address)
-            clean_dest = clean_address(existing_order.destination_address)
-            
             await message.answer(
                 f"{status_emoji} <b>У вас вже є активне замовлення!</b>\n\n"
-                f"📍 Звідки: {clean_pickup}\n"
-                f"📍 Куди: {clean_dest}\n"
+                f"📍 Звідки: {existing_order.pickup_address}\n"
+                f"📍 Куди: {existing_order.destination_address}\n"
                 f"📊 Статус: {status_text}\n\n"
                 f"⚠️ <b>Не можна створити нове замовлення</b>\n"
                 f"поки є активне.\n\n"
@@ -823,11 +818,11 @@ def create_router(config: AppConfig) -> Router:
         loc = message.location
         
         # ⭐ REVERSE GEOCODING + PLACES: Координати → Текстова адреса з об'єктами поруч
-        pickup = f"Точка на карті ({loc.latitude:.4f}, {loc.longitude:.4f})"  # Fallback
+        pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
         
         if config.google_maps_api_key:
             try:
-                # Спочатку пробуємо функцію з Places API
+                # Використовуємо нову функцію з Places API
                 readable_address = await reverse_geocode_with_places(
                     config.google_maps_api_key,
                     loc.latitude,
@@ -837,18 +832,7 @@ def create_router(config: AppConfig) -> Router:
                     pickup = readable_address
                     logger.info(f"✅ Reverse geocoded pickup з об'єктами: {pickup}")
                 else:
-                    # Fallback: пробуємо простий reverse geocode
-                    from app.utils.maps import reverse_geocode
-                    simple_address = await reverse_geocode(
-                        config.google_maps_api_key,
-                        loc.latitude,
-                        loc.longitude
-                    )
-                    if simple_address:
-                        pickup = simple_address
-                        logger.info(f"✅ Reverse geocoded pickup (простий): {pickup}")
-                    else:
-                        logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+                    logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
             except Exception as e:
                 logger.error(f"❌ Помилка reverse geocoding: {e}")
         else:
@@ -931,11 +915,11 @@ def create_router(config: AppConfig) -> Router:
         loc = message.location
         
         # ⭐ REVERSE GEOCODING + PLACES: Координати → Текстова адреса з об'єктами поруч
-        destination = f"Точка на карті ({loc.latitude:.4f}, {loc.longitude:.4f})"  # Fallback
+        destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
         
         if config.google_maps_api_key:
             try:
-                # Спочатку пробуємо функцію з Places API
+                # Використовуємо нову функцію з Places API
                 readable_address = await reverse_geocode_with_places(
                     config.google_maps_api_key,
                     loc.latitude,
@@ -945,18 +929,7 @@ def create_router(config: AppConfig) -> Router:
                     destination = readable_address
                     logger.info(f"✅ Reverse geocoded destination з об'єктами: {destination}")
                 else:
-                    # Fallback: пробуємо простий reverse geocode
-                    from app.utils.maps import reverse_geocode
-                    simple_address = await reverse_geocode(
-                        config.google_maps_api_key,
-                        loc.latitude,
-                        loc.longitude
-                    )
-                    if simple_address:
-                        destination = simple_address
-                        logger.info(f"✅ Reverse geocoded destination (простий): {destination}")
-                    else:
-                        logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+                    logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
             except Exception as e:
                 logger.error(f"❌ Помилка reverse geocoding: {e}")
         else:
@@ -1687,14 +1660,10 @@ def create_router(config: AppConfig) -> Router:
             is_admin = call.from_user.id in config.bot.admin_ids
             
             # Оновити повідомлення клієнта
-            from app.handlers.driver_panel import clean_address
-            clean_pickup = clean_address(order.pickup_address)
-            clean_dest = clean_address(order.destination_address)
-            
             await call.message.edit_text(
                 "❌ <b>Замовлення скасовано</b>\n\n"
-                f"📍 Звідки: {clean_pickup}\n"
-                f"📍 Куди: {clean_dest}\n\n"
+                f"📍 Звідки: {order.pickup_address}\n"
+                f"📍 Куди: {order.destination_address}\n\n"
                 "✅ Тепер ви можете створити нове замовлення."
             )
             
@@ -2011,16 +1980,11 @@ def create_router(config: AppConfig) -> Router:
         
         current_fare = order.fare_amount if order.fare_amount else 100.0
         
-        # Очистити адреси від координат
-        from app.handlers.driver_panel import clean_address
-        clean_pickup = clean_address(order.pickup_address)
-        clean_dest = clean_address(order.destination_address)
-        
         await call.bot.send_message(
             call.from_user.id,
             f"🔍 <b>Шукаємо водія...</b>\n\n"
-            f"📍 Звідки: {clean_pickup}\n"
-            f"📍 Куди: {clean_dest}\n\n"
+            f"📍 Звідки: {order.pickup_address}\n"
+            f"📍 Куди: {order.destination_address}\n\n"
             f"💰 Вартість: <b>{current_fare:.0f} грн</b>\n\n"
             f"⏳ Зачекайте, будь ласка...",
             reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
