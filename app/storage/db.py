@@ -887,20 +887,20 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
                        license_photo_file_id, city, status, created_at, updated_at, online,
-                       last_lat, last_lon, last_seen_at, car_class, card_number, car_color
+                       last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
                 FROM drivers
                 WHERE online = 1 AND status = 'approved' AND city = ?
-                ORDER BY last_seen_at DESC
+                ORDER BY priority DESC, last_seen_at DESC
             """
             params = (city,)
         else:
             query = """
                 SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate,
                        license_photo_file_id, city, status, created_at, updated_at, online,
-                       last_lat, last_lon, last_seen_at, car_class, card_number, car_color
+                       last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
                 FROM drivers
                 WHERE online = 1 AND status = 'approved'
-                ORDER BY last_seen_at DESC
+                ORDER BY priority DESC, last_seen_at DESC
             """
             params = ()
         
@@ -926,6 +926,7 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
                     last_seen_at=_parse_datetime(row[15]) if row[15] else None,
                     car_class=row[16] if row[16] else "economy",
                     card_number=row[17],
+                    priority=(row[18] if len(row) > 18 else 0),
                 )
                 for row in rows
             ]

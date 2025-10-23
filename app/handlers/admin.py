@@ -83,6 +83,23 @@ def create_router(config: AppConfig) -> Router:
     def is_admin(user_id: int) -> bool:
         return user_id in set(config.bot.admin_ids)
 
+    # === Helpers for app_settings (priority mode) ===
+    async def get_priority_mode() -> bool:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            row = await db.fetchone("SELECT value FROM app_settings WHERE key = 'priority_mode'")
+            return (row and str(row[0]).lower() in ("1", "true", "on", "yes"))
+
+    async def set_priority_mode(enabled: bool) -> None:
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            await db.execute(
+                "INSERT INTO app_settings(key,value) VALUES('priority_mode', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("1" if enabled else "0",)
+            )
+            await db.commit()
+
     @router.message(Command("admin"))
     @router.message(F.text == "⚙️ Адмін-панель")
     async def admin_panel(message: Message) -> None:
@@ -378,12 +395,14 @@ def create_router(config: AppConfig) -> Router:
                 
                 online_status = "🟢 Онлайн" if online else "🔴 Офлайн"
                 
+                priority_badge = "⭐" if False else ""
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
                             InlineKeyboardButton(text="🚫 Заблокувати", callback_data=f"admin_driver:block:{driver_id}"),
                             InlineKeyboardButton(text="💬 Написати", url=f"tg://user?id={tg_user_id}")
                         ],
+                        [InlineKeyboardButton(text="⭐ Перемикач пріоритету", callback_data=f"admin_driver:priority_toggle:{driver_id}")],
                         [InlineKeyboardButton(text="📊 Статистика", callback_data=f"admin_driver:stats:{driver_id}")],
                         [InlineKeyboardButton(text="🗑️ Видалити", callback_data=f"admin_driver:delete:{driver_id}")]
                     ]
