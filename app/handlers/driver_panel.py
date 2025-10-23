@@ -1255,6 +1255,11 @@ def create_router(config: AppConfig) -> Router:
         if success:
             # СКАСУВАТИ ТАЙМЕР: Замовлення прийнято водієм
             cancel_order_timeout(order_id)
+            
+            # СКАСУВАТИ ПРІОРИТЕТНИЙ ТАЙМЕР
+            from app.utils.priority_order_manager import PriorityOrderManager
+            PriorityOrderManager.cancel_priority_timer(order_id)
+            
             logger.info(f"✅ Таймер скасовано для замовлення #{order_id} (прийнято водієм)")
             
             await call.answer("✅ Прийнято!", show_alert=True)
@@ -1518,6 +1523,44 @@ def create_router(config: AppConfig) -> Router:
                 await call.message.delete()
             except:
                 pass
+        
+        # ВІДПРАВИТИ ПРІОРИТЕТНЕ ЗАМОВЛЕННЯ В ГРУПУ ПРИ ВІДХИЛЕННІ
+        from app.utils.priority_order_manager import PriorityOrderManager
+        PriorityOrderManager.cancel_priority_timer(order_id)
+        
+        # Перевірити чи замовлення все ще pending (тобто пріоритетне)
+        order = await get_order_by_id(config.database_path, order_id)
+        if order and order.status == "pending" and not order.group_message_id:
+            # Замовлення було тільки у пріоритетних водіїв - відправити в групу
+            logger.info(f"📢 Пріоритетний водій відхилив замовлення #{order_id}, відправляю в групу")
+            
+            # Отримати деталі замовлення та відправити в групу
+            from app.config.config import get_city_group_id
+            from app.storage.db import get_user_by_id
+            
+            user = await get_user_by_id(config.database_path, order.user_id)
+            client_city = user.city if user else None
+            city_group_id = get_city_group_id(config, client_city)
+            
+            if city_group_id:
+                from app.utils.priority_order_manager import _send_to_group
+                order_details = {
+                    'name': order.name,
+                    'phone': order.phone,
+                    'pickup': order.pickup_address,
+                    'destination': order.destination_address,
+                    'comment': order.comment,
+                    'pickup_lat': order.pickup_lat,
+                    'pickup_lon': order.pickup_lon,
+                    'dest_lat': order.dest_lat,
+                    'dest_lon': order.dest_lon,
+                    'distance_m': order.distance_m,
+                    'duration_s': order.duration_s,
+                    'estimated_fare': order.fare_amount,
+                    'car_class': order.car_class,
+                    'db_path': config.database_path,
+                }
+                await _send_to_group(call.bot, order_id, city_group_id, order_details)
         
         logger.info(f"❌ Водій {driver.full_name} відхилив замовлення #{order_id}")
 
