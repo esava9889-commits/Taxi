@@ -3332,6 +3332,146 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Водій {message.from_user.id} встановив колір: {color}")
     
+    @router.callback_query(F.data == "settings:car_class")
+    async def prompt_car_class(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити вибрати клас автомобіля"""
+        await call.answer()
+        
+        # Отримати поточний клас
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        current_class = driver.car_class if driver else "economy"
+        
+        # Маппінг класів на українські назви
+        class_names = {
+            "economy": "Економ",
+            "standard": "Стандарт",
+            "comfort": "Комфорт",
+            "business": "Бізнес"
+        }
+        
+        # Створити inline клавіатуру з вибором класу
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"{'✅ ' if current_class == 'economy' else ''}{class_names['economy']}",
+                    callback_data="set_car_class:economy"
+                )],
+                [InlineKeyboardButton(
+                    text=f"{'✅ ' if current_class == 'standard' else ''}{class_names['standard']}",
+                    callback_data="set_car_class:standard"
+                )],
+                [InlineKeyboardButton(
+                    text=f"{'✅ ' if current_class == 'comfort' else ''}{class_names['comfort']}",
+                    callback_data="set_car_class:comfort"
+                )],
+                [InlineKeyboardButton(
+                    text=f"{'✅ ' if current_class == 'business' else ''}{class_names['business']}",
+                    callback_data="set_car_class:business"
+                )],
+                [InlineKeyboardButton(text="❌ Скасувати", callback_data="settings:refresh")]
+            ]
+        )
+        
+        await call.message.edit_text(
+            "🚗 <b>Оберіть клас автомобіля</b>\n\n"
+            f"Поточний клас: <b>{class_names.get(current_class, 'Економ')}</b>\n\n"
+            "Виберіть новий клас із списку:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data.startswith("set_car_class:"))
+    async def save_car_class(call: CallbackQuery) -> None:
+        """Зберегти вибраний клас автомобіля"""
+        if not call.from_user:
+            return
+        
+        try:
+            car_class = call.data.split(":")[1]
+        except:
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        # Перевірка валідності класу
+        valid_classes = ["economy", "standard", "comfort", "business"]
+        if car_class not in valid_classes:
+            await call.answer("❌ Невірний клас автомобіля", show_alert=True)
+            return
+        
+        # Оновити клас авто в БД
+        from app.storage.db import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            await db.execute(
+                "UPDATE drivers SET car_class = ? WHERE tg_user_id = ?",
+                (car_class, call.from_user.id)
+            )
+            await db.commit()
+        
+        # Маппінг класів на українські назви
+        class_names = {
+            "economy": "Економ",
+            "standard": "Стандарт",
+            "comfort": "Комфорт",
+            "business": "Бізнес"
+        }
+        
+        await call.answer(f"✅ Клас змінено на {class_names[car_class]}", show_alert=True)
+        
+        # Оновити налаштування
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            return
+        
+        # Перевірити обов'язкові поля
+        car_color = driver.car_color if hasattr(driver, 'car_color') else None
+        
+        text = (
+            f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 <b>Ім'я:</b> {driver.full_name}\n"
+            f"📱 <b>Телефон:</b> {driver.phone}\n"
+            f"🏙 <b>Місто:</b> {driver.city or '❌ Не вказано'}\n"
+            f"🚗 <b>Авто:</b> {driver.car_make} {driver.car_model}\n"
+            f"🎨 <b>Колір:</b> {car_color or '❌ Не вказано'}\n"
+            f"🔖 <b>Номер:</b> {driver.car_plate}\n"
+            f"🚗 <b>Клас:</b> {class_names.get(driver.car_class, 'Економ')}\n"
+            f"💳 <b>Картка:</b> {driver.card_number or '❌ Не вказано'}\n\n"
+        )
+        
+        # Кнопки налаштувань
+        buttons = []
+        
+        # Перевірка обов'язкових полів
+        if not driver.city or not driver.card_number or not car_color:
+            text += "⚠️ <b>УВАГА! Потрібно заповнити:</b>\n"
+            if not driver.city:
+                text += "   • Місто роботи\n"
+                buttons.append([InlineKeyboardButton(text="🏙 ⚠️ ВКАЗАТИ МІСТО", callback_data="settings:set_city")])
+            if not driver.card_number:
+                text += "   • Картку для переказів\n"
+                buttons.append([InlineKeyboardButton(text="💳 ⚠️ ДОДАТИ КАРТКУ", callback_data="settings:card")])
+            if not car_color:
+                text += "   • Колір автомобіля\n"
+                buttons.append([InlineKeyboardButton(text="🎨 ⚠️ ВКАЗАТИ КОЛІР АВТО", callback_data="settings:set_color")])
+            buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
+        
+        # Завжди показати всі налаштування
+        buttons.extend([
+            [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
+            [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
+            [InlineKeyboardButton(text="🎨 Колір авто", callback_data="settings:set_color")],
+            [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
+            [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except:
+            await call.message.answer(text, reply_markup=kb)
+        
+        logger.info(f"✅ Водій {call.from_user.id} змінив клас авто на: {car_class}")
+    
     @router.callback_query(F.data == "settings:card")
     async def prompt_card(call: CallbackQuery, state: FSMContext) -> None:
         """Попросити вказати номер картки"""
