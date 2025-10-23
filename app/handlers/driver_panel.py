@@ -733,8 +733,14 @@ def create_router(config: AppConfig) -> Router:
         cancelled_orders = len([o for o in week_orders if o.status == 'cancelled'])
         
         earnings = sum(o.fare_amount for o in week_orders if o.status == 'completed' and o.fare_amount)
-        commission = earnings * 0.02
+        
+        # Отримати комісію з тарифу
+        from app.storage.db import get_latest_tariff
+        tariff = await get_latest_tariff(config.database_path)
+        commission_rate = tariff.commission_percent if tariff else 0.02
+        commission = earnings * commission_rate
         net = earnings - commission
+        commission_percent = int(commission_rate * 100)
         
         # Середнє за день
         avg_per_day = earnings / 7 if earnings > 0 else 0
@@ -746,7 +752,7 @@ def create_router(config: AppConfig) -> Router:
             f"✅ <b>Виконано:</b> {completed_orders}\n"
             f"❌ <b>Скасовано:</b> {cancelled_orders}\n\n"
             f"💰 <b>Заробіток:</b> {earnings:.0f} грн\n"
-            f"💳 <b>Комісія (2%):</b> {commission:.0f} грн\n"
+            f"💳 <b>Комісія ({commission_percent}%):</b> {commission:.0f} грн\n"
             f"💵 <b>Чистий:</b> {net:.0f} грн\n\n"
             f"📈 <b>Середнє/день:</b> {avg_per_day:.0f} грн\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -801,8 +807,14 @@ def create_router(config: AppConfig) -> Router:
         cancelled_orders = len([o for o in month_orders if o.status == 'cancelled'])
         
         earnings = sum(o.fare_amount for o in month_orders if o.status == 'completed' and o.fare_amount)
-        commission = earnings * 0.02
+        
+        # Отримати комісію з тарифу
+        from app.storage.db import get_latest_tariff
+        tariff = await get_latest_tariff(config.database_path)
+        commission_rate = tariff.commission_percent if tariff else 0.02
+        commission = earnings * commission_rate
         net = earnings - commission
+        commission_percent = int(commission_rate * 100)
         
         # Середнє за день
         avg_per_day = earnings / 30 if earnings > 0 else 0
@@ -814,7 +826,7 @@ def create_router(config: AppConfig) -> Router:
             f"✅ <b>Виконано:</b> {completed_orders}\n"
             f"❌ <b>Скасовано:</b> {cancelled_orders}\n\n"
             f"💰 <b>Заробіток:</b> {earnings:.0f} грн\n"
-            f"💳 <b>Комісія (2%):</b> {commission:.0f} грн\n"
+            f"💳 <b>Комісія ({commission_percent}%):</b> {commission:.0f} грн\n"
             f"💵 <b>Чистий:</b> {net:.0f} грн\n\n"
             f"📈 <b>Середнє/день:</b> {avg_per_day:.0f} грн\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1621,8 +1633,8 @@ def create_router(config: AppConfig) -> Router:
             f"━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>Клієнт:</b> {order.name}\n"
             f"📱 <b>Телефон:</b> <code>{order.phone}</code>\n\n"
-            f"📍 <b>Звідки:</b>\n   {order.pickup_address}\n\n"
-            f"📍 <b>Куди:</b>\n   {order.destination_address}{distance_text}\n\n"
+            f"📍 <b>Звідки:</b>\n   {clean_address(order.pickup_address)}\n\n"
+            f"📍 <b>Куди:</b>\n   {clean_address(order.destination_address)}{distance_text}\n\n"
             f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
             f"{payment_emoji} <b>Оплата:</b> {payment_text}\n"
         )
@@ -1686,8 +1698,8 @@ def create_router(config: AppConfig) -> Router:
             f"━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>Клієнт:</b> {order.name}\n"
             f"📱 <b>Телефон:</b> <code>{order.phone}</code>\n\n"
-            f"📍 <b>Звідки:</b>\n   {order.pickup_address}\n\n"
-            f"📍 <b>Куди:</b>\n   {order.destination_address}{distance_text}\n\n"
+            f"📍 <b>Звідки:</b>\n   {clean_address(order.pickup_address)}\n\n"
+            f"📍 <b>Куди:</b>\n   {clean_address(order.destination_address)}{distance_text}\n\n"
             f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
             f"{payment_emoji} <b>Оплата:</b> {payment_text}\n"
         )
@@ -1954,8 +1966,8 @@ def create_router(config: AppConfig) -> Router:
             f"🚗 <b>Замовлення #{order_id}</b>\n\n"
             f"👤 Клієнт: {client.full_name if client else 'Невідомо'}\n"
             f"📱 Телефон: <code>{order.phone}</code>\n\n"
-            f"📍 <b>Звідки:</b> {order.pickup_address}\n"
-            f"📍 <b>Куди:</b> {order.destination_address}{distance_text}\n\n"
+            f"📍 <b>Звідки:</b> {clean_address(order.pickup_address)}\n"
+            f"📍 <b>Куди:</b> {clean_address(order.destination_address)}{distance_text}\n\n"
             f"💰 Вартість: {fare_text}\n"
             f"💳 Оплата: {payment_text}\n"
         )
@@ -2356,7 +2368,7 @@ def create_router(config: AppConfig) -> Router:
                 f"🔢 {driver.car_plate}\n\n"
                 f"📱 <code>{driver.phone}</code>\n\n"
                 f"💡 Водій очікує вас на адресі:\n"
-                f"📍 {order.pickup_address}"
+                f"📍 {clean_address(order.pickup_address)}"
             )
         except Exception as e:
             logger.error(f"Failed to notify client: {e}")
@@ -2384,7 +2396,7 @@ def create_router(config: AppConfig) -> Router:
             f"👋 Очікуйте клієнта:\n"
             f"👤 {order.name}\n"
             f"📱 <code>{order.phone}</code>\n\n"
-            f"📍 {order.pickup_address}\n\n"
+            f"📍 {clean_address(order.pickup_address)}\n\n"
             f"💡 Клієнт отримав сповіщення.\n"
             f"👇 Коли клієнт сяде - натисніть <b>✅ КЛІЄНТ В АВТО</b>",
             reply_markup=kb
@@ -2540,10 +2552,11 @@ def create_router(config: AppConfig) -> Router:
             logger.error(f"Failed to notify client: {e}")
         
         # Повернути панель водія
+        commission_percent = int(commission_percent * 100)
         await message.answer(
             f"✅ <b>Поїздку завершено!</b>\n\n"
             f"💰 Заробіток: {int(fare):.0f} грн\n"
-            f"💸 Комісія (2%): {int(commission):.0f} грн\n"
+            f"💸 Комісія ({commission_percent}%): {int(commission):.0f} грн\n"
             f"💵 Чистий: {int(net_earnings):.0f} грн\n\n"
             f"🌟 Дякуємо за роботу!",
             reply_markup=driver_panel_keyboard()
@@ -2616,8 +2629,8 @@ def create_router(config: AppConfig) -> Router:
             await message.answer(
                 "⚠️ Координати маршруту відсутні.\n\n"
                 "Використовуйте адреси:\n"
-                f"📍 Звідки: {order.pickup_address}\n"
-                f"🎯 Куди: {order.destination_address}"
+                f"📍 Звідки: {clean_address(order.pickup_address)}\n"
+                f"🎯 Куди: {clean_address(order.destination_address)}"
             )
     
     @router.message(F.text == "ℹ️ Допомога")
@@ -3179,7 +3192,7 @@ def create_router(config: AppConfig) -> Router:
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"💰 <b>ЗАРОБІТОК СЬОГОДНІ:</b>\n\n"
                 f"💵 Заробіток: {earnings_today:.0f} грн\n"
-                f"💳 Комісія (2%): {commission_today:.0f} грн\n"
+                f"💳 Комісія ({int((commission_today / earnings_today * 100) if earnings_today > 0 else 0)}%): {commission_today:.0f} грн\n"
                 f"💰 Чистий: {net_today:.0f} грн\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"💡 <b>ЯК ПРАЦЮЄ КАРМА:</b>\n"
