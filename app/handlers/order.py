@@ -1178,14 +1178,19 @@ def create_router(config: AppConfig) -> Router:
         payment_method = data.get('payment_method')
         payment_text = "💵 Готівка" if payment_method == "cash" else ("💳 Картка" if payment_method == "card" else None)
 
+        # ⭐ ОЧИСТИТИ АДРЕСИ ВІД PLUS CODES ТА КООРДИНАТ
+        from app.handlers.driver_panel import clean_address
+        clean_pickup = clean_address(data.get('pickup', ''))
+        clean_destination = clean_address(data.get('destination', ''))
+
         text = (
             "📋 <b>Перевірте дані замовлення:</b>\n\n"
             f"👤 Клієнт: {data.get('name')}\n"
             f"📱 Телефон: {data.get('phone')}\n"
             f"🏙 Місто: {data.get('city')}\n"
             f"🚗 Клас: {car_class_name}\n\n"
-            f"📍 Звідки: {data.get('pickup')}\n"
-            f"📍 Куди: {data.get('destination')}\n"
+            f"📍 Звідки: {clean_pickup}\n"
+            f"📍 Куди: {clean_destination}\n"
             f"💬 Коментар: {data.get('comment') or '—'}\n\n"
             f"{distance_text}"
             f"💰 Вартість: {data.get('estimated_fare', 0):.0f} грн\n"

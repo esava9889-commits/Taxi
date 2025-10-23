@@ -543,6 +543,15 @@ async def init_postgres_db(database_url: str) -> None:
             )
         """)
         
+        # App settings (налаштування додатку)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        logger.info("✅ Таблиця app_settings створена")
+        
         # Індекси для оптимізації (з перевіркою існування колонок)
         logger.info("🔍 Створюю індекси...")
         
