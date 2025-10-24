@@ -1776,7 +1776,11 @@ def create_router(config: AppConfig) -> Router:
                             )
                             return True
                         except Exception as ee:
-                            logger.error(f"❌ Не вдалося оновити повідомлення в групі {chat_id}: {ee}")
+                            # Ігноруємо помилку якщо повідомлення вже видалене
+                            if "message to edit not found" in str(ee).lower() or "message can't be edited" in str(ee).lower():
+                                logger.warning(f"⚠️ Повідомлення #{order.group_message_id} в групі {chat_id} не знайдено (можливо вже видалене)")
+                            else:
+                                logger.error(f"❌ Не вдалося оновити повідомлення в групі {chat_id}: {ee}")
                             return False
 
                     updated = False
@@ -1958,7 +1962,11 @@ def create_router(config: AppConfig) -> Router:
                 else:
                     logger.warning(f"⚠️ Не знайдено group_id для міста '{client_city}', замовлення #{order_id}")
             except Exception as e:
-                logger.error(f"❌ Не вдалося оновити повідомлення в групі: {e}", exc_info=True)
+                # Ігноруємо помилку якщо повідомлення вже видалене
+                if "message to edit not found" in str(e).lower() or "message can't be edited" in str(e).lower():
+                    logger.warning(f"⚠️ Повідомлення в групі не знайдено (можливо вже видалене): {e}")
+                else:
+                    logger.error(f"❌ Не вдалося оновити повідомлення в групі: {e}", exc_info=True)
         
         # Відправити клієнту підтвердження
         try:
@@ -2025,7 +2033,11 @@ def create_router(config: AppConfig) -> Router:
                             )
                             return True
                         except Exception as ee:
-                            logger.error(f"❌ Не вдалося оновити повідомлення в групі {chat_id}: {ee}")
+                            # Ігноруємо помилку якщо повідомлення вже видалене
+                            if "message to edit not found" in str(ee).lower() or "message can't be edited" in str(ee).lower():
+                                logger.warning(f"⚠️ Повідомлення #{order.group_message_id} в групі {chat_id} не знайдено (можливо вже видалене)")
+                            else:
+                                logger.error(f"❌ Не вдалося оновити повідомлення в групі {chat_id}: {ee}")
                             return False
 
                     updated = False
