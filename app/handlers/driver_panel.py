@@ -669,8 +669,14 @@ def create_router(config: AppConfig) -> Router:
         cancelled_orders = len([o for o in today_orders if o.status == 'cancelled'])
         
         earnings = sum(o.fare_amount for o in today_orders if o.status == 'completed' and o.fare_amount)
-        commission = earnings * 0.02  # 2% комісія
+        
+        # Отримати комісію з тарифу
+        from app.storage.db import get_latest_tariff
+        tariff = await get_latest_tariff(config.database_path)
+        commission_rate = tariff.commission_percent if tariff else 0.02
+        commission = earnings * commission_rate
         net = earnings - commission
+        commission_percent = int(commission_rate * 100)
         
         text = (
             f"📊 <b>СТАТИСТИКА ЗА СЬОГОДНІ</b>\n\n"
@@ -679,7 +685,7 @@ def create_router(config: AppConfig) -> Router:
             f"✅ <b>Виконано:</b> {completed_orders}\n"
             f"❌ <b>Скасовано:</b> {cancelled_orders}\n\n"
             f"💰 <b>Заробіток:</b> {earnings:.0f} грн\n"
-            f"💳 <b>Комісія (2%):</b> {commission:.0f} грн\n"
+            f"💳 <b>Комісія ({commission_percent}%):</b> {commission:.0f} грн\n"
             f"💵 <b>Чистий:</b> {net:.0f} грн\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📅 Дата: {datetime.now().strftime('%d.%m.%Y')}"
