@@ -1571,22 +1571,27 @@ def create_router(config: AppConfig) -> Router:
             )
             
             # Зберегти order_id в FSM щоб знати для якого замовлення геолокація
-            from aiogram.fsm.context import FSMContext
-            from aiogram.fsm.state import State, StatesGroup
-            
-            class DriverLocationStates(StatesGroup):
-                waiting_location = State()
-            
-            # Отримати state для водія
+            # Відправити повідомлення водієві в особисті з FSM state
+            from aiogram import Dispatcher
             from aiogram.fsm.storage.base import StorageKey
-            state = FSMContext(
-                storage=call.bot.fsm_storage,
-                key=StorageKey(
-                    bot_id=call.bot.id,
-                    chat_id=driver.tg_user_id,
-                    user_id=driver.tg_user_id
-                )
+            
+            # Отримати dispatcher з callback
+            dp = Dispatcher.get_current()
+            
+            # Створити FSM context для водія
+            state_key = StorageKey(
+                bot_id=call.bot.id,
+                chat_id=driver.tg_user_id,
+                user_id=driver.tg_user_id
             )
+            
+            # Отримати FSMContext через dispatcher storage
+            from aiogram.fsm.context import FSMContext
+            state = FSMContext(
+                storage=dp.storage,
+                key=state_key
+            )
+            
             await state.set_state(DriverLocationStates.waiting_location)
             await state.update_data(order_id_for_location=order_id, client_user_id=order.user_id)
             
@@ -1685,10 +1690,14 @@ def create_router(config: AppConfig) -> Router:
                     
                     user = await get_user_by_id(config.database_path, order.user_id)
                     client_city = user.city if user and user.city else None
+                    logger.info(f"🔍 DEBUG: Клієнт user_id={order.user_id}, місто={client_city}")
+                    
                     group_id = get_city_group_id(config, client_city)
+                    logger.info(f"🔍 DEBUG: group_id для міста '{client_city}' = {group_id}")
                     
                     if group_id:
                         # Видалити повідомлення з групи водіїв
+                        logger.info(f"🗑️ DEBUG: Видаляю повідомлення {order.group_message_id} з чату {group_id}")
                         await call.bot.delete_message(
                             chat_id=group_id,
                             message_id=order.group_message_id
@@ -1697,7 +1706,9 @@ def create_router(config: AppConfig) -> Router:
                     else:
                         logger.warning(f"⚠️ Не знайдено ID групи для міста {client_city}")
                 except Exception as e:
-                    logger.error(f"❌ Не вдалося видалити повідомлення з групи: {e}")
+                    logger.error(f"❌ Не вдалося видалити повідомлення з групи: {e}", exc_info=True)
+            else:
+                logger.warning(f"⚠️ DEBUG: order.group_message_id == None, не можу видалити")
             
             # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню з Reply Keyboard
             
