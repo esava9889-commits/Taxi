@@ -1356,19 +1356,27 @@ def create_router(config: AppConfig) -> Router:
             )
     
     # Обробник пропуску геолокації
-    @router.message(DriverLocationStates.waiting_location, F.text == "⏭️ Пропустити (без трансляції)")
-    async def skip_driver_location(message: Message, state: FSMContext) -> None:
+    @router.message(F.text == "⏭️ Пропустити (без трансляції)")
+    async def skip_driver_location(message: Message) -> None:
         """Водій пропустив відправку геолокації"""
         if not message.from_user:
             return
         
-        data = await state.get_data()
-        order_id = data.get('order_id_for_location')
+        # Перевірити чи водій очікує надсилання геолокації
+        if not hasattr(message.bot, '_driver_location_states'):
+            return
+        
+        driver_data = message.bot._driver_location_states.get(message.from_user.id)
+        if not driver_data or not driver_data.get('waiting_for_location'):
+            return
+        
+        order_id = driver_data.get('order_id')
         
         logger.info(f"⚠️ Водій {message.from_user.id} пропустив відправку геолокації для замовлення #{order_id}")
         
-        # Очистити стан
-        await state.clear()
+        # Очистити дані
+        if message.from_user.id in message.bot._driver_location_states:
+            del message.bot._driver_location_states[message.from_user.id]
         
         # Отримати замовлення
         order = await get_order_by_id(config.database_path, order_id)
@@ -3898,6 +3906,29 @@ def create_router(config: AppConfig) -> Router:
         # Оновити в БД
         from app.storage.db import db_manager
         async with db_manager.connect(config.database_path) as db:
+            await db.execute(
+                "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
+                (formatted_card, message.from_user.id)
+            )
+            await db.commit()
+        
+        await state.clear()
+        await message.answer(
+            f"✅ Картка збережена:\n<code>{formatted_card}</code>\n\n"
+            f"💡 На цю картку переводиться комісія 2%",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        logger.info(f"✅ Водій {message.from_user.id} встановив картку: {formatted_card}")
+    
+    return router
+
+        )
+        
+        logger.info(f"✅ Водій {message.from_user.id} встановив картку: {formatted_card}")
+    
+    return router
+:
             await db.execute(
                 "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
                 (formatted_card, message.from_user.id)
