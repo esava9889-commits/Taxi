@@ -865,7 +865,7 @@ def create_router(config: AppConfig) -> Router:
         lon = message.location.longitude
         
         # ⭐ ЗАВЖДИ ОНОВЛЮЄМО ГЕОЛОКАЦІЮ В БД
-        from app.utils.location_tracker import update_driver_location
+        from app.storage.db import update_driver_location
         await update_driver_location(config.database_path, message.from_user.id, lat, lon)
         
         # Знайти активне замовлення водія
