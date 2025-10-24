@@ -31,6 +31,9 @@ from app.storage.db import (
     get_driver_by_id,
     User,
     upsert_user,
+    get_all_users,
+    block_user,
+    unblock_user,
 )
 
 
@@ -896,6 +899,236 @@ def create_router(config: AppConfig) -> Router:
         else:
             await message.answer("❌ Помилка оновлення", reply_markup=admin_menu_keyboard())
     
+    @router.message(F.text == "👤 Клієнти")
+    async def show_clients_list(message: Message) -> None:
+        """Показати список всіх клієнтів"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        clients = await get_all_users(config.database_path, role="client")
+        
+        if not clients:
+            await message.answer(
+                "👤 <b>Клієнтів немає</b>\n\n"
+                "Поки що жоден клієнт не зареєструвався.",
+                reply_markup=admin_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+        
+        # Розділити за статусом (заблоковані/активні)
+        active_clients = [c for c in clients if not c.is_blocked]
+        blocked_clients = [c for c in clients if c.is_blocked]
+        
+        # Показати активних клієнтів
+        if active_clients:
+            text = f"👤 <b>Активні клієнти ({len(active_clients)})</b>\n\n"
+            
+            for client in active_clients[:20]:  # Показати перші 20
+                # Іконки для статусу
+                city_emoji = f"🏙 {client.city}" if client.city else "🌍 Місто не вказано"
+                karma_emoji = "⭐" if client.karma >= 80 else "⚠️" if client.karma >= 50 else "❌"
+                
+                text += (
+                    f"👤 <b>{client.full_name}</b>\n"
+                    f"📱 {client.phone}\n"
+                    f"{city_emoji}\n"
+                    f"{karma_emoji} Карма: {client.karma}/100\n"
+                    f"📦 Замовлень: {client.total_orders} (скасовано: {client.cancelled_orders})\n"
+                    f"📅 Зареєстрований: {client.created_at.strftime('%d.%m.%Y')}\n"
+                )
+                
+                # Кнопки керування
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="ℹ️ Детальніше",
+                                callback_data=f"admin:client_info:{client.user_id}"
+                            ),
+                            InlineKeyboardButton(
+                                text="🚫 Заблокувати",
+                                callback_data=f"admin:client_block:{client.user_id}"
+                            )
+                        ]
+                    ]
+                )
+                
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
+                text = ""  # Очистити для наступного клієнта
+            
+            if len(active_clients) > 20:
+                await message.answer(
+                    f"... і ще {len(active_clients) - 20} клієнтів",
+                    parse_mode="HTML"
+                )
+        
+        # Показати заблокованих клієнтів
+        if blocked_clients:
+            text = f"\n🚫 <b>Заблоковані клієнти ({len(blocked_clients)})</b>\n\n"
+            
+            for client in blocked_clients[:10]:
+                text += (
+                    f"👤 <b>{client.full_name}</b>\n"
+                    f"📱 {client.phone}\n"
+                    f"🚫 ЗАБЛОКОВАНИЙ\n"
+                )
+                
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="✅ Розблокувати",
+                                callback_data=f"admin:client_unblock:{client.user_id}"
+                            )
+                        ]
+                    ]
+                )
+                
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
+                text = ""
+        
+        # Показати загальну статистику
+        total_orders = sum(c.total_orders for c in clients)
+        avg_karma = sum(c.karma for c in clients) / len(clients) if clients else 0
+        
+        stats_text = (
+            f"\n📊 <b>Загальна статистика:</b>\n\n"
+            f"👥 Всього клієнтів: {len(clients)}\n"
+            f"✅ Активних: {len(active_clients)}\n"
+            f"🚫 Заблокованих: {len(blocked_clients)}\n"
+            f"📦 Всього замовлень: {total_orders}\n"
+            f"⭐ Середня карма: {avg_karma:.1f}/100"
+        )
+        
+        await message.answer(stats_text, reply_markup=admin_menu_keyboard(), parse_mode="HTML")
+    
+    @router.callback_query(F.data.startswith("admin:client_info:"))
+    async def show_client_info(call: CallbackQuery) -> None:
+        """Показати детальну інформацію про клієнта"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        user_id = int(call.data.split(":")[2])
+        
+        # Отримати клієнта з БД
+        from app.storage.db import get_user_by_id
+        client = await get_user_by_id(config.database_path, user_id)
+        
+        if not client:
+            await call.answer("❌ Клієнта не знайдено", show_alert=True)
+            return
+        
+        # Отримати статистику замовлень
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            # Останні замовлення
+            async with db.execute(
+                """SELECT COUNT(*), SUM(fare_amount) 
+                   FROM orders 
+                   WHERE user_id = ? AND status = 'completed'""",
+                (user_id,)
+            ) as cur:
+                row = await cur.fetchone()
+                completed_orders = row[0] if row else 0
+                total_spent = row[1] if row and row[1] else 0
+        
+        karma_emoji = "⭐" if client.karma >= 80 else "⚠️" if client.karma >= 50 else "❌"
+        status_emoji = "🚫" if client.is_blocked else "✅"
+        
+        text = (
+            f"👤 <b>ІНФОРМАЦІЯ ПРО КЛІЄНТА</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>ПІБ:</b> {client.full_name}\n"
+            f"<b>Телефон:</b> <code>{client.phone}</code>\n"
+            f"<b>Telegram ID:</b> <code>{client.user_id}</code>\n"
+            f"<b>Місто:</b> {client.city or 'Не вказано'}\n"
+            f"<b>Мова:</b> {client.language}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>СТАТИСТИКА:</b>\n\n"
+            f"{karma_emoji} <b>Карма:</b> {client.karma}/100\n"
+            f"📦 <b>Всього замовлень:</b> {client.total_orders}\n"
+            f"✅ <b>Завершено:</b> {completed_orders}\n"
+            f"❌ <b>Скасовано:</b> {client.cancelled_orders}\n"
+            f"💰 <b>Витрачено:</b> {total_spent:.0f} грн\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{status_emoji} <b>Статус:</b> {'🚫 ЗАБЛОКОВАНИЙ' if client.is_blocked else '✅ Активний'}\n"
+            f"📅 <b>Зареєстрований:</b> {client.created_at.strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🚫 Заблокувати" if not client.is_blocked else "✅ Розблокувати",
+                        callback_data=f"admin:client_{'block' if not client.is_blocked else 'unblock'}:{user_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔙 Назад",
+                        callback_data="admin:clients_back"
+                    )
+                ]
+            ]
+        )
+        
+        try:
+            await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except:
+            await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        
+        await call.answer()
+    
+    @router.callback_query(F.data.startswith("admin:client_block:"))
+    async def block_client(call: CallbackQuery) -> None:
+        """Заблокувати клієнта"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        user_id = int(call.data.split(":")[2])
+        
+        await block_user(config.database_path, user_id)
+        
+        await call.answer("🚫 Клієнта заблоковано!", show_alert=True)
+        
+        # Оновити повідомлення
+        try:
+            await call.message.edit_text(
+                f"🚫 <b>Клієнт заблокований!</b>\n\n"
+                f"ID: <code>{user_id}</code>\n\n"
+                f"Клієнт не зможе створювати нові замовлення.",
+                parse_mode="HTML"
+            )
+        except:
+            pass
+    
+    @router.callback_query(F.data.startswith("admin:client_unblock:"))
+    async def unblock_client(call: CallbackQuery) -> None:
+        """Розблокувати клієнта"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        user_id = int(call.data.split(":")[2])
+        
+        await unblock_user(config.database_path, user_id)
+        
+        await call.answer("✅ Клієнта розблоковано!", show_alert=True)
+        
+        # Оновити повідомлення
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Клієнт розблокований!</b>\n\n"
+                f"ID: <code>{user_id}</code>\n\n"
+                f"Клієнт знову може створювати замовлення.",
+                parse_mode="HTML"
+            )
+        except:
+            pass
+
     @router.message(F.text == "📢 Розсилка")
     async def start_broadcast(message: Message, state: FSMContext) -> None:
         if not message.from_user or not is_admin(message.from_user.id):
