@@ -233,6 +233,18 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # ЗАХИСТ: Перевірка чи клієнт заблокований
+        from app.storage.db import get_user_by_id
+        user = await get_user_by_id(config.database_path, message.from_user.id)
+        if user and user.is_blocked:
+            await message.answer(
+                "🚫 <b>ВАШІ АКАУНТ ЗАБЛОКОВАНО</b>\n\n"
+                "На жаль, ви не можете створювати замовлення.\n"
+                "Якщо вважаєте це помилкою, зверніться до адміністратора.",
+                parse_mode="HTML"
+            )
+            return
+        
         # ЗАХИСТ: Перевірка чи є вже активне замовлення
         existing_order = await get_user_active_order(config.database_path, message.from_user.id)
         if existing_order:
