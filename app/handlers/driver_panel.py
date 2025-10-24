@@ -1247,15 +1247,25 @@ def create_router(config: AppConfig) -> Router:
         # Очистити стан і показати меню керування поїздкою
         await state.clear()
         
+        logger.info(f"🔍 [LOCATION] Показую меню керування для замовлення #{order_id}")
+        
         # Отримати замовлення
         order = await get_order_by_id(config.database_path, order_id)
         if not order:
+            logger.error(f"❌ [LOCATION] Замовлення #{order_id} не знайдено!")
+            await message.answer("❌ Помилка: замовлення не знайдено")
             return
+        
+        logger.info(f"✅ [LOCATION] Замовлення знайдено: #{order_id}")
         
         # Показати меню керування (як раніше)
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
         if not driver:
+            logger.error(f"❌ [LOCATION] Водій {message.from_user.id} не знайдений!")
+            await message.answer("❌ Помилка: водія не знайдено")
             return
+        
+        logger.info(f"✅ [LOCATION] Водій знайдено: {driver.id}")
         
         # Продовжити з показом меню керування поїздкою
         distance_text = ""
@@ -1329,11 +1339,21 @@ def create_router(config: AppConfig) -> Router:
             f"🚗 Гарної дороги!"
         )
         
-        await message.answer(
-            trip_management_text,
-            reply_markup=kb_trip,
-            disable_web_page_preview=True
-        )
+        logger.info(f"📤 [LOCATION] Надсилаю меню керування водієві {driver.id}")
+        
+        try:
+            await message.answer(
+                trip_management_text,
+                reply_markup=kb_trip,
+                disable_web_page_preview=True
+            )
+            logger.info(f"✅ [LOCATION] Меню керування успішно надіслано!")
+        except Exception as e:
+            logger.error(f"❌ [LOCATION] Помилка надсилання меню: {e}", exc_info=True)
+            await message.answer(
+                "❌ Помилка показу меню. Перейдіть в 🚗 Панель водія",
+                reply_markup=driver_panel_keyboard()
+            )
     
     # Обробник пропуску геолокації
     @router.message(DriverLocationStates.waiting_location, F.text == "⏭️ Пропустити (без трансляції)")
@@ -3410,12 +3430,16 @@ def create_router(config: AppConfig) -> Router:
         
         if not loc_status['has_location']:
             location_text = "📍 Геолокація: ❌ Не встановлена"
-        elif loc_status['is_stale']:
-            hours = loc_status['hours_old']
-            location_text = f"📍 Геолокація: ⚠️ Застаріла ({hours:.0f}год)"
-        else:
-            minutes = loc_status['minutes_old']
-            location_text = f"📍 Геолокація: ✅ Актуальна ({minutes:.0f}хв)"
+        elif loc_status['status'] == 'stale':
+            age = loc_status['age_minutes']
+            hours = age / 60.0
+            location_text = f"📍 Геолокація: ⚠️ Застаріла ({hours:.1f}год)"
+        elif loc_status['status'] == 'warning':
+            age = loc_status['age_minutes']
+            location_text = f"📍 Геолокація: ⚠️ Потребує оновлення ({age}хв)"
+        else:  # fresh
+            age = loc_status['age_minutes']
+            location_text = f"📍 Геолокація: ✅ Актуальна ({age}хв)"
         
         # Перевірка повноти профілю
         car_color = getattr(driver, 'car_color', None)
