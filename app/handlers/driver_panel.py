@@ -1585,8 +1585,8 @@ def create_router(config: AppConfig) -> Router:
             clean_pickup = clean_address(order.pickup_address)
             clean_destination = clean_address(order.destination_address)
             
-            # Текст про геолокацію
-            location_status = "📍 <b>Трансляція геолокації активна</b> ⬆️" if location_message_sent else "⚠️ <b>Геолокація водія тимчасово недоступна</b>"
+            # Текст про геолокацію (буде надіслана пізніше після прийняття)
+            location_status = "⏳ <b>Геолокація водія буде доступна після підтвердження</b>"
             
             # Текст про оплату
             payment_emoji = "💵" if order.payment_method == "cash" else "💳"
