@@ -40,6 +40,32 @@ from app.handlers.car_classes import CAR_CLASSES, calculate_fare_with_class
 logger = logging.getLogger(__name__)
 
 
+async def clean_chat_history(bot, chat_id: int, current_message_id: int, count: int = 20) -> None:
+    """
+    Видалити попередні повідомлення для чистоти чату
+    
+    Args:
+        bot: Bot instance
+        chat_id: ID чату
+        current_message_id: ID поточного повідомлення
+        count: Скільки попередніх повідомлень видалити (за замовчуванням 20)
+    """
+    deleted = 0
+    for i in range(1, count + 1):
+        try:
+            await bot.delete_message(
+                chat_id=chat_id,
+                message_id=current_message_id - i
+            )
+            deleted += 1
+        except Exception:
+            # Ігноруємо помилки (повідомлення може бути вже видалене)
+            pass
+    
+    if deleted > 0:
+        logger.info(f"🧹 Очищено {deleted} повідомлень в чаті {chat_id}")
+
+
 # Експортовані класи для використання в інших модулях
 class OrderStates(StatesGroup):
     pickup = State()  # Спочатку звідки
@@ -1255,6 +1281,10 @@ def create_router(config: AppConfig) -> Router:
     
     async def process_order_confirmation(message: Message, state: FSMContext, user_id: int, config: AppConfig) -> None:
         """Основна логіка створення замовлення"""
+        # 🧹 Очистити всі попередні повідомлення процесу замовлення
+        if message and message.message_id:
+            await clean_chat_history(message.bot, user_id, message.message_id, count=50)
+        
         data = await state.get_data()
         
         # Створення замовлення з координатами, відстанню, класом авто, ціною та способом оплати
