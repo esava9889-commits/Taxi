@@ -310,6 +310,24 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції users (karma): {e}")
         
+        # Міграція 8: Система блокування клієнтів - додати is_blocked до users
+        try:
+            has_user_blocked = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'is_blocked'
+                )
+            """)
+            
+            if not has_user_blocked:
+                logger.info("🔄 Міграція users: додавання is_blocked...")
+                await conn.execute("ALTER TABLE users ADD COLUMN is_blocked BOOLEAN DEFAULT FALSE")
+                await conn.execute("UPDATE users SET is_blocked = FALSE WHERE is_blocked IS NULL")
+                await conn.execute("ALTER TABLE users ALTER COLUMN is_blocked SET NOT NULL")
+                logger.info("✅ Колонка users.is_blocked додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції users (is_blocked): {e}")
+        
         logger.info("✅ Міграції завершено!")
         
         # === СТВОРЕННЯ ТАБЛИЦЬ ===
