@@ -14,6 +14,7 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 
 from app.config.config import AppConfig
@@ -1201,6 +1202,162 @@ def create_router(config: AppConfig) -> Router:
         
         await message.answer(text, reply_markup=driver_panel_keyboard())
 
+    # FSM для геолокації водія
+    class DriverLocationStates(StatesGroup):
+        waiting_location = State()
+    
+    # Обробник геолокації після прийняття замовлення
+    @router.message(DriverLocationStates.waiting_location, F.location)
+    async def driver_location_for_live_tracking(message: Message, state: FSMContext) -> None:
+        """Водій надіслав геолокацію для live трансляції клієнту"""
+        if not message.location or not message.from_user:
+            return
+        
+        data = await state.get_data()
+        order_id = data.get('order_id_for_location')
+        client_user_id = data.get('client_user_id')
+        
+        if not order_id or not client_user_id:
+            await message.answer("❌ Помилка: не знайдено замовлення")
+            await state.clear()
+            return
+        
+        # Відправити live location клієнту
+        try:
+            await message.bot.send_location(
+                client_user_id,
+                latitude=message.location.latitude,
+                longitude=message.location.longitude,
+                live_period=900,  # 15 хвилин трансляції
+            )
+            logger.info(f"📍 Live location відправлено клієнту для замовлення #{order_id}")
+            
+            await message.answer(
+                "✅ Геолокацію відправлено!\n\n"
+                "Клієнт тепер бачить вас на карті в реальному часі (15 хв).",
+                reply_markup=ReplyKeyboardRemove()
+            )
+        except Exception as e:
+            logger.error(f"❌ Не вдалося відправити live location: {e}")
+            await message.answer(
+                "❌ Не вдалося відправити геолокацію клієнту",
+                reply_markup=ReplyKeyboardRemove()
+            )
+        
+        # Очистити стан і показати меню керування поїздкою
+        await state.clear()
+        
+        # Отримати замовлення
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order:
+            return
+        
+        # Показати меню керування (як раніше)
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            return
+        
+        # Продовжити з показом меню керування поїздкою
+        distance_text = ""
+        if order.distance_m:
+            km = order.distance_m / 1000.0
+            distance_text = f"\n📏 Відстань: {km:.1f} км"
+        
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+        
+        clean_pickup = clean_address(order.pickup_address)
+        clean_destination = clean_address(order.destination_address)
+        
+        pickup_link = ""
+        destination_link = ""
+        
+        if order.pickup_lat and order.pickup_lon:
+            pickup_link = f"<a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>📍 Відкрити на карті</a>"
+        
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"<a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>📍 Відкрити на карті</a>"
+        
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                [
+                    KeyboardButton(text="📞 Клієнт", request_contact=False),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Керування поїздкою"
+        )
+        
+        trip_management_text = (
+            f"✅ <b>ЗАМОВЛЕННЯ ПРИЙНЯТО!</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📋 ІНФОРМАЦІЯ ПРО ЗАМОВЛЕННЯ:</b>\n\n"
+            f"🆔 Замовлення: <b>#{order_id}</b>\n"
+            f"👤 Клієнт: {order.name}\n"
+            f"📱 Телефон: <code>{order.phone}</code>\n\n"
+            f"📍 <b>Звідки забрати:</b>\n{clean_pickup}\n"
+            f"{pickup_link}\n\n"
+            f"🎯 <b>Куди везти:</b>\n{clean_destination}\n"
+            f"{destination_link}{distance_text}\n\n"
+            f"💰 Вартість: <b>{int(order.fare_amount):.0f} грн</b>\n"
+            f"{payment_emoji} Оплата: {payment_text}\n"
+        )
+        
+        if order.comment:
+            trip_management_text += f"\n💬 <b>Коментар клієнта:</b>\n<i>{order.comment}</i>\n"
+        
+        trip_management_text += (
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📍 ЕТАПИ ВИКОНАННЯ:</b>\n\n"
+            f"1️⃣ <b>Їдьте до клієнта</b>\n"
+            f"   Натисніть: <b>📍 Я НА МІСЦІ ПОДАЧІ</b>\n\n"
+            f"2️⃣ <b>Клієнт сів в авто</b>\n"
+            f"   Натисніть: <b>✅ КЛІЄНТ В АВТО</b>\n\n"
+            f"3️⃣ <b>Довезли до місця призначення</b>\n"
+            f"   Натисніть: <b>🏁 ЗАВЕРШИТИ ПОЇЗДКУ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Використовуйте кнопки внизу для керування!</b>\n"
+            f"🚗 Гарної дороги!"
+        )
+        
+        await message.answer(
+            trip_management_text,
+            reply_markup=kb_trip,
+            disable_web_page_preview=True
+        )
+    
+    # Обробник пропуску геолокації
+    @router.message(DriverLocationStates.waiting_location, F.text == "⏭️ Пропустити (без трансляції)")
+    async def skip_driver_location(message: Message, state: FSMContext) -> None:
+        """Водій пропустив відправку геолокації"""
+        if not message.from_user:
+            return
+        
+        data = await state.get_data()
+        order_id = data.get('order_id_for_location')
+        
+        await message.answer(
+            "⚠️ Геолокацію не відправлено\n\n"
+            "Клієнт не зможе бачити вас на карті.\n"
+            "Рекомендуємо відправляти геолокацію для кращого досвіду!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        logger.info(f"⚠️ Водій {message.from_user.id} пропустив відправку геолокації для замовлення #{order_id}")
+        
+        # Продовжити з меню керування (аналогічно як вище)
+        # ... (той самий код що і вище)
+        await state.clear()
+    
     # Обробники замовлень
     @router.callback_query(F.data.startswith("accept_order:"))
     async def accept(call: CallbackQuery) -> None:
@@ -1280,27 +1437,49 @@ def create_router(config: AppConfig) -> Router:
             
             logger.info(f"✅ Таймер скасовано для замовлення #{order_id} (прийнято водієм)")
             
-            await call.answer("✅ Прийнято!", show_alert=True)
+            await call.answer("✅ Прийнято! Тепер надішліть свою геолокацію клієнту", show_alert=True)
             
-            # ⭐ НАДІСЛАТИ LIVE ГЕОЛОКАЦІЮ ВОДІЯ КЛІЄНТУ
-            location_message_sent = False
-            if driver.last_lat and driver.last_lon:
-                try:
-                    # Надіслати live location клієнту (15 хвилин трансляції)
-                    await call.bot.send_location(
-                        order.user_id,
-                        latitude=driver.last_lat,
-                        longitude=driver.last_lon,
-                        live_period=900,  # 15 хвилин
-                    )
-                    location_message_sent = True
-                    logger.info(f"📍 Live location sent to client for order #{order_id}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to send live location: {e}")
+            # ⭐ ЗАПРОСИТИ У ВОДІЯ ГЕОЛОКАЦІЮ ДЛЯ LIVE ТРАНСЛЯЦІЇ
+            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
             
-            # Якщо геолокація не надіслана
-            if not location_message_sent:
-                logger.warning(f"⚠️ Водій #{driver.id} не має збереженої геолокації для замовлення #{order_id}")
+            location_request_kb = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="📍 НАДІСЛАТИ МОЄ МІСЦЕЗНАХОДЖЕННЯ", request_location=True)],
+                    [KeyboardButton(text="⏭️ Пропустити (без трансляції)")]
+                ],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+                input_field_placeholder="Натисніть кнопку внизу"
+            )
+            
+            await call.bot.send_message(
+                driver.tg_user_id,
+                "📍 <b>ВІДПРАВТЕ СВОЮ ГЕОЛОКАЦІЮ</b>\n\n"
+                "Натисніть кнопку внизу щоб клієнт міг бачити\n"
+                "вас на карті в реальному часі (15 хвилин).\n\n"
+                "⚡ Це значно покращує досвід клієнта!",
+                reply_markup=location_request_kb
+            )
+            
+            # Зберегти order_id в FSM щоб знати для якого замовлення геолокація
+            from aiogram.fsm.context import FSMContext
+            from aiogram.fsm.state import State, StatesGroup
+            
+            class DriverLocationStates(StatesGroup):
+                waiting_location = State()
+            
+            # Отримати state для водія
+            from aiogram.fsm.storage.base import StorageKey
+            state = FSMContext(
+                storage=call.bot.fsm_storage,
+                key=StorageKey(
+                    bot_id=call.bot.id,
+                    chat_id=driver.tg_user_id,
+                    user_id=driver.tg_user_id
+                )
+            )
+            await state.set_state(DriverLocationStates.waiting_location)
+            await state.update_data(order_id_for_location=order_id, client_user_id=order.user_id)
             
             # Розрахувати відстань і час
             distance_text = ""

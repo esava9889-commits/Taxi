@@ -818,8 +818,6 @@ def create_router(config: AppConfig) -> Router:
         loc = message.location
         
         # ⭐ REVERSE GEOCODING через Nominatim (OpenStreetMap) - БЕЗКОШТОВНО!
-        pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
-        
         try:
             # Nominatim не потребує API ключа!
             readable_address = await reverse_geocode(
@@ -831,9 +829,12 @@ def create_router(config: AppConfig) -> Router:
                 pickup = readable_address
                 logger.info(f"✅ Nominatim reverse geocoded pickup: {pickup}")
             else:
-                logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+                # Якщо не вдалось - використати координати як fallback
+                pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+                logger.warning(f"⚠️ Reverse geocoding не вдалось для pickup, використовую координати")
         except Exception as e:
-            logger.error(f"❌ Помилка reverse geocoding: {e}")
+            pickup = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+            logger.error(f"❌ Помилка reverse geocoding pickup: {e}")
         
         await state.update_data(pickup=pickup, pickup_lat=loc.latitude, pickup_lon=loc.longitude)
         
@@ -908,8 +909,6 @@ def create_router(config: AppConfig) -> Router:
         loc = message.location
         
         # ⭐ REVERSE GEOCODING через Nominatim (OpenStreetMap) - БЕЗКОШТОВНО!
-        destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"  # Fallback
-        
         try:
             # Nominatim не потребує API ключа!
             readable_address = await reverse_geocode(
@@ -921,9 +920,12 @@ def create_router(config: AppConfig) -> Router:
                 destination = readable_address
                 logger.info(f"✅ Nominatim reverse geocoded destination: {destination}")
             else:
-                logger.warning(f"⚠️ Reverse geocoding не вдалось, використовую координати")
+                # Якщо не вдалось - використати координати як fallback
+                destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+                logger.warning(f"⚠️ Reverse geocoding не вдалось для destination, використовую координати")
         except Exception as e:
-            logger.error(f"❌ Помилка reverse geocoding: {e}")
+            destination = f"📍 {loc.latitude:.6f}, {loc.longitude:.6f}"
+            logger.error(f"❌ Помилка reverse geocoding destination: {e}")
         
         await state.update_data(
             destination=destination,
