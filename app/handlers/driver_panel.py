@@ -1410,6 +1410,21 @@ def create_router(config: AppConfig) -> Router:
             else:
                 logger.warning(f"⚠️ DEBUG: order.group_message_id == None, не можу видалити")
             
+            # ⭐ АВТОМАТИЧНА LIVE LOCATION ДЛЯ КЛІЄНТА
+            if driver.last_lat and driver.last_lon:
+                try:
+                    await call.bot.send_location(
+                        order.user_id,
+                        latitude=driver.last_lat,
+                        longitude=driver.last_lon,
+                        live_period=900,  # 15 хвилин
+                    )
+                    logger.info(f"📍 Live location автоматично відправлено клієнту для замовлення #{order_id}")
+                except Exception as e:
+                    logger.error(f"❌ Не вдалося відправити live location: {e}")
+            else:
+                logger.warning(f"⚠️ Водій {driver.id} не має збереженої геолокації, live location не відправлено")
+            
             # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню з Reply Keyboard
             
             # 1. Спробувати видалити останні повідомлення в чаті водія
