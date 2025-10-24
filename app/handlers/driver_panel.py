@@ -3922,26 +3922,3 @@ def create_router(config: AppConfig) -> Router:
         logger.info(f"✅ Водій {message.from_user.id} встановив картку: {formatted_card}")
     
     return router
-
-        )
-        
-        logger.info(f"✅ Водій {message.from_user.id} встановив картку: {formatted_card}")
-    
-    return router
-:
-            await db.execute(
-                "UPDATE drivers SET card_number = ? WHERE tg_user_id = ?",
-                (formatted_card, message.from_user.id)
-            )
-            await db.commit()
-        
-        await state.clear()
-        await message.answer(
-            f"✅ Картка збережена:\n<code>{formatted_card}</code>\n\n"
-            f"💡 На цю картку переводиться комісія 2%",
-            reply_markup=driver_panel_keyboard()
-        )
-        
-        logger.info(f"✅ Водій {message.from_user.id} встановив картку: {formatted_card}")
-    
-    return router
