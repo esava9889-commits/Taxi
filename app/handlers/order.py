@@ -1374,12 +1374,11 @@ def create_router(config: AppConfig) -> Router:
         from app.config.config import get_city_group_id
         city_group_id = get_city_group_id(config, client_city)
 
-        # DEBUG: Логування для діагностики
+        # Логування вибору групи міста
         logger.info(
-            f"🔍 DEBUG: order_confirm city resolution → user_id={message.from_user.id}, "
-            f"user_city={(user.city if user else None)}, state_city={resolved_city}, resolved_city={client_city}"
+            f"📍 Вибір групи для міста '{client_city}' → "
+            f"user_city={(user.city if user else None)}, resolved={resolved_city}"
         )
-        logger.info(f"🔍 DEBUG: config.city_groups={config.city_groups}")
         if city_group_id:
             if client_city in config.city_groups and config.city_groups.get(client_city):
                 logger.info(f"✅ Використовую групу міста '{client_city}': {city_group_id}")

@@ -1381,7 +1381,6 @@ def create_router(config: AppConfig) -> Router:
                 logger.error(f"❌ Не вдалося відправити повідомлення клієнту: {e}")
             
             # ВИДАЛИТИ повідомлення з групи (для приватності)
-            logger.info(f"🔍 DEBUG: Спроба видалити з групи - order_id={order_id}, group_message_id={order.group_message_id}")
             if order.group_message_id:
                 try:
                     # Отримати ID групи міста клієнта
@@ -1390,14 +1389,11 @@ def create_router(config: AppConfig) -> Router:
                     
                     user = await get_user_by_id(config.database_path, order.user_id)
                     client_city = user.city if user and user.city else None
-                    logger.info(f"🔍 DEBUG: Клієнт user_id={order.user_id}, місто={client_city}")
                     
                     group_id = get_city_group_id(config, client_city)
-                    logger.info(f"🔍 DEBUG: group_id для міста '{client_city}' = {group_id}")
                     
                     if group_id:
                         # Видалити повідомлення з групи водіїв
-                        logger.info(f"🗑️ DEBUG: Видаляю повідомлення {order.group_message_id} з чату {group_id}")
                         await call.bot.delete_message(
                             chat_id=group_id,
                             message_id=order.group_message_id
@@ -1408,7 +1404,7 @@ def create_router(config: AppConfig) -> Router:
                 except Exception as e:
                     logger.error(f"❌ Не вдалося видалити повідомлення з групи: {e}", exc_info=True)
             else:
-                logger.warning(f"⚠️ DEBUG: order.group_message_id == None, не можу видалити")
+                logger.warning(f"⚠️ Замовлення не має group_message_id, пропускаю видалення")
             
             # ⭐ АВТОМАТИЧНА LIVE LOCATION ДЛЯ КЛІЄНТА
             if driver.last_lat and driver.last_lon:

@@ -49,7 +49,7 @@ async def commission_reminder_task(bot: Bot, db_path: str, payment_card: str) ->
                         # Ignore errors for individual drivers
                         pass
             except Exception as e:
-                print(f"Error in commission reminder task: {e}")
+                logger.error(f"Error in commission reminder task: {e}")
             
             # Sleep for 1 minute to avoid sending multiple times in the same minute
             await asyncio.sleep(60)
