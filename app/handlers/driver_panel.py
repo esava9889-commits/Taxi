@@ -1207,19 +1207,27 @@ def create_router(config: AppConfig) -> Router:
         waiting_location = State()
     
     # Обробник геолокації після прийняття замовлення
-    @router.message(DriverLocationStates.waiting_location, F.location)
-    async def driver_location_for_live_tracking(message: Message, state: FSMContext) -> None:
+    @router.message(F.location)
+    async def driver_location_for_live_tracking(message: Message) -> None:
         """Водій надіслав геолокацію для live трансляції клієнту"""
         if not message.location or not message.from_user:
             return
         
-        data = await state.get_data()
-        order_id = data.get('order_id_for_location')
-        client_user_id = data.get('client_user_id')
+        # Перевірити чи водій очікує надсилання геолокації
+        if not hasattr(message.bot, '_driver_location_states'):
+            return
+        
+        driver_data = message.bot._driver_location_states.get(message.from_user.id)
+        if not driver_data or not driver_data.get('waiting_for_location'):
+            return
+        
+        order_id = driver_data.get('order_id')
+        client_user_id = driver_data.get('client_user_id')
         
         if not order_id or not client_user_id:
             await message.answer("❌ Помилка: не знайдено замовлення")
-            await state.clear()
+            if message.from_user.id in message.bot._driver_location_states:
+                del message.bot._driver_location_states[message.from_user.id]
             return
         
         # Відправити live location клієнту
@@ -1244,8 +1252,9 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=ReplyKeyboardRemove()
             )
         
-        # Очистити стан і показати меню керування поїздкою
-        await state.clear()
+        # Очистити дані з пам'яті
+        if message.from_user.id in message.bot._driver_location_states:
+            del message.bot._driver_location_states[message.from_user.id]
         
         logger.info(f"🔍 [LOCATION] Показую меню керування для замовлення #{order_id}")
         
@@ -1578,30 +1587,17 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=location_request_kb
             )
             
-            # Зберегти order_id в FSM щоб знати для якого замовлення геолокація
-            # Відправити повідомлення водієві в особисті з FSM state
-            from aiogram import Dispatcher
-            from aiogram.fsm.storage.base import StorageKey
+            # ⭐ Зберегти дані очікування геолокації в пам'яті бота
+            if not hasattr(call.bot, '_driver_location_states'):
+                call.bot._driver_location_states = {}
             
-            # Отримати dispatcher з callback
-            dp = Dispatcher.get_current()
+            call.bot._driver_location_states[driver.tg_user_id] = {
+                'order_id': order_id,
+                'client_user_id': order.user_id,
+                'waiting_for_location': True
+            }
             
-            # Створити FSM context для водія
-            state_key = StorageKey(
-                bot_id=call.bot.id,
-                chat_id=driver.tg_user_id,
-                user_id=driver.tg_user_id
-            )
-            
-            # Отримати FSMContext через dispatcher storage
-            from aiogram.fsm.context import FSMContext
-            state = FSMContext(
-                storage=dp.storage,
-                key=state_key
-            )
-            
-            await state.set_state(DriverLocationStates.waiting_location)
-            await state.update_data(order_id_for_location=order_id, client_user_id=order.user_id)
+            logger.info(f"💾 Збережено очікування геолокації для водія {driver.tg_user_id}, замовлення #{order_id}")
             
             # Розрахувати відстань і час
             distance_text = ""
