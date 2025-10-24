@@ -1381,10 +1381,6 @@ def create_router(config: AppConfig) -> Router:
                         [InlineKeyboardButton(
                             text="✅ Прийняти замовлення",
                             callback_data=f"accept_order:{order_id}"
-                        )],
-                        [InlineKeyboardButton(
-                            text="❌ Не можу взяти",
-                            callback_data=f"reject_order:{order_id}"
                         )]
                     ]
                 )

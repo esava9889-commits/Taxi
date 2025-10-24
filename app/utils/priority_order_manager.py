@@ -176,10 +176,6 @@ async def _send_to_group(bot: Bot, order_id: int, city_group_id: int, order_deta
                 [InlineKeyboardButton(
                     text="✅ Прийняти замовлення",
                     callback_data=f"accept_order:{order_id}"
-                )],
-                [InlineKeyboardButton(
-                    text="❌ Не можу взяти",
-                    callback_data=f"reject_order:{order_id}"
                 )]
             ]
         )
