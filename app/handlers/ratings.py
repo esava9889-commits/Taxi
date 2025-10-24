@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from aiogram import F, Router
+
+logger = logging.getLogger(__name__)
 from aiogram.types import CallbackQuery
 from aiogram.filters import Command
 from aiogram.types import Message
