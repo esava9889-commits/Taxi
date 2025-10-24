@@ -233,6 +233,26 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # 🛡️ RATE LIMITING: Захист від спаму замовлень
+        can_order, wait_time = await check_rate_limit(
+            user_id=message.from_user.id,
+            action="create_order",
+            max_requests=3,  # Максимум 3 замовлення
+            window_seconds=3600  # За 1 годину
+        )
+        
+        if not can_order:
+            remaining = format_time_remaining(wait_time)
+            await message.answer(
+                f"⏱ <b>Забагато замовлень</b>\n\n"
+                f"Ви створили 3 замовлення за останню годину.\n"
+                f"Це максимум для захисту системи від зловживань.\n\n"
+                f"⏰ Спробуйте знову через: <b>{remaining}</b>\n\n"
+                f"💡 Якщо це помилка, зверніться до підтримки.",
+                parse_mode="HTML"
+            )
+            return
+        
         # ЗАХИСТ: Перевірка чи клієнт заблокований
         from app.storage.db import get_user_by_id
         user = await get_user_by_id(config.database_path, message.from_user.id)

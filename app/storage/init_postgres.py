@@ -330,6 +330,51 @@ async def init_postgres_db(database_url: str) -> None:
         
         logger.info("✅ Міграції завершено!")
         
+        # === СТВОРЕННЯ ІНДЕКСІВ ДЛЯ ПРОДУКТИВНОСТІ ===
+        logger.info("🔍 Створюю індекси для оптимізації запитів...")
+        
+        try:
+            # Індекси для orders (найчастіші запити)
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status_user ON orders(status, user_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status_driver ON orders(status, driver_id)")
+            logger.info("✅ Індекси для orders створено")
+            
+            # Індекси для drivers
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_tg_user_id ON drivers(tg_user_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_city ON drivers(city)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_online ON drivers(online)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_status_online ON drivers(status, online)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_drivers_city_online ON drivers(city, online, status)")
+            logger.info("✅ Індекси для drivers створено")
+            
+            # Індекси для users
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_is_blocked ON users(is_blocked)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_role_city ON users(role, city)")
+            logger.info("✅ Індекси для users створено")
+            
+            # Індекси для ratings
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_from_user ON ratings(from_user_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_to_user ON ratings(to_user_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_order_id ON ratings(order_id)")
+            logger.info("✅ Індекси для ratings створено")
+            
+            # Індекси для payments
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_driver_id ON payments(driver_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_commission_paid ON payments(commission_paid)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at)")
+            logger.info("✅ Індекси для payments створено")
+            
+            logger.info("🎉 Всі індекси створено успішно!")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка створення індексів: {e}")
+        
         # === СТВОРЕННЯ ТАБЛИЦЬ ===
         
         # Збережені адреси

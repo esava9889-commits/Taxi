@@ -18,7 +18,10 @@ async def transcribe_voice(file_path: str) -> Optional[str]:
     """
     Розпізнати текст з голосового повідомлення
     
-    TODO: Інтеграція з Google Speech-to-Text API або OpenAI Whisper
+    ПРИМІТКА: Для production інтеграція потребує:
+    - Google Speech-to-Text API (платно, але якісно)
+    - або OpenAI Whisper (безкоштовно, self-hosted)
+    - або Azure Speech Services
     
     Args:
         file_path: Шлях до голосового файлу
@@ -26,7 +29,7 @@ async def transcribe_voice(file_path: str) -> Optional[str]:
     Returns:
         Розпізнаний текст або None
     """
-    # Заглушка - в продакшені тут має бути API
+    # Заглушка - повертає None поки немає інтеграції
     # Приклад з Google Speech-to-Text:
     """
     from google.cloud import speech
