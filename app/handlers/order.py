@@ -1506,10 +1506,41 @@ def create_router(config: AppConfig) -> Router:
                     # БЕЗПЕКА: Маскуємо номер телефону в групі (показуємо тільки останні 2 цифри)
                     masked_phone = mask_phone_number(str(data.get('phone', '')), show_last_digits=2)
                     
-                    # Очистити адреси від Plus Codes
+                    # ⭐ ПЕРЕТВОРИТИ КООРДИНАТИ В АДРЕСИ (для групи водіїв)
                     from app.handlers.driver_panel import clean_address
-                    clean_pickup = clean_address(data.get('pickup', ''))
-                    clean_destination = clean_address(data.get('destination', ''))
+                    from app.utils.maps import reverse_geocode
+                    
+                    pickup_display = data.get('pickup', '')
+                    destination_display = data.get('destination', '')
+                    
+                    # Якщо є координати - спробувати геокодувати в адресу
+                    if pickup_lat and pickup_lon:
+                        # Перевірити чи це координати (містить числа з крапкою)
+                        if '.' in str(pickup_display) and any(char.isdigit() for char in str(pickup_display)):
+                            logger.info(f"🔄 [GROUP] Координати виявлені в pickup, геокодую: {pickup_display}")
+                            try:
+                                readable_address = await reverse_geocode("", float(pickup_lat), float(pickup_lon))
+                                if readable_address:
+                                    pickup_display = readable_address
+                                    logger.info(f"✅ [GROUP] Pickup геокодовано: {pickup_display}")
+                            except Exception as e:
+                                logger.error(f"❌ [GROUP] Помилка геокодування pickup: {e}")
+                    
+                    if dest_lat and dest_lon:
+                        # Перевірити чи це координати
+                        if '.' in str(destination_display) and any(char.isdigit() for char in str(destination_display)):
+                            logger.info(f"🔄 [GROUP] Координати виявлені в destination, геокодую: {destination_display}")
+                            try:
+                                readable_address = await reverse_geocode("", float(dest_lat), float(dest_lon))
+                                if readable_address:
+                                    destination_display = readable_address
+                                    logger.info(f"✅ [GROUP] Destination геокодовано: {destination_display}")
+                            except Exception as e:
+                                logger.error(f"❌ [GROUP] Помилка геокодування destination: {e}")
+                    
+                    # Очистити адреси від Plus Codes (якщо залишились)
+                    clean_pickup = clean_address(pickup_display)
+                    clean_destination = clean_address(destination_display)
                     
                     # Створити посилання на маршрут Google Maps
                     route_link = ""
@@ -1860,10 +1891,41 @@ def create_router(config: AppConfig) -> Router:
                         ]
                     )
                     
-                    # Очистити адреси від Plus Codes для кращої читабельності
+                    # ⭐ ПЕРЕТВОРИТИ КООРДИНАТИ В АДРЕСИ (для оновлення групи)
                     from app.handlers.driver_panel import clean_address
-                    clean_pickup = clean_address(order.pickup_address)
-                    clean_destination = clean_address(order.destination_address)
+                    from app.utils.maps import reverse_geocode
+                    
+                    pickup_display = order.pickup_address
+                    destination_display = order.destination_address
+                    
+                    # Якщо є координати - спробувати геокодувати в адресу
+                    if order.pickup_lat and order.pickup_lon:
+                        # Перевірити чи це координати
+                        if '.' in str(pickup_display) and any(char.isdigit() for char in str(pickup_display)):
+                            logger.info(f"🔄 [GROUP UPDATE] Координати в pickup, геокодую: {pickup_display}")
+                            try:
+                                readable_address = await reverse_geocode("", float(order.pickup_lat), float(order.pickup_lon))
+                                if readable_address:
+                                    pickup_display = readable_address
+                                    logger.info(f"✅ [GROUP UPDATE] Pickup геокодовано: {pickup_display}")
+                            except Exception as e:
+                                logger.error(f"❌ [GROUP UPDATE] Помилка геокодування pickup: {e}")
+                    
+                    if order.dest_lat and order.dest_lon:
+                        # Перевірити чи це координати
+                        if '.' in str(destination_display) and any(char.isdigit() for char in str(destination_display)):
+                            logger.info(f"🔄 [GROUP UPDATE] Координати в destination, геокодую: {destination_display}")
+                            try:
+                                readable_address = await reverse_geocode("", float(order.dest_lat), float(order.dest_lon))
+                                if readable_address:
+                                    destination_display = readable_address
+                                    logger.info(f"✅ [GROUP UPDATE] Destination геокодовано: {destination_display}")
+                            except Exception as e:
+                                logger.error(f"❌ [GROUP UPDATE] Помилка геокодування destination: {e}")
+                    
+                    # Очистити адреси від Plus Codes для кращої читабельності
+                    clean_pickup = clean_address(pickup_display)
+                    clean_destination = clean_address(destination_display)
                     
                     # Створити посилання на маршрут Google Maps
                     route_link = ""

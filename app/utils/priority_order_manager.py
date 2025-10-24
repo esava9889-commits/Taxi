@@ -184,16 +184,48 @@ async def _send_to_group(bot: Bot, order_id: int, city_group_id: int, order_deta
             ]
         )
         
-        # Очистити адреси
-        clean_pickup = clean_address(order_details.get('pickup', ''))
-        clean_destination = clean_address(order_details.get('destination', ''))
+        # ⭐ ПЕРЕТВОРИТИ КООРДИНАТИ В АДРЕСИ (для пріоритетних водіїв)
+        from app.utils.maps import reverse_geocode
         
-        # Створити посилання на маршрут
-        route_link = ""
+        pickup_display = order_details.get('pickup', '')
+        destination_display = order_details.get('destination', '')
+        
         pickup_lat = order_details.get('pickup_lat')
         pickup_lon = order_details.get('pickup_lon')
         dest_lat = order_details.get('dest_lat')
         dest_lon = order_details.get('dest_lon')
+        
+        # Якщо є координати - спробувати геокодувати в адресу
+        if pickup_lat and pickup_lon:
+            # Перевірити чи це координати
+            if '.' in str(pickup_display) and any(char.isdigit() for char in str(pickup_display)):
+                logger.info(f"🔄 [PRIORITY] Координати в pickup, геокодую: {pickup_display}")
+                try:
+                    readable_address = await reverse_geocode("", float(pickup_lat), float(pickup_lon))
+                    if readable_address:
+                        pickup_display = readable_address
+                        logger.info(f"✅ [PRIORITY] Pickup геокодовано: {pickup_display}")
+                except Exception as e:
+                    logger.error(f"❌ [PRIORITY] Помилка геокодування pickup: {e}")
+        
+        if dest_lat and dest_lon:
+            # Перевірити чи це координати
+            if '.' in str(destination_display) and any(char.isdigit() for char in str(destination_display)):
+                logger.info(f"🔄 [PRIORITY] Координати в destination, геокодую: {destination_display}")
+                try:
+                    readable_address = await reverse_geocode("", float(dest_lat), float(dest_lon))
+                    if readable_address:
+                        destination_display = readable_address
+                        logger.info(f"✅ [PRIORITY] Destination геокодовано: {destination_display}")
+                except Exception as e:
+                    logger.error(f"❌ [PRIORITY] Помилка геокодування destination: {e}")
+        
+        # Очистити адреси від Plus Codes
+        clean_pickup = clean_address(pickup_display)
+        clean_destination = clean_address(destination_display)
+        
+        # Створити посилання на маршрут
+        route_link = ""
         
         if pickup_lat and pickup_lon and dest_lat and dest_lon:
             route_link = (
@@ -276,6 +308,10 @@ def _build_priority_message(order_id: int, order_details: dict) -> str:
     """Створити повідомлення для пріоритетних водіїв"""
     from app.handlers.driver_panel import clean_address
     from app.handlers.car_classes import get_car_class_name
+    
+    # ⚠️ УВАГА: ця функція НЕ може використовувати async reverse_geocode
+    # Тому адреси мають бути вже геокодовані до цього моменту
+    # Якщо тут координати - вони будуть показані як є
     
     clean_pickup = clean_address(order_details.get('pickup', ''))
     clean_destination = clean_address(order_details.get('destination', ''))
