@@ -369,6 +369,27 @@ async def init_db(db_path: str) -> None:
                 )
                 """
             )
+            # Міграція: додати нові колонки в users якщо їх немає
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+            except Exception:
+                pass  # Колонка вже існує
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN karma INTEGER DEFAULT 100")
+            except Exception:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN total_orders INTEGER DEFAULT 0")
+            except Exception:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN cancelled_orders INTEGER DEFAULT 0")
+            except Exception:
+                pass
+            
             # Drivers: applications and active drivers
             await db.execute(
                 """
@@ -1096,6 +1117,7 @@ class User:
     karma: int = 100  # Карма клієнта (100 = ідеально)
     total_orders: int = 0  # Всього замовлень
     cancelled_orders: int = 0  # Скасованих замовлень
+    is_blocked: bool = False  # Чи заблокований клієнт
 
 
 async def upsert_user(db_path: str, user: User) -> None:
@@ -1145,6 +1167,58 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
         city=row[4],
         language=row[5] if row[5] else "uk",
     )
+
+
+async def get_all_users(db_path: str, role: str = "client") -> List[User]:
+    """Отримати всіх користувачів з певною роллю"""
+    async with db_manager.connect(db_path) as db:
+        async with db.execute(
+            """SELECT user_id, full_name, phone, role, city, language, created_at, 
+               COALESCE(is_blocked, 0) as is_blocked, 
+               COALESCE(karma, 100) as karma,
+               COALESCE(total_orders, 0) as total_orders,
+               COALESCE(cancelled_orders, 0) as cancelled_orders
+               FROM users WHERE role = ? ORDER BY created_at DESC""",
+            (role,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    
+    users = []
+    for row in rows:
+        users.append(User(
+            user_id=row[0],
+            full_name=row[1],
+            phone=row[2],
+            role=row[3],
+            created_at=_parse_datetime(row[6]),
+            city=row[4],
+            language=row[5] if row[5] else "uk",
+            is_blocked=bool(row[7]),
+            karma=row[8],
+            total_orders=row[9],
+            cancelled_orders=row[10],
+        ))
+    return users
+
+
+async def block_user(db_path: str, user_id: int) -> None:
+    """Заблокувати користувача"""
+    async with db_manager.connect(db_path) as db:
+        await db.execute(
+            "UPDATE users SET is_blocked = 1 WHERE user_id = ?",
+            (user_id,)
+        )
+        await db.commit()
+
+
+async def unblock_user(db_path: str, user_id: int) -> None:
+    """Розблокувати користувача"""
+    async with db_manager.connect(db_path) as db:
+        await db.execute(
+            "UPDATE users SET is_blocked = 0 WHERE user_id = ?",
+            (user_id,)
+        )
+        await db.commit()
 
 
 async def delete_user(db_path: str, user_id: int) -> bool:
