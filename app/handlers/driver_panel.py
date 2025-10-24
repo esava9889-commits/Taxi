@@ -1345,18 +1345,107 @@ def create_router(config: AppConfig) -> Router:
         data = await state.get_data()
         order_id = data.get('order_id_for_location')
         
+        logger.info(f"⚠️ Водій {message.from_user.id} пропустив відправку геолокації для замовлення #{order_id}")
+        
+        # Очистити стан
+        await state.clear()
+        
+        # Отримати замовлення
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order:
+            await message.answer("❌ Замовлення не знайдено", reply_markup=ReplyKeyboardRemove())
+            return
+        
+        # Отримати водія
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Водія не знайдено", reply_markup=ReplyKeyboardRemove())
+            return
+        
+        # Показати попередження
         await message.answer(
-            "⚠️ Геолокацію не відправлено\n\n"
+            "⚠️ <b>Геолокацію не відправлено</b>\n\n"
             "Клієнт не зможе бачити вас на карті.\n"
-            "Рекомендуємо відправляти геолокацію для кращого досвіду!",
+            "Рекомендуємо відправляти геолокацію для кращого досвіду!\n\n"
+            "📍 <i>Продовжуємо виконання замовлення...</i>",
             reply_markup=ReplyKeyboardRemove()
         )
         
-        logger.info(f"⚠️ Водій {message.from_user.id} пропустив відправку геолокації для замовлення #{order_id}")
+        # Показати меню керування поїздкою (як при надсиланні геолокації)
+        distance_text = ""
+        if order.distance_m:
+            km = order.distance_m / 1000.0
+            distance_text = f"\n📏 Відстань: {km:.1f} км"
         
-        # Продовжити з меню керування (аналогічно як вище)
-        # ... (той самий код що і вище)
-        await state.clear()
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+        
+        clean_pickup = clean_address(order.pickup_address)
+        clean_destination = clean_address(order.destination_address)
+        
+        pickup_link = ""
+        destination_link = ""
+        
+        if order.pickup_lat and order.pickup_lon:
+            pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>Відкрити на карті</a>"
+        
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Відкрити на карті</a>"
+        
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                [
+                    KeyboardButton(text="📞 Клієнт", request_contact=False),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Керування поїздкою"
+        )
+        
+        trip_management_text = (
+            f"✅ <b>ЗАМОВЛЕННЯ ПРИЙНЯТО!</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📋 ІНФОРМАЦІЯ ПРО ЗАМОВЛЕННЯ:</b>\n\n"
+            f"🆔 Замовлення: <b>#{order_id}</b>\n"
+            f"👤 Клієнт: {order.name}\n"
+            f"📱 Телефон: <code>{order.phone}</code>\n\n"
+            f"📍 <b>Звідки забрати:</b>\n{clean_pickup}{pickup_link}\n\n"
+            f"🎯 <b>Куди везти:</b>\n{clean_destination}{destination_link}{distance_text}\n\n"
+            f"💰 Вартість: <b>{int(order.fare_amount):.0f} грн</b>\n"
+            f"{payment_emoji} Оплата: {payment_text}\n"
+        )
+        
+        if order.comment:
+            trip_management_text += f"\n💬 <b>Коментар клієнта:</b>\n<i>{order.comment}</i>\n"
+        
+        trip_management_text += (
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📍 ЕТАПИ ВИКОНАННЯ:</b>\n\n"
+            f"1️⃣ <b>Їдьте до клієнта</b>\n"
+            f"   Натисніть: <b>📍 Я НА МІСЦІ ПОДАЧІ</b>\n\n"
+            f"2️⃣ <b>Клієнт сів в авто</b>\n"
+            f"   Натисніть: <b>✅ КЛІЄНТ В АВТО</b>\n\n"
+            f"3️⃣ <b>Довезли до місця призначення</b>\n"
+            f"   Натисніть: <b>🏁 ЗАВЕРШИТИ ПОЇЗДКУ</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Використовуйте кнопки внизу для керування!</b>\n"
+            f"🚗 Гарної дороги!"
+        )
+        
+        await message.answer(
+            trip_management_text,
+            reply_markup=kb_trip,
+            disable_web_page_preview=True
+        )
     
     # Обробники замовлень
     @router.callback_query(F.data.startswith("accept_order:"))
