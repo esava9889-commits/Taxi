@@ -1194,10 +1194,46 @@ def create_router(config: AppConfig) -> Router:
         payment_method = data.get('payment_method')
         payment_text = "💵 Готівка" if payment_method == "cash" else ("💳 Картка" if payment_method == "card" else None)
 
-        # ⭐ ОЧИСТИТИ АДРЕСИ ВІД PLUS CODES ТА КООРДИНАТ
+        # ⭐ ПЕРЕТВОРИТИ КООРДИНАТИ В АДРЕСИ (якщо є координати)
         from app.handlers.driver_panel import clean_address
-        clean_pickup = clean_address(data.get('pickup', ''))
-        clean_destination = clean_address(data.get('destination', ''))
+        from app.utils.maps import reverse_geocode
+        
+        pickup_display = data.get('pickup', '')
+        destination_display = data.get('destination', '')
+        
+        # Якщо є координати - спробувати геокодувати в адресу
+        pickup_lat = data.get('pickup_lat')
+        pickup_lon = data.get('pickup_lon')
+        dest_lat = data.get('dest_lat')
+        dest_lon = data.get('dest_lon')
+        
+        if pickup_lat and pickup_lon:
+            # Перевірити чи це координати (містить числа з крапкою)
+            if '.' in str(pickup_display) and any(char.isdigit() for char in str(pickup_display)):
+                logger.info(f"🔄 Координати виявлені в pickup, геокодую: {pickup_display}")
+                try:
+                    readable_address = await reverse_geocode("", float(pickup_lat), float(pickup_lon))
+                    if readable_address:
+                        pickup_display = readable_address
+                        logger.info(f"✅ Pickup геокодовано: {pickup_display}")
+                except Exception as e:
+                    logger.error(f"❌ Помилка геокодування pickup: {e}")
+        
+        if dest_lat and dest_lon:
+            # Перевірити чи це координати
+            if '.' in str(destination_display) and any(char.isdigit() for char in str(destination_display)):
+                logger.info(f"🔄 Координати виявлені в destination, геокодую: {destination_display}")
+                try:
+                    readable_address = await reverse_geocode("", float(dest_lat), float(dest_lon))
+                    if readable_address:
+                        destination_display = readable_address
+                        logger.info(f"✅ Destination геокодовано: {destination_display}")
+                except Exception as e:
+                    logger.error(f"❌ Помилка геокодування destination: {e}")
+        
+        # Очистити адреси від Plus Codes (якщо залишились)
+        clean_pickup = clean_address(pickup_display)
+        clean_destination = clean_address(destination_display)
 
         text = (
             "📋 <b>Перевірте дані замовлення:</b>\n\n"
