@@ -1152,7 +1152,12 @@ async def upsert_user(db_path: str, user: User) -> None:
 async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
     async with db_manager.connect(db_path) as db:
         async with db.execute(
-            "SELECT user_id, full_name, phone, role, city, language, created_at FROM users WHERE user_id = ?",
+            """SELECT user_id, full_name, phone, role, city, language, created_at,
+               COALESCE(is_blocked, 0) as is_blocked,
+               COALESCE(karma, 100) as karma,
+               COALESCE(total_orders, 0) as total_orders,
+               COALESCE(cancelled_orders, 0) as cancelled_orders
+               FROM users WHERE user_id = ?""",
             (user_id,),
         ) as cursor:
             row = await cursor.fetchone()
@@ -1166,6 +1171,10 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
         created_at=_parse_datetime(row[6]),
         city=row[4],
         language=row[5] if row[5] else "uk",
+        is_blocked=bool(row[7]),
+        karma=row[8],
+        total_orders=row[9],
+        cancelled_orders=row[10],
     )
 
 
