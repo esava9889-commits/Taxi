@@ -66,7 +66,13 @@ async def telegram_webhook_handler(request, bot, dp):
         
         return web.Response(status=200)
     except Exception as e:
-        # Детальне логування з повним traceback
+        # Ігнорувати помилки "message is not modified" - це нормально
+        error_text = str(e)
+        if "message is not modified" in error_text.lower():
+            logging.debug(f"⚠️ Спроба змінити повідомлення з тим самим контентом (ігноруємо): {e}")
+            return web.Response(status=200)  # OK - не критична помилка
+        
+        # Детальне логування з повним traceback для інших помилок
         logging.error(f"❌ Помилка обробки webhook: {e}")
         logging.error(f"📜 Traceback:\n{traceback.format_exc()}")
         return web.Response(status=500)
