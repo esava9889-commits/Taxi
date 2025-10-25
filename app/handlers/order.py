@@ -233,6 +233,12 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # 🚫 Перевірка блокування
+        from app.handlers.blocked_check import is_user_blocked, send_blocked_message
+        if await is_user_blocked(config.database_path, message.from_user.id):
+            await send_blocked_message(message)
+            return
+        
         # 🛡️ RATE LIMITING: Захист від спаму замовлень
         can_order = check_rate_limit(
             user_id=message.from_user.id,

@@ -69,7 +69,8 @@ def create_router(config: AppConfig) -> Router:
                     is_registered=True, 
                     is_driver=is_driver, 
                     is_admin=True,
-                    has_driver_application=has_driver_application
+                    has_driver_application=has_driver_application,
+                    is_blocked=False  # Адміни не блокуються
                 )
             )
             return
@@ -95,6 +96,9 @@ def create_router(config: AppConfig) -> Router:
             )
             return
         
+        # Отримати is_blocked для клієнта
+        is_blocked = user.is_blocked if user else False
+        
         # КЛІЄНТ - звичайний flow
         if user and user.phone and user.city:
             # Повна реєстрація
@@ -111,7 +115,8 @@ def create_router(config: AppConfig) -> Router:
                     is_registered=True, 
                     is_driver=is_driver, 
                     is_admin=is_admin,
-                    has_driver_application=has_driver_application
+                    has_driver_application=has_driver_application,
+                    is_blocked=is_blocked
                 )
             )
         elif user:
@@ -225,6 +230,12 @@ def create_router(config: AppConfig) -> Router:
     @router.message(F.text == "👤 Мій профіль")
     async def show_profile(message: Message) -> None:
         if not message.from_user:
+            return
+        
+        # 🚫 Перевірка блокування
+        from app.handlers.blocked_check import is_user_blocked, send_blocked_message
+        if await is_user_blocked(config.database_path, message.from_user.id):
+            await send_blocked_message(message)
             return
         
         user = await get_user_by_id(config.database_path, message.from_user.id)

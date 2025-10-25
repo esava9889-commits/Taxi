@@ -77,6 +77,13 @@ def create_router(config: AppConfig) -> Router:
         """Показати збережені адреси (з Reply keyboard)"""
         if not message.from_user:
             return
+        
+        # 🚫 Перевірка блокування
+        from app.handlers.blocked_check import is_user_blocked, send_blocked_message
+        if await is_user_blocked(config.database_path, message.from_user.id):
+            await send_blocked_message(message)
+            return
+        
         await _show_addresses_list(message.from_user.id, send_to_chat=message)
     
     @router.callback_query(F.data == "address:list")
