@@ -52,6 +52,7 @@ async def telegram_webhook_handler(request, bot, dp):
         dp: Dispatcher instance
     """
     from aiogram.types import Update
+    import traceback
     
     try:
         # Отримати JSON від Telegram
@@ -65,7 +66,9 @@ async def telegram_webhook_handler(request, bot, dp):
         
         return web.Response(status=200)
     except Exception as e:
+        # Детальне логування з повним traceback
         logging.error(f"❌ Помилка обробки webhook: {e}")
+        logging.error(f"📜 Traceback:\n{traceback.format_exc()}")
         return web.Response(status=500)
 
 
