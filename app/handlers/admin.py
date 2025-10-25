@@ -1068,7 +1068,7 @@ def create_router(config: AppConfig) -> Router:
                 [
                     InlineKeyboardButton(
                         text="🔙 Назад",
-                        callback_data="admin:clients_back"
+                        callback_data=f"admin:clients_back:{user_id}"
                     )
                 ]
             ]
@@ -1127,7 +1127,7 @@ def create_router(config: AppConfig) -> Router:
                 [
                     InlineKeyboardButton(
                         text="🔙 Назад",
-                        callback_data="admin:clients_back"
+                        callback_data=f"admin:clients_back:{user_id}"
                     )
                 ]
             ]
@@ -1138,71 +1138,57 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
     
-    @router.callback_query(F.data == "admin:clients_back")
+    @router.callback_query(F.data.startswith("admin:clients_back:"))
     async def clients_back_button(call: CallbackQuery) -> None:
-        """Повернутися до списку клієнтів"""
+        """Повернутися до короткої інформації про клієнта"""
         if not call.from_user or not is_admin(call.from_user.id):
             await call.answer("❌ Немає доступу", show_alert=True)
             return
         
         await call.answer()
         
-        # Отримати список клієнтів
-        clients = await get_all_users(config.database_path, role="client")
+        # Отримати user_id з callback_data
+        user_id = int(call.data.split(":")[2])
         
-        if not clients:
-            await call.message.edit_text(
-                "👤 <b>Клієнтів немає</b>\n\n"
-                "Поки що жоден клієнт не зареєструвався.",
-                parse_mode="HTML"
-            )
+        # Отримати інформацію про клієнта
+        client = await get_user_by_id(config.database_path, user_id)
+        
+        if not client:
+            await call.message.edit_text("❌ Клієнта не знайдено", parse_mode="HTML")
             return
         
-        # Розділити за статусом
-        active_clients = [c for c in clients if not c.is_blocked]
-        blocked_clients = [c for c in clients if c.is_blocked]
+        # Показати коротку інформацію (як в списку)
+        city_emoji = f"🏙 {client.city}" if client.city else "🌍 Місто не вказано"
+        karma_emoji = "⭐" if client.karma >= 80 else "🔶" if client.karma >= 50 else "🔻"
+        status_emoji = "🔴 ЗАБЛОКОВАНИЙ" if client.is_blocked else "🟢 Активний"
         
-        # Показати список
-        text = f"👤 <b>Активні клієнти ({len(active_clients)})</b>\n\n"
+        text = (
+            f"👤 <b>{client.full_name}</b>\n"
+            f"📱 <code>{client.phone}</code>\n"
+            f"{city_emoji} | {karma_emoji} Карма: {client.karma}/100\n"
+            f"🚕 Замовлень: {client.total_orders}\n"
+            f"Статус: {status_emoji}"
+        )
         
-        for client in active_clients[:5]:  # Показати перші 5
-            city_emoji = f"🏙 {client.city}" if client.city else "🌍 Місто не вказано"
-            karma_emoji = "⭐" if client.karma >= 80 else "🔶" if client.karma >= 50 else "🔻"
-            
-            text += (
-                f"👤 {client.full_name}\n"
-                f"📱 <code>{client.phone}</code>\n"
-                f"{city_emoji} | {karma_emoji} Карма: {client.karma}/100\n"
-                f"🚕 Замовлень: {client.total_orders}\n\n"
-            )
-            
-            kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="ℹ️ Детальніше",
-                            callback_data=f"admin:client_info:{client.user_id}"
-                        ),
-                        InlineKeyboardButton(
-                            text="🚫 Заблокувати",
-                            callback_data=f"admin:client_block:{client.user_id}"
-                        )
-                    ]
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="ℹ️ Детальніше",
+                        callback_data=f"admin:client_info:{user_id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="🚫 Заблокувати" if not client.is_blocked else "✅ Розблокувати",
+                        callback_data=f"admin:client_{'block' if not client.is_blocked else 'unblock'}:{user_id}"
+                    )
                 ]
-            )
-            
-            try:
-                await call.bot.send_message(call.from_user.id, text, reply_markup=kb, parse_mode="HTML")
-            except:
-                pass
-            text = ""
+            ]
+        )
         
-        if len(active_clients) > 5:
-            await call.bot.send_message(
-                call.from_user.id,
-                f"... і ще {len(active_clients) - 5} клієнтів",
-                parse_mode="HTML"
-            )
+        try:
+            await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except:
+            pass
     
     @router.callback_query(F.data.startswith("admin:client_unblock:"))
     async def unblock_client(call: CallbackQuery) -> None:
@@ -1250,7 +1236,7 @@ def create_router(config: AppConfig) -> Router:
                 [
                     InlineKeyboardButton(
                         text="🔙 Назад",
-                        callback_data="admin:clients_back"
+                        callback_data=f"admin:clients_back:{user_id}"
                     )
                 ]
             ]
