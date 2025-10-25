@@ -359,7 +359,8 @@ async def init_db(db_path: str) -> None:
             try:
                 await db.execute("ALTER TABLE users ADD COLUMN bonus_rides_available INTEGER NOT NULL DEFAULT 0")
                 logger.info("✅ Додано колонку bonus_rides_available до users")
-            except:
+            except Exception as e:
+                logger.debug(f"Колонка bonus_rides_available вже існує або помилка: {e}")
                 pass
             # Users: registered clients
             await db.execute(
@@ -398,7 +399,9 @@ async def init_db(db_path: str) -> None:
             
             try:
                 await db.execute("ALTER TABLE users ADD COLUMN bonus_rides_available INTEGER DEFAULT 0")
-            except Exception:
+                logger.info("✅ Додано колонку bonus_rides_available до users (PostgreSQL)")
+            except Exception as e:
+                logger.debug(f"Колонка bonus_rides_available вже існує: {e}")
                 pass
             
             # Drivers: applications and active drivers

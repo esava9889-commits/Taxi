@@ -328,6 +328,24 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції users (is_blocked): {e}")
         
+        # Міграція 9: Бонусні поїздки - додати bonus_rides_available до users
+        try:
+            has_bonus_rides = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'bonus_rides_available'
+                )
+            """)
+            
+            if not has_bonus_rides:
+                logger.info("🔄 Міграція users: додавання bonus_rides_available...")
+                await conn.execute("ALTER TABLE users ADD COLUMN bonus_rides_available INTEGER DEFAULT 0")
+                await conn.execute("UPDATE users SET bonus_rides_available = 0 WHERE bonus_rides_available IS NULL")
+                await conn.execute("ALTER TABLE users ALTER COLUMN bonus_rides_available SET NOT NULL")
+                logger.info("✅ Колонка users.bonus_rides_available додана")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка міграції users (bonus_rides_available): {e}")
+        
         logger.info("✅ Міграції завершено!")
         
         # === СТВОРЕННЯ ІНДЕКСІВ ДЛЯ ПРОДУКТИВНОСТІ ===
