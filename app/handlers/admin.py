@@ -36,6 +36,7 @@ from app.storage.db import (
     get_user_order_history,
     block_user,
     unblock_user,
+    add_rides_to_client,
 )
 
 
@@ -81,6 +82,11 @@ class SettingsStates(StatesGroup):
 
 class BroadcastStates(StatesGroup):
     message = State()
+
+
+class ClientManageStates(StatesGroup):
+    """Стани для керування клієнтами"""
+    add_rides_count = State()  # Введення кількості поїздок для додавання
 
 
 def create_router(config: AppConfig) -> Router:
@@ -952,6 +958,12 @@ def create_router(config: AppConfig) -> Router:
                                 text="🚫 Заблокувати",
                                 callback_data=f"admin:client_block:{client.user_id}"
                             )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                text="➕ Додати поїздки",
+                                callback_data=f"admin:client_add_rides:{client.user_id}"
+                            )
                         ]
                     ]
                 )
@@ -1064,6 +1076,12 @@ def create_router(config: AppConfig) -> Router:
                     InlineKeyboardButton(
                         text="🚫 Заблокувати" if not client.is_blocked else "✅ Розблокувати",
                         callback_data=f"admin:client_{'block' if not client.is_blocked else 'unblock'}:{user_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="➕ Додати поїздки",
+                        callback_data=f"admin:client_add_rides:{user_id}"
                     )
                 ],
                 [
@@ -1248,6 +1266,86 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
 
+    @router.callback_query(F.data.startswith("admin:client_add_rides:"))
+    async def start_add_rides(call: CallbackQuery, state: FSMContext) -> None:
+        """Почати процес додавання поїздок клієнту"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Немає доступу", show_alert=True)
+            return
+        
+        user_id = int(call.data.split(":")[3])
+        
+        # Зберегти user_id в state
+        await state.update_data(manage_client_id=user_id)
+        await state.set_state(ClientManageStates.add_rides_count)
+        
+        await call.answer()
+        await call.message.answer(
+            "➕ <b>Додати поїздки клієнту</b>\n\n"
+            "Введіть кількість поїздок для додавання (1-100):\n\n"
+            "💡 Це збільшить total_orders клієнта\n"
+            "Наприклад: <code>5</code>",
+            parse_mode="HTML"
+        )
+    
+    @router.message(ClientManageStates.add_rides_count)
+    async def process_add_rides(message: Message, state: FSMContext) -> None:
+        """Обробити введену кількість поїздок"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        if not message.text:
+            return
+        
+        # Валідація
+        try:
+            count = int(message.text.strip())
+            if count < 1 or count > 100:
+                await message.answer(
+                    "❌ Введіть число від 1 до 100",
+                    parse_mode="HTML"
+                )
+                return
+        except ValueError:
+            await message.answer(
+                "❌ Введіть коректне число (1-100)",
+                parse_mode="HTML"
+            )
+            return
+        
+        data = await state.get_data()
+        user_id = data.get("manage_client_id")
+        
+        if not user_id:
+            await message.answer("❌ Помилка: клієнт не знайдений")
+            await state.clear()
+            return
+        
+        # Додати поїздки
+        from app.storage.db import add_rides_to_client
+        success = await add_rides_to_client(config.database_path, user_id, count)
+        
+        if success:
+            # Отримати оновлену інформацію
+            client = await get_user_by_id(config.database_path, user_id)
+            
+            await message.answer(
+                f"✅ <b>Поїздки додано!</b>\n\n"
+                f"👤 Клієнт: {client.full_name if client else 'N/A'}\n"
+                f"➕ Додано поїздок: <b>{count}</b>\n"
+                f"📦 Загальна кількість: <b>{client.total_orders if client else 'N/A'}</b>",
+                reply_markup=admin_menu_keyboard(),
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                "❌ Помилка додавання поїздок",
+                reply_markup=admin_menu_keyboard(),
+                parse_mode="HTML"
+            )
+        
+        await state.clear()
+    
     @router.message(F.text == "📢 Розсилка")
     async def start_broadcast(message: Message, state: FSMContext) -> None:
         if not message.from_user or not is_admin(message.from_user.id):

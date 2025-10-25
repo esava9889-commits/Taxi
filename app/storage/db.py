@@ -2341,3 +2341,24 @@ async def increase_client_karma(db_path: str, user_id: int, amount: int = 1) -> 
         except Exception as e:
             logger.error(f"❌ Помилка збільшення карми клієнта: {e}")
             return False
+
+
+async def add_rides_to_client(db_path: str, user_id: int, count: int) -> bool:
+    """
+    Додати поїздки клієнту (адмін функція).
+    
+    Збільшує total_orders БЕЗ зміни карми.
+    Використовується адміном для коригування статистики.
+    """
+    async with db_manager.connect(db_path) as db:
+        try:
+            await db.execute(
+                "UPDATE users SET total_orders = total_orders + ? WHERE user_id = ?",
+                (count, user_id)
+            )
+            await db.commit()
+            logger.info(f"✅ Адмін додав {count} поїздок клієнту #{user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка додавання поїздок клієнту: {e}")
+            return False
