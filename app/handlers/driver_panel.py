@@ -78,7 +78,7 @@ def driver_panel_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🚀 Почати роботу")],
-            [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
+            [KeyboardButton(text="⚙️ Особиста інформація"), KeyboardButton(text="💳 Комісія")],
             [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
             [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
             [KeyboardButton(text="📖 Правила користування")]
@@ -194,7 +194,7 @@ def create_router(config: AppConfig) -> Router:
                 keyboard=[
                     # ВЕЛИКА КНОПКА для повернення до замовлення
                     [KeyboardButton(text="🚗 КЕРУВАТИ ЗАМОВЛЕННЯМ")],
-                    [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="⚙️ Особиста інформація"), KeyboardButton(text="💳 Комісія")],
                     [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
                     [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
                 ],
@@ -204,7 +204,7 @@ def create_router(config: AppConfig) -> Router:
             kb = ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="🚀 Почати роботу")],
-                    [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="⚙️ Особиста інформація"), KeyboardButton(text="💳 Комісія")],
                     [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
                     [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
                 ],
@@ -401,20 +401,8 @@ def create_router(config: AppConfig) -> Router:
         
         text = (
             f"🚀 <b>МЕНЮ КЕРУВАННЯ РОБОТОЮ</b>\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"👤 <b>Водій:</b> {driver.full_name}\n"
-            f"🏙 <b>Місто:</b> {driver.city or '❌ Не вказано'}\n"
             f"{group_text}"
             f"📊 <b>Статус:</b> {status}\n\n"
-            f"👥 <b>Водіїв онлайн:</b> {online} чол.\n"
-            f"💰 <b>Заробіток сьогодні:</b> {earnings_today:.0f} грн\n"
-            f"💳 <b>Комісія:</b> {commission_today:.0f} грн\n\n"
-            f"{order_status}"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💡 <b>Швидкі дії:</b>\n"
-            f"• Увімкніть 🟢 Онлайн щоб отримувати замовлення\n"
-            f"• Замовлення надходять в групу <b>{driver.city or 'вашого міста'}</b>\n"
-            f"• Перший хто натисне ✅ Прийняти - отримує замовлення\n\n"
             f"Оберіть дію:"
         )
         
@@ -446,19 +434,24 @@ def create_router(config: AppConfig) -> Router:
                 await call.answer(
                     f"❌ ПРОФІЛЬ НЕ ЗАПОВНЕНИЙ!\n\n"
                     f"Відсутні:\n" + "\n".join(f"• {m}" for m in missing) + 
-                    f"\n\n👉 Заповніть в налаштуваннях!",
+                    f"\n\n👉 Заповніть дані!",
                     show_alert=True
                 )
-                # Відправити повідомлення з кнопкою налаштувань
+                # Відправити повідомлення з кнопкою "Оновити"
+                kb_refresh = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Оновити", callback_data="work:refresh")]
+                    ]
+                )
                 await call.bot.send_message(
                     call.from_user.id,
                     f"⚠️ <b>НЕ МОЖНА УВІМКНУТИ ОНЛАЙН</b>\n\n"
                     f"Для роботи необхідно заповнити профіль!\n\n"
                     f"<b>Відсутні дані:</b>\n" +
                     "\n".join(f"• {m}" for m in missing) +
-                    f"\n\n💡 Натисніть кнопку <b>⚙️ Налаштування</b> в меню\n"
-                    f"і заповніть всі поля",
-                    reply_markup=driver_panel_keyboard()
+                    f"\n\n💡 Додайте картку в <b>💼 Гаманець</b>\n"
+                    f"Вкажіть місто та колір авто в <b>⚙️ Особиста інформація</b>",
+                    reply_markup=kb_refresh
                 )
                 return
         
@@ -933,7 +926,7 @@ def create_router(config: AppConfig) -> Router:
             
             logger.info(f"Driver {driver.tg_user_id} updated location (no active order)")
 
-    # ⛔ ВИДАЛЕНО: "Мій заробіток" - тепер в "⚙️ Налаштування"
+    # ⛔ ВИДАЛЕНО: "Мій заробіток" - тепер в "⚙️ Особиста інформація"
 
     @router.message(F.text == "💳 Комісія")
     async def commission(message: Message) -> None:
@@ -1273,7 +1266,7 @@ def create_router(config: AppConfig) -> Router:
                 "❌ Це замовлення для іншого класу авто\n\n"
                 f"🔘 Ваш клас: {d_name}\n"
                 f"🎯 Потрібний клас: {o_name}\n\n"
-                "Якщо бажаєте приймати такі замовлення — змініть клас авто у Налаштуваннях (🚗 Змінити клас авто)",
+                "Якщо бажаєте приймати такі замовлення — змініть клас авто в Особистій інформації (🚗 Змінити клас авто)",
                 show_alert=True
             )
             return
@@ -1940,7 +1933,7 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="🚗 Панель водія"), KeyboardButton(text="🚀 Почати роботу")],
-                    [KeyboardButton(text="⚙️ Налаштування"), KeyboardButton(text="💳 Комісія")],
+                    [KeyboardButton(text="⚙️ Особиста інформація"), KeyboardButton(text="💳 Комісія")],
                     [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
                     [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")]
                 ],
@@ -3113,9 +3106,9 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=kb
         )
     
-    @router.message(F.text == "⚙️ Налаштування")
+    @router.message(F.text == "⚙️ Особиста інформація")
     async def driver_settings_menu(message: Message) -> None:
-        """Налаштування водія - КАРМА, СТАТИСТИКА, ЗАРОБІТОК"""
+        """Особиста інформація водія - КАРМА, СТАТИСТИКА, ЗАРОБІТОК"""
         logger.info(f"🔧 Налаштування: отримано запит від {message.from_user.id if message.from_user else 'Unknown'}")
         
         if not message.from_user:
@@ -3205,7 +3198,7 @@ def create_router(config: AppConfig) -> Router:
         # Формуємо текст по частинах для кращої діагностики
         try:
             text = (
-                f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
+                f"⚙️ <b>ОСОБИСТА ІНФОРМАЦІЯ ВОДІЯ</b>\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"{profile_warning}"
                 f"👤 <b>ОСОБИСТА ІНФОРМАЦІЯ:</b>\n\n"
@@ -3303,7 +3296,7 @@ def create_router(config: AppConfig) -> Router:
             date=call.message.date if call.message else datetime.now(timezone.utc),
             chat=call.message.chat if call.message else call.from_user,
             from_user=call.from_user,
-            text="⚙️ Налаштування"
+            text="⚙️ Особиста інформація"
         )
         
         # Викликати основний обробник налаштувань
@@ -3528,7 +3521,7 @@ def create_router(config: AppConfig) -> Router:
         car_color = driver.car_color if hasattr(driver, 'car_color') else None
         
         text = (
-            f"⚙️ <b>НАЛАШТУВАННЯ ВОДІЯ</b>\n\n"
+            f"⚙️ <b>ОСОБИСТА ІНФОРМАЦІЯ ВОДІЯ</b>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>Ім'я:</b> {driver.full_name}\n"
             f"📱 <b>Телефон:</b> {driver.phone}\n"
