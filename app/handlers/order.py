@@ -304,18 +304,6 @@ def create_router(config: AppConfig) -> Router:
             logger.warning(f"User {message.from_user.id} намагається створити замовлення, але має активне #{existing_order.id}")
             return
         
-        # RATE LIMITING: Перевірка ліміту замовлень (максимум 5 замовлень на годину)
-        if not check_rate_limit(message.from_user.id, "create_order", max_requests=5, window_seconds=3600):
-            time_until_reset = get_time_until_reset(message.from_user.id, "create_order", window_seconds=3600)
-            await message.answer(
-                "⏳ <b>Занадто багато замовлень</b>\n\n"
-                f"Ви перевищили ліміт замовлень (максимум 5 на годину).\n\n"
-                f"⏰ Спробуйте через: {format_time_remaining(time_until_reset)}\n\n"
-                "ℹ️ Це обмеження захищає від спаму."
-            )
-            logger.warning(f"User {message.from_user.id} exceeded order rate limit")
-            return
-        
         # Перевірка реєстрації
         user = await get_user_by_id(config.database_path, message.from_user.id)
         if not user or not user.phone or not user.city:

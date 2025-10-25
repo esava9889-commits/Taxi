@@ -144,6 +144,28 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # 🛡️ RATE LIMITING: Захист від спаму реєстрацій водіїв
+        from app.utils.rate_limiter import check_rate_limit, format_time_remaining
+        
+        can_register, wait_time = await check_rate_limit(
+            user_id=message.from_user.id,
+            action="driver_registration",
+            max_requests=2,  # Максимум 2 спроби
+            window_seconds=86400  # За 24 години
+        )
+        
+        if not can_register:
+            remaining = format_time_remaining(wait_time)
+            await message.answer(
+                f"⏱ <b>Забагато спроб реєстрації</b>\n\n"
+                f"Ви вже подавали заявку водія 2 рази за добу.\n"
+                f"Це максимум для захисту від зловживань.\n\n"
+                f"⏰ Спробуйте знову через: <b>{remaining}</b>\n\n"
+                f"💡 Якщо у вас вже є заявка, дочекайтесь її розгляду.",
+                parse_mode="HTML"
+            )
+            return
+        
         # ВАЖЛИВО: Заборонити ботам реєструватися як водії
         if message.from_user.is_bot:
             await message.answer(

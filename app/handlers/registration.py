@@ -36,6 +36,33 @@ def create_registration_router(config: AppConfig) -> Router:
         if not user_id:
             return
         
+        # 🛡️ RATE LIMITING: Захист від спаму реєстрацій
+        from app.utils.rate_limiter import check_rate_limit, format_time_remaining
+        
+        can_register, wait_time = await check_rate_limit(
+            user_id=user_id,
+            action="client_registration",
+            max_requests=3,  # Максимум 3 спроби
+            window_seconds=3600  # За 1 годину
+        )
+        
+        if not can_register:
+            remaining = format_time_remaining(wait_time)
+            error_text = (
+                f"⏱ <b>Забагато спроб реєстрації</b>\n\n"
+                f"Ви намагались зареєструватись 3 рази за годину.\n"
+                f"Це максимум для захисту від спаму.\n\n"
+                f"⏰ Спробуйте знову через: <b>{remaining}</b>"
+            )
+            
+            if isinstance(event, CallbackQuery):
+                await event.answer("Забагато спроб реєстрації!", show_alert=True)
+                if event.message:
+                    await event.message.answer(error_text, parse_mode="HTML")
+            else:
+                await event.answer(error_text, parse_mode="HTML")
+            return
+        
         user = await get_user_by_id(config.database_path, user_id)
         if user and user.phone and user.city:
             # Перевірка чи це адмін
