@@ -1688,12 +1688,29 @@ def create_router(config: AppConfig) -> Router:
                             ]
                         )
                         
+                        # Відправити повідомлення з inline кнопкою скасування
                         client_message = await message.answer(
                             f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
                             "🔍 Шукаємо водія...\n\n"
                             "Ваше замовлення надіслано водіям.\n"
                             "Очікуйте підтвердження! ⏱",
                             reply_markup=kb_cancel
+                        )
+                        
+                        # ⭐ Відправити Reply клавіатуру окремим повідомленням
+                        from app.storage.db import get_driver_by_tg_user_id
+                        driver = await get_driver_by_tg_user_id(config.database_path, user_id)
+                        is_driver = driver is not None and driver.status == "approved"
+                        
+                        kb_reply = main_menu_keyboard(
+                            is_registered=True,
+                            is_driver=is_driver,
+                            is_admin=is_admin
+                        )
+                        
+                        await message.answer(
+                            "📱 Оберіть дію:",
+                            reply_markup=kb_reply
                         )
                         
                         # Зберегти message_id для пізнішого оновлення (пропозиція підняти ціну)
@@ -2136,8 +2153,10 @@ def create_router(config: AppConfig) -> Router:
             is_driver = driver is not None and driver.status == "approved"
             is_admin = user and call.from_user.id in config.bot.admin_ids if user else False
             is_blocked = user.is_blocked if user else False
+            is_registered = user is not None and user.role == "client"
             
             kb = main_menu_keyboard(
+                is_registered=is_registered,
                 is_driver=is_driver,
                 is_admin=is_admin,
                 is_blocked=is_blocked
