@@ -355,6 +355,12 @@ async def init_db(db_path: str) -> None:
                 logger.info("✅ Додано колонку cancelled_orders до users")
             except:
                 pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN bonus_rides_available INTEGER NOT NULL DEFAULT 0")
+                logger.info("✅ Додано колонку bonus_rides_available до users")
+            except:
+                pass
             # Users: registered clients
             await db.execute(
                 """
@@ -387,6 +393,11 @@ async def init_db(db_path: str) -> None:
             
             try:
                 await db.execute("ALTER TABLE users ADD COLUMN cancelled_orders INTEGER DEFAULT 0")
+            except Exception:
+                pass
+            
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN bonus_rides_available INTEGER DEFAULT 0")
             except Exception:
                 pass
             
@@ -1122,6 +1133,7 @@ class User:
     total_orders: int = 0  # Всього замовлень
     cancelled_orders: int = 0  # Скасованих замовлень
     is_blocked: bool = False  # Чи заблокований клієнт
+    bonus_rides_available: int = 0  # Бонусні поїздки від адміна (додаткові до ліміту)
 
 
 async def upsert_user(db_path: str, user: User) -> None:
@@ -1160,7 +1172,8 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
                CASE WHEN is_blocked IS NULL THEN 0 WHEN is_blocked THEN 1 ELSE 0 END as is_blocked,
                COALESCE(karma, 100) as karma,
                COALESCE(total_orders, 0) as total_orders,
-               COALESCE(cancelled_orders, 0) as cancelled_orders
+               COALESCE(cancelled_orders, 0) as cancelled_orders,
+               COALESCE(bonus_rides_available, 0) as bonus_rides_available
                FROM users WHERE user_id = ?""",
             (user_id,),
         ) as cursor:
@@ -1179,6 +1192,7 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
         karma=row[8],
         total_orders=row[9],
         cancelled_orders=row[10],
+        bonus_rides_available=row[11],
     )
 
 
@@ -1190,7 +1204,8 @@ async def get_all_users(db_path: str, role: str = "client") -> List[User]:
                CASE WHEN is_blocked IS NULL THEN 0 WHEN is_blocked THEN 1 ELSE 0 END as is_blocked, 
                COALESCE(karma, 100) as karma,
                COALESCE(total_orders, 0) as total_orders,
-               COALESCE(cancelled_orders, 0) as cancelled_orders
+               COALESCE(cancelled_orders, 0) as cancelled_orders,
+               COALESCE(bonus_rides_available, 0) as bonus_rides_available
                FROM users WHERE role = ? ORDER BY created_at DESC""",
             (role,),
         ) as cursor:
@@ -1210,6 +1225,7 @@ async def get_all_users(db_path: str, role: str = "client") -> List[User]:
             karma=row[8],
             total_orders=row[9],
             cancelled_orders=row[10],
+            bonus_rides_available=row[11],
         ))
     return users
 
@@ -2353,12 +2369,83 @@ async def add_rides_to_client(db_path: str, user_id: int, count: int) -> bool:
     async with db_manager.connect(db_path) as db:
         try:
             await db.execute(
-                "UPDATE users SET total_orders = total_orders + ? WHERE user_id = ?",
-                (count, user_id)
+                """UPDATE users 
+                   SET bonus_rides_available = bonus_rides_available + ?,
+                       total_orders = total_orders + ?
+                   WHERE user_id = ?""",
+                (count, count, user_id)
             )
             await db.commit()
-            logger.info(f"✅ Адмін додав {count} поїздок клієнту #{user_id}")
+            logger.info(f"✅ Адмін додав {count} бонусних поїздок клієнту #{user_id}")
             return True
         except Exception as e:
             logger.error(f"❌ Помилка додавання поїздок клієнту: {e}")
+            return False
+
+
+async def use_bonus_ride(db_path: str, user_id: int) -> bool:
+    """
+    Використати одну бонусну поїздку.
+    
+    Викликається при створенні замовлення якщо базовий ліміт перевищено.
+    Зменшує bonus_rides_available на 1.
+    
+    Returns:
+        True якщо бонусна поїздка була використана, False якщо немає доступних
+    """
+    async with db_manager.connect(db_path) as db:
+        try:
+            # Спочатку перевірити чи є доступні бонусні поїздки
+            async with db.execute(
+                "SELECT COALESCE(bonus_rides_available, 0) FROM users WHERE user_id = ?",
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or row[0] <= 0:
+                    return False
+            
+            # Зменшити кількість бонусних поїздок
+            await db.execute(
+                "UPDATE users SET bonus_rides_available = bonus_rides_available - 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            await db.commit()
+            logger.info(f"✅ Клієнт #{user_id} використав бонусну поїздку")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка використання бонусної поїздки: {e}")
+            return False
+
+
+async def use_bonus_ride(db_path: str, user_id: int) -> bool:
+    """
+    Використати одну бонусну поїздку.
+    
+    Викликається при створенні замовлення якщо базовий ліміт перевищено.
+    Зменшує bonus_rides_available на 1.
+    
+    Returns:
+        True якщо бонусна поїздка була використана, False якщо немає доступних
+    """
+    async with db_manager.connect(db_path) as db:
+        try:
+            # Спочатку перевірити чи є доступні бонусні поїздки
+            async with db.execute(
+                "SELECT COALESCE(bonus_rides_available, 0) FROM users WHERE user_id = ?",
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or row[0] <= 0:
+                    return False
+            
+            # Зменшити кількість бонусних поїздок
+            await db.execute(
+                "UPDATE users SET bonus_rides_available = bonus_rides_available - 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            await db.commit()
+            logger.info(f"✅ Клієнт #{user_id} використав бонусну поїздку")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка використання бонусної поїздки: {e}")
             return False
