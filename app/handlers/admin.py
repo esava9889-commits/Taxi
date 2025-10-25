@@ -32,6 +32,8 @@ from app.storage.db import (
     User,
     upsert_user,
     get_all_users,
+    get_user_by_id,
+    get_user_order_history,
     block_user,
     unblock_user,
 )
@@ -1013,7 +1015,6 @@ def create_router(config: AppConfig) -> Router:
         user_id = int(call.data.split(":")[2])
         
         # Отримати клієнта з БД
-        from app.storage.db import get_user_by_id
         client = await get_user_by_id(config.database_path, user_id)
         
         if not client:
