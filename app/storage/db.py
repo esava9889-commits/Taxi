@@ -693,12 +693,12 @@ async def cancel_order_by_driver(db_path: str, order_id: int, driver_id: int, re
     Скасувати замовлення водієм.
     
     Водій може скасувати тільки своє активне замовлення.
-    Замовлення повертається в статус 'pending' для інших водіїв.
+    Замовлення ПОВНІСТЮ скасовується (статус 'cancelled') БЕЗ штрафу для клієнта.
     """
     async with db_manager.connect(db_path) as db:
         # Перевірити що це замовлення цього водія
         cur = await db.execute(
-            "SELECT id FROM orders WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'in_progress')",
+            "SELECT id, user_id FROM orders WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'in_progress')",
             (order_id, driver_id)
         )
         row = await cur.fetchone()
@@ -706,14 +706,18 @@ async def cancel_order_by_driver(db_path: str, order_id: int, driver_id: int, re
         if not row:
             return False
         
-        # Скасувати замовлення і повернути в статус pending
+        user_id = row[1]
+        
+        # ПОВНІСТЮ скасувати замовлення (не повертати в pending!)
+        # Причина: клієнт не винен що водій відмовився
         cur = await db.execute(
-            "UPDATE orders SET status = 'pending', driver_id = NULL WHERE id = ?",
-            (order_id,)
+            "UPDATE orders SET status = 'cancelled', driver_id = NULL, finished_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc), order_id)
         )
         await db.commit()
         
-        logger.warning(f"⚠️ Водій #{driver_id} скасував замовлення #{order_id}: {reason}")
+        # ВАЖЛИВО: Клієнт НЕ втрачає карму, бо скасував водій (не клієнт)
+        logger.warning(f"⚠️ Водій #{driver_id} скасував замовлення #{order_id}: {reason}. Замовлення ПОВНІСТЮ скасовано, карма клієнта #{user_id} НЕ зменшена")
         return cur.rowcount > 0
 
 

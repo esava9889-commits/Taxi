@@ -2339,12 +2339,27 @@ def create_router(config: AppConfig) -> Router:
             
             # Повідомити клієнта
             try:
+                from app.handlers.keyboards import main_menu_keyboard
+                from app.storage.db import get_user_by_id
+                
+                user = await get_user_by_id(config.database_path, order.user_id)
+                is_blocked = user.is_blocked if user else False
+                
                 await message.bot.send_message(
                     order.user_id,
                     f"❌ <b>Водій відмовився від замовлення</b>\n\n"
                     f"🚗 {driver.full_name}\n\n"
-                    f"Ваше замовлення повернуто в загальну чергу.\n"
-                    f"Шукаємо іншого водія..."
+                    f"На жаль, водій не зміг виконати ваше замовлення.\n"
+                    f"Замовлення скасовано.\n\n"
+                    f"💡 Спробуйте створити нове замовлення.\n"
+                    f"⭐ Ваша карма не змінилася (скасував водій, не ви).",
+                    reply_markup=main_menu_keyboard(
+                        is_registered=True,
+                        is_driver=False,
+                        is_admin=False,
+                        is_blocked=is_blocked
+                    ),
+                    parse_mode="HTML"
                 )
             except Exception as e:
                 logger.error(f"Failed to notify client: {e}")
