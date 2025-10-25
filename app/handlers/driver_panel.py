@@ -3245,22 +3245,15 @@ def create_router(config: AppConfig) -> Router:
             # Якщо профіль неповний - показати кнопки заповнення
             if not driver.city:
                 buttons.append([InlineKeyboardButton(text="🏙 ⚠️ ВКАЗАТИ МІСТО", callback_data="settings:set_city")])
-            if not driver.card_number:
-                buttons.append([InlineKeyboardButton(text="💳 ⚠️ ДОДАТИ КАРТКУ", callback_data="settings:card")])
-            if not car_color:
-                buttons.append([InlineKeyboardButton(text="🎨 ⚠️ ВКАЗАТИ КОЛІР АВТО", callback_data="settings:set_color")])
-            # ❌ ВИДАЛЕНО: Попередження про геолокацію - не обов'язкова
+            # ❌ ПРИБРАНО: Кнопки для картки і кольору - редагуються через Гаманець
             buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
         
-            # Завжди показати всі налаштування (БЕЗ геолокації!)
-            buttons.extend([
-                [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
-                [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
-                [InlineKeyboardButton(text="🎨 Колір авто", callback_data="settings:set_color")],
-                [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
-                # ❌ ВИДАЛЕНО: Оновити геолокацію - не потрібна
-                [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
-            ])
+        # Завжди показати основні налаштування
+        buttons.extend([
+            [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
+            [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
+            [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
+        ])
         
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
@@ -3543,18 +3536,14 @@ def create_router(config: AppConfig) -> Router:
                 text += "   • Місто роботи\n"
                 buttons.append([InlineKeyboardButton(text="🏙 ⚠️ ВКАЗАТИ МІСТО", callback_data="settings:set_city")])
             if not driver.card_number:
-                text += "   • Картку для переказів\n"
-                buttons.append([InlineKeyboardButton(text="💳 ⚠️ ДОДАТИ КАРТКУ", callback_data="settings:card")])
+                text += "   • Картку для переказів (додайте в 💼 Гаманець)\n"
             if not car_color:
-                text += "   • Колір автомобіля\n"
-                buttons.append([InlineKeyboardButton(text="🎨 ⚠️ ВКАЗАТИ КОЛІР АВТО", callback_data="settings:set_color")])
+                text += "   • Колір автомобіля (додайте в 💼 Гаманець)\n"
             buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
         
-        # Завжди показати всі налаштування
+        # Показати тільки основні налаштування
         buttons.extend([
             [InlineKeyboardButton(text="🚗 Змінити клас авто", callback_data="settings:car_class")],
-            [InlineKeyboardButton(text="💳 Картка для переказів", callback_data="settings:card")],
-            [InlineKeyboardButton(text="🎨 Колір авто", callback_data="settings:set_color")],
             [InlineKeyboardButton(text="🏙 Місто роботи", callback_data="settings:set_city")],
             [InlineKeyboardButton(text="🔄 Оновити інформацію", callback_data="settings:refresh")]
         ])
