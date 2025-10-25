@@ -73,6 +73,69 @@ async def _connection_context(manager: DatabaseConnection, db_path: str):
             raise
 
 
+class SQLiteCursor:
+    """Обгортка для aiosqlite cursor з підтримкою await"""
+    
+    def __init__(self, adapter, query, params):
+        self.adapter = adapter
+        self.query = query
+        self.params = params
+        self._cursor = None
+        self._executed = False
+        self._lastrowid = None
+        self._rowcount = 0
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return False
+    
+    def __await__(self):
+        """Зробити cursor awaitable для INSERT/UPDATE/DELETE операцій"""
+        return self._execute_and_return_self().__await__()
+    
+    async def _execute_and_return_self(self):
+        """Виконати запит і повернути self"""
+        if not self._executed:
+            await self._execute()
+        return self
+    
+    async def _execute(self):
+        """Виконати запит"""
+        if self._executed:
+            return
+        
+        self._executed = True
+        self._cursor = await self.adapter.conn.execute(self.query, self.params or ())
+    
+    @property
+    def lastrowid(self):
+        """Отримати ID останнього вставленого рядка"""
+        if self._cursor:
+            return self._cursor.lastrowid
+        return None
+    
+    @property
+    def rowcount(self):
+        """Кількість змінених рядків"""
+        if self._cursor:
+            return self._cursor.rowcount
+        return 0
+    
+    async def fetchone(self):
+        """Отримати один рядок"""
+        if not self._cursor:
+            self._cursor = await self.adapter.conn.execute(self.query, self.params or ())
+        return await self._cursor.fetchone()
+    
+    async def fetchall(self):
+        """Отримати всі рядки"""
+        if not self._cursor:
+            self._cursor = await self.adapter.conn.execute(self.query, self.params or ())
+        return await self._cursor.fetchall()
+
+
 class SQLiteAdapter:
     """Адаптер для SQLite"""
     
@@ -96,11 +159,10 @@ class SQLiteAdapter:
         return tuple(converted)
     
     def execute(self, query: str, params=None):
-        """Виконати запит - повертає async context manager"""
+        """Виконати запит - повертає async context manager з підтримкою await"""
         if params:
             params = self._convert_params(params)
-            return self.conn.execute(query, params)
-        return self.conn.execute(query)
+        return SQLiteCursor(self, query, params)
     
     async def commit(self):
         """Зберегти зміни"""
