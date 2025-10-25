@@ -107,7 +107,8 @@ class SQLiteCursor:
             return
         
         self._executed = True
-        self._cursor = await self.adapter.conn.execute(self.query, self.params or ())
+        # aiosqlite.Connection.execute() НЕ є coroutine - просто повертає cursor
+        self._cursor = self.adapter.conn.execute(self.query, self.params or ())
     
     @property
     def lastrowid(self):
@@ -126,13 +127,15 @@ class SQLiteCursor:
     async def fetchone(self):
         """Отримати один рядок"""
         if not self._cursor:
-            self._cursor = await self.adapter.conn.execute(self.query, self.params or ())
+            # aiosqlite.Connection.execute() НЕ є coroutine
+            self._cursor = self.adapter.conn.execute(self.query, self.params or ())
         return await self._cursor.fetchone()
     
     async def fetchall(self):
         """Отримати всі рядки"""
         if not self._cursor:
-            self._cursor = await self.adapter.conn.execute(self.query, self.params or ())
+            # aiosqlite.Connection.execute() НЕ є coroutine
+            self._cursor = self.adapter.conn.execute(self.query, self.params or ())
         return await self._cursor.fetchall()
 
 
