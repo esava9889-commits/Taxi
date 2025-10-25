@@ -2117,11 +2117,28 @@ def create_router(config: AppConfig) -> Router:
                     else:
                         logger.error(f"❌ Помилка оновлення групи: {e}")
             
-            # Відправити підтвердження
+            # Відправити підтвердження з клавіатурою
+            from app.handlers.keyboards import main_menu_keyboard
+            from app.storage.db import get_driver_by_tg_user_id
+            
+            user = await get_user_by_id(config.database_path, call.from_user.id)
+            driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+            
+            is_driver = driver is not None and driver.status == "approved"
+            is_admin = user and call.from_user.id in config.bot.admin_ids if user else False
+            is_blocked = user.is_blocked if user else False
+            
+            kb = main_menu_keyboard(
+                is_driver=is_driver,
+                is_admin=is_admin,
+                is_blocked=is_blocked
+            )
+            
             await call.bot.send_message(
                 call.from_user.id,
                 "✅ <b>Замовлення скасовано</b>\n\n"
-                "Ви можете створити нове замовлення будь-коли."
+                "Ви можете створити нове замовлення будь-коли.",
+                reply_markup=kb
             )
         else:
             await call.answer("❌ Не вдалося скасувати", show_alert=True)
