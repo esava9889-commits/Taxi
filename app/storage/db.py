@@ -1214,7 +1214,7 @@ async def block_user(db_path: str, user_id: int) -> None:
     """Заблокувати користувача"""
     async with db_manager.connect(db_path) as db:
         await db.execute(
-            "UPDATE users SET is_blocked = 1 WHERE user_id = ?",
+            "UPDATE users SET is_blocked = TRUE WHERE user_id = ?",
             (user_id,)
         )
         await db.commit()
@@ -1224,7 +1224,7 @@ async def unblock_user(db_path: str, user_id: int) -> None:
     """Розблокувати користувача"""
     async with db_manager.connect(db_path) as db:
         await db.execute(
-            "UPDATE users SET is_blocked = 0 WHERE user_id = ?",
+            "UPDATE users SET is_blocked = FALSE WHERE user_id = ?",
             (user_id,)
         )
         await db.commit()
