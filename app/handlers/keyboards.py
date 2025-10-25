@@ -30,7 +30,7 @@ def main_menu_keyboard(
             [KeyboardButton(text="⚙️ Адмін-панель")],
             [KeyboardButton(text="🚖 Замовити таксі")],
             [KeyboardButton(text="📍 Мої адреси"), KeyboardButton(text="👤 Мій профіль")],
-            [KeyboardButton(text="🆘 SOS"), KeyboardButton(text="🪄")],
+            [KeyboardButton(text="🆘 SOS")],
         ]
         
         # Якщо адмін також водій - додаємо панель водія
@@ -56,7 +56,7 @@ def main_menu_keyboard(
                 [KeyboardButton(text="⚙️ Особиста інформація"), KeyboardButton(text="💳 Комісія")],
                 [KeyboardButton(text="📜 Історія поїздок"), KeyboardButton(text="💼 Гаманець")],
                 [KeyboardButton(text="👤 Кабінет клієнта"), KeyboardButton(text="ℹ️ Допомога")],
-                [KeyboardButton(text="📖 Правила користування"), KeyboardButton(text="🪄")],
+                [KeyboardButton(text="📖 Правила користування")],
             ],
             resize_keyboard=True,
             one_time_keyboard=False,
@@ -68,7 +68,7 @@ def main_menu_keyboard(
             [KeyboardButton(text="🚖 Замовити таксі")],
             [KeyboardButton(text="📍 Мої адреси"), KeyboardButton(text="👤 Мій профіль")],
             [KeyboardButton(text="🆘 SOS"), KeyboardButton(text="ℹ️ Допомога")],
-            [KeyboardButton(text="📖 Правила користування"), KeyboardButton(text="🪄")]
+            [KeyboardButton(text="📖 Правила користування")]
         ]
         
         # Показувати "Стати водієм" тільки якщо немає заявки

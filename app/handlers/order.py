@@ -1669,7 +1669,6 @@ def create_router(config: AppConfig) -> Router:
                         
                         # ⭐ Відповідь клієнту (зберегти message_id для підвищення ціни)
                         from app.handlers.keyboards import main_menu_keyboard
-                        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
                         
                         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
                         
