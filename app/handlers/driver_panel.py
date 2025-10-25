@@ -3309,11 +3309,14 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
         await state.set_state(DriverProfileStates.waiting_for_city)
         
+        # Використовуємо офіційний список міст з config
+        from app.config.config import AVAILABLE_CITIES
+        
         kb = ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="Київ"), KeyboardButton(text="Львів")],
-                [KeyboardButton(text="Одеса"), KeyboardButton(text="Дніпро")],
-                [KeyboardButton(text="Харків"), KeyboardButton(text="Вінниця")],
+                [KeyboardButton(text="Київ"), KeyboardButton(text="Дніпро")],
+                [KeyboardButton(text="Кривий Ріг"), KeyboardButton(text="Харків")],
+                [KeyboardButton(text="Одеса")],
                 [KeyboardButton(text="❌ Скасувати")]
             ],
             resize_keyboard=True,
@@ -3323,7 +3326,7 @@ def create_router(config: AppConfig) -> Router:
         await call.bot.send_message(
             call.from_user.id,
             "🏙 <b>Вкажіть місто роботи</b>\n\n"
-            "Оберіть місто зі списку або введіть своє:",
+            "Оберіть місто зі списку:",
             reply_markup=kb
         )
     
@@ -3350,8 +3353,17 @@ def create_router(config: AppConfig) -> Router:
             await db.commit()
         
         await state.clear()
+        
+        # Повідомлення про необхідність звернутися до адміна
+        admin_username = config.admin_username or "адміністратора"
+        admin_link = f"@{admin_username}" if config.admin_username else "адміністратора"
+        
         await message.answer(
-            f"✅ Місто збережено: <b>{city}</b>",
+            f"✅ <b>Місто збережено: {city}</b>\n\n"
+            f"📢 <b>Для доступу до групи водіїв міста {city}</b>\n"
+            f"зверніться за допомогою до адміна: {admin_link}\n\n"
+            f"💡 Адмін додасть вас до групи вашого міста,\n"
+            f"де ви зможете отримувати замовлення.",
             reply_markup=driver_panel_keyboard()
         )
         
