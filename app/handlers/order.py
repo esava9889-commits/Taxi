@@ -913,6 +913,16 @@ def create_router(config: AppConfig) -> Router:
     async def pickup_text(message: Message, state: FSMContext) -> None:
         pickup = message.text.strip() if message.text else ""
         
+        # 🛡️ ІГНОРУВАТИ кнопки меню (щоб не геокодувати їх як адреси)
+        MENU_BUTTONS = {
+            "📍 Мої адреси", "👤 Мій профіль", "🆘 SOS", "ℹ️ Допомога",
+            "📖 Правила користування", "❌ Скасувати", "⚙️ Адмін-панель",
+            "🚗 Панель водія", "🎤 Голосом"
+        }
+        if pickup in MENU_BUTTONS:
+            # Кнопка з меню - не обробляти як адресу
+            return
+        
         # ВАЛІДАЦІЯ: Перевірка адреси
         is_valid, cleaned_address = validate_address(pickup, min_length=3, max_length=200)
         if not is_valid:
@@ -990,6 +1000,16 @@ def create_router(config: AppConfig) -> Router:
     @router.message(OrderStates.destination)
     async def destination_text(message: Message, state: FSMContext) -> None:
         destination = message.text.strip() if message.text else ""
+        
+        # 🛡️ ІГНОРУВАТИ кнопки меню (щоб не геокодувати їх як адреси)
+        MENU_BUTTONS = {
+            "📍 Мої адреси", "👤 Мій профіль", "🆘 SOS", "ℹ️ Допомога",
+            "📖 Правила користування", "❌ Скасувати", "⚙️ Адмін-панель",
+            "🚗 Панель водія", "🎤 Голосом"
+        }
+        if destination in MENU_BUTTONS:
+            # Кнопка з меню - не обробляти як адресу
+            return
         
         # ВАЛІДАЦІЯ: Перевірка адреси
         is_valid, cleaned_address = validate_address(destination, min_length=3, max_length=200)
