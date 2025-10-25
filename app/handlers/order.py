@@ -239,31 +239,6 @@ def create_router(config: AppConfig) -> Router:
             await send_blocked_message(message)
             return
         
-        # 🛡️ RATE LIMITING: Захист від спаму замовлень
-        can_order = check_rate_limit(
-            user_id=message.from_user.id,
-            action="create_order",
-            max_requests=3,  # Максимум 3 замовлення
-            window_seconds=3600  # За 1 годину
-        )
-        
-        if not can_order:
-            wait_time = get_time_until_reset(
-                user_id=message.from_user.id,
-                action="create_order",
-                window_seconds=3600
-            )
-            remaining = format_time_remaining(wait_time)
-            await message.answer(
-                f"⏱ <b>Забагато замовлень</b>\n\n"
-                f"Ви створили 3 замовлення за останню годину.\n"
-                f"Це максимум для захисту системи від зловживань.\n\n"
-                f"⏰ Спробуйте знову через: <b>{remaining}</b>\n\n"
-                f"💡 Якщо це помилка, зверніться до підтримки.",
-                parse_mode="HTML"
-            )
-            return
-        
         # ЗАХИСТ: Перевірка чи клієнт заблокований
         from app.storage.db import get_user_by_id
         user = await get_user_by_id(config.database_path, message.from_user.id)
@@ -1368,6 +1343,34 @@ def create_router(config: AppConfig) -> Router:
     
     async def process_order_confirmation(message: Message, state: FSMContext, user_id: int, config: AppConfig) -> None:
         """Основна логіка створення замовлення"""
+        
+        # 🛡️ RATE LIMITING: Захист від спаму замовлень (перевірка ПЕРЕД створенням)
+        can_order = check_rate_limit(
+            user_id=user_id,
+            action="create_order",
+            max_requests=3,  # Максимум 3 замовлення
+            window_seconds=3600  # За 1 годину
+        )
+        
+        if not can_order:
+            wait_time = get_time_until_reset(
+                user_id=user_id,
+                action="create_order",
+                window_seconds=3600
+            )
+            remaining = format_time_remaining(wait_time)
+            await message.answer(
+                f"⏱ <b>Забагато замовлень</b>\n\n"
+                f"Ви створили 3 замовлення за останню годину.\n"
+                f"Це максимум для захисту системи від зловживань.\n\n"
+                f"⏰ Спробуйте знову через: <b>{remaining}</b>\n\n"
+                f"💡 Якщо це помилка, зверніться до підтримки.",
+                parse_mode="HTML"
+            )
+            # Очистити state та повернути в головне меню
+            await state.clear()
+            return
+        
         # 🧹 Очистити всі попередні повідомлення процесу замовлення
         if message and message.message_id:
             await clean_chat_history(message.bot, user_id, message.message_id, count=50)
