@@ -450,7 +450,7 @@ def create_router(config: AppConfig) -> Router:
                     f"<b>Відсутні дані:</b>\n" +
                     "\n".join(f"• {m}" for m in missing) +
                     f"\n\n💡 Додайте картку в <b>💼 Гаманець</b>\n"
-                    f"Вкажіть місто та колір авто в <b>⚙️ Особиста інформація</b>",
+                    f"Вкажіть місто в <b>⚙️ Особиста інформація</b>",
                     reply_markup=kb_refresh
                 )
                 return
@@ -3356,70 +3356,8 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Водій {message.from_user.id} встановив місто: {city}")
     
-    @router.callback_query(F.data == "settings:set_color")
-    async def prompt_color(call: CallbackQuery, state: FSMContext) -> None:
-        """Попросити вказати колір авто"""
-        await call.answer()
-        await state.set_state(DriverProfileStates.waiting_for_color)
-        
-        kb = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="Чорний"), KeyboardButton(text="Білий")],
-                [KeyboardButton(text="Сірий"), KeyboardButton(text="Синій")],
-                [KeyboardButton(text="Червоний"), KeyboardButton(text="Зелений")],
-                [KeyboardButton(text="Срібний"), KeyboardButton(text="Жовтий")],
-                [KeyboardButton(text="❌ Скасувати")]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-        
-        await call.bot.send_message(
-            call.from_user.id,
-            "🎨 <b>Вкажіть колір автомобіля</b>\n\n"
-            "Оберіть колір зі списку або введіть свій:",
-            reply_markup=kb
-        )
-    
-    @router.message(DriverProfileStates.waiting_for_color)
-    async def process_color(message: Message, state: FSMContext) -> None:
-        """Зберегти колір (додати колонку якщо потрібно)"""
-        if not message.text or message.text == "❌ Скасувати":
-            await state.clear()
-            await message.answer(
-                "❌ Скасовано",
-                reply_markup=driver_panel_keyboard()
-            )
-            return
-        
-        color = message.text.strip()
-        
-        # Додати колонку car_color якщо не існує + оновити
-        from app.storage.db import db_manager
-        async with db_manager.connect(config.database_path) as db:
-            # Спробувати додати колонку (якщо не існує)
-            try:
-                await db.execute("ALTER TABLE drivers ADD COLUMN car_color TEXT")
-                await db.commit()
-                logger.info("✅ Додано колонку car_color до таблиці drivers")
-            except Exception as e:
-                # Колонка вже існує - це нормально
-                pass
-            
-            # Оновити колір
-            await db.execute(
-                "UPDATE drivers SET car_color = ? WHERE tg_user_id = ?",
-                (color, message.from_user.id)
-            )
-            await db.commit()
-        
-        await state.clear()
-        await message.answer(
-            f"✅ Колір збережено: <b>{color}</b>",
-            reply_markup=driver_panel_keyboard()
-        )
-        
-        logger.info(f"✅ Водій {message.from_user.id} встановив колір: {color}")
+    # ❌ ВИДАЛЕНО: Обробники settings:set_color та process_color
+    # Колір авто вказується тільки при реєстрації і не редагується
     
     @router.callback_query(F.data == "settings:car_class")
     async def prompt_car_class(call: CallbackQuery, state: FSMContext) -> None:
@@ -3537,8 +3475,7 @@ def create_router(config: AppConfig) -> Router:
                 buttons.append([InlineKeyboardButton(text="🏙 ⚠️ ВКАЗАТИ МІСТО", callback_data="settings:set_city")])
             if not driver.card_number:
                 text += "   • Картку для переказів (додайте в 💼 Гаманець)\n"
-            if not car_color:
-                text += "   • Колір автомобіля (додайте в 💼 Гаманець)\n"
+            # ❌ ПРИБРАНО: Колір авто - редагується тільки при реєстрації
             buttons.append([InlineKeyboardButton(text="━━━━━━━━━━━━━━━━━━", callback_data="noop")])
         
         # Показати тільки основні налаштування
