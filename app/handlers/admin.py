@@ -1273,7 +1273,7 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Немає доступу", show_alert=True)
             return
         
-        user_id = int(call.data.split(":")[3])
+        user_id = int(call.data.split(":")[2])
         
         # Зберегти user_id в state
         await state.update_data(manage_client_id=user_id)
