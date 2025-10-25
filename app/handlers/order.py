@@ -1669,13 +1669,23 @@ def create_router(config: AppConfig) -> Router:
                         
                         # ⭐ Відповідь клієнту (зберегти message_id для підвищення ціни)
                         from app.handlers.keyboards import main_menu_keyboard
+                        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+                        
                         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
+                        
+                        # Inline кнопка для скасування замовлення
+                        kb_cancel = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data=f"cancel_waiting_order:{order_id}")]
+                            ]
+                        )
+                        
                         client_message = await message.answer(
                             f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
                             "🔍 Шукаємо водія...\n\n"
                             "Ваше замовлення надіслано водіям.\n"
                             "Очікуйте підтвердження! ⏱",
-                            reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+                            reply_markup=kb_cancel
                         )
                         
                         # Зберегти message_id для пізнішого оновлення (пропозиція підняти ціну)
