@@ -1153,7 +1153,7 @@ async def get_user_by_id(db_path: str, user_id: int) -> Optional[User]:
     async with db_manager.connect(db_path) as db:
         async with db.execute(
             """SELECT user_id, full_name, phone, role, city, language, created_at,
-               COALESCE(is_blocked, 0) as is_blocked,
+               CASE WHEN is_blocked IS NULL THEN 0 WHEN is_blocked THEN 1 ELSE 0 END as is_blocked,
                COALESCE(karma, 100) as karma,
                COALESCE(total_orders, 0) as total_orders,
                COALESCE(cancelled_orders, 0) as cancelled_orders
@@ -1183,7 +1183,7 @@ async def get_all_users(db_path: str, role: str = "client") -> List[User]:
     async with db_manager.connect(db_path) as db:
         async with db.execute(
             """SELECT user_id, full_name, phone, role, city, language, created_at, 
-               COALESCE(is_blocked, 0) as is_blocked, 
+               CASE WHEN is_blocked IS NULL THEN 0 WHEN is_blocked THEN 1 ELSE 0 END as is_blocked, 
                COALESCE(karma, 100) as karma,
                COALESCE(total_orders, 0) as total_orders,
                COALESCE(cancelled_orders, 0) as cancelled_orders
