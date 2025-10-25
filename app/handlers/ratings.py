@@ -16,7 +16,10 @@ from app.storage.db import (
     insert_rating,
     get_driver_average_rating,
     get_order_by_id,
+    get_user_by_id,
+    get_driver_by_tg_user_id,
 )
+from app.handlers.keyboards import main_menu_keyboard
 
 
 def create_router(config: AppConfig) -> Router:
@@ -50,6 +53,30 @@ def create_router(config: AppConfig) -> Router:
                 logger.info(f"🧹 Очищено {deleted_count} повідомлень для клієнта {call.from_user.id} після пропуску оцінки (повна поїздка)")
         except Exception as e:
             logger.error(f"❌ Помилка очищення чату: {e}")
+        
+        # ⭐ ПОВЕРНУТИ КЛАВІАТУРУ: Після очищення чату показати головне меню
+        try:
+            user = await get_user_by_id(config.database_path, call.from_user.id)
+            driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+            
+            is_driver = driver is not None and driver.status == "approved"
+            is_admin = user and call.from_user.id in config.bot.admin_ids if user else False
+            is_blocked = user.is_blocked if user else False
+            
+            kb = main_menu_keyboard(
+                is_driver=is_driver,
+                is_admin=is_admin,
+                is_blocked=is_blocked
+            )
+            
+            await call.bot.send_message(
+                call.from_user.id,
+                "🚖 <b>Дякуємо за використання нашого сервісу!</b>\n\n"
+                "Оберіть дію з меню:",
+                reply_markup=kb
+            )
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки клавіатури: {e}")
     
     @router.callback_query(F.data.startswith("rate:"))
     async def handle_rating(call: CallbackQuery) -> None:
@@ -116,6 +143,32 @@ def create_router(config: AppConfig) -> Router:
                 logger.info(f"🧹 Очищено {deleted_count} повідомлень для клієнта {call.from_user.id} після оцінки {rating_value}⭐ (повна поїздка)")
         except Exception as e:
             logger.error(f"❌ Помилка очищення чату: {e}")
+        
+        # ⭐ ПОВЕРНУТИ КЛАВІАТУРУ: Після очищення чату показати головне меню
+        try:
+            user = await get_user_by_id(config.database_path, call.from_user.id)
+            driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+            
+            is_driver = driver is not None and driver.status == "approved"
+            is_admin = user and call.from_user.id in config.bot.admin_ids if user else False
+            is_blocked = user.is_blocked if user else False
+            
+            kb = main_menu_keyboard(
+                is_driver=is_driver,
+                is_admin=is_admin,
+                is_blocked=is_blocked
+            )
+            
+            stars = "⭐" * rating_value
+            await call.bot.send_message(
+                call.from_user.id,
+                f"✅ <b>Дякуємо за оцінку!</b>\n\n"
+                f"Ви оцінили водія: {stars}\n\n"
+                "🚖 Оберіть дію з меню:",
+                reply_markup=kb
+            )
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки клавіатури: {e}")
         
         # Notify rated user about their new average rating
         try:
