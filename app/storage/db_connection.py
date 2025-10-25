@@ -86,9 +86,18 @@ class SQLiteCursor:
         self._rowcount = 0
     
     async def __aenter__(self):
+        """Відкрити cursor через async context manager"""
+        if not self._cursor:
+            # Отримати cursor від connection
+            self._cursor = self.adapter.conn.execute(self.query, self.params or ())
+        # Відкрити реальний aiosqlite cursor
+        await self._cursor.__aenter__()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Закрити cursor"""
+        if self._cursor:
+            await self._cursor.__aexit__(exc_type, exc_val, exc_tb)
         return False
     
     def __await__(self):
