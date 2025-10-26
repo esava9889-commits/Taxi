@@ -1671,6 +1671,25 @@ async def complete_order(
         return cur.rowcount > 0
 
 
+async def finalize_order_after_rating(db_path: str, order_id: int) -> bool:
+    """
+    Завершує замовлення після оцінки клієнта.
+    Використовується коли клієнт ставить оцінку або пропускає її.
+    """
+    now = datetime.now(timezone.utc)
+    async with db_manager.connect(db_path) as db:
+        cur = await db.execute(
+            """
+            UPDATE orders
+            SET status = 'completed', finished_at = COALESCE(finished_at, ?)
+            WHERE id = ? AND status != 'completed' AND status != 'cancelled'
+            """,
+            (now, order_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
 async def get_order_by_id(db_path: str, order_id: int) -> Optional[Order]:
     async with db_manager.connect(db_path) as db:
         async with db.execute(

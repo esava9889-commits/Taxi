@@ -18,6 +18,7 @@ from app.storage.db import (
     get_order_by_id,
     get_user_by_id,
     get_driver_by_tg_user_id,
+    finalize_order_after_rating,
 )
 from app.handlers.keyboards import main_menu_keyboard
 
@@ -30,6 +31,14 @@ def create_router(config: AppConfig) -> Router:
         """Пропустити оцінювання"""
         if not call.from_user:
             return
+        
+        # Завершити замовлення
+        try:
+            order_id = int(call.data.split(":")[2])
+            await finalize_order_after_rating(config.database_path, order_id)
+            logger.info(f"✅ Замовлення #{order_id} завершено після пропуску оцінки")
+        except Exception as e:
+            logger.error(f"❌ Помилка завершення замовлення: {e}")
         
         await call.answer("Дякуємо за поїздку! 🚖", show_alert=False)
         
@@ -118,6 +127,13 @@ def create_router(config: AppConfig) -> Router:
         )
         
         await insert_rating(config.database_path, rating)
+        
+        # Завершити замовлення
+        try:
+            await finalize_order_after_rating(config.database_path, order_id)
+            logger.info(f"✅ Замовлення #{order_id} завершено після оцінки {rating_value}⭐")
+        except Exception as e:
+            logger.error(f"❌ Помилка завершення замовлення: {e}")
         
         stars = "⭐" * rating_value
         await call.answer(f"✅ Дякуємо за оцінку! {stars}", show_alert=True)

@@ -1520,37 +1520,31 @@ def create_router(config: AppConfig) -> Router:
                 input_field_placeholder="Керування поїздкою"
             )
             
-            # Оновлений текст з інструкціями
+            # Компактний текст
             trip_management_text = (
-                f"✅ <b>ЗАМОВЛЕННЯ ПРИЙНЯТО!</b>\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"<b>📋 ІНФОРМАЦІЯ ПРО ЗАМОВЛЕННЯ:</b>\n\n"
-                f"🆔 Замовлення: <b>#{order_id}</b>\n"
-                f"👤 Клієнт: {order.name}\n"
-                f"📱 Телефон: <code>{order.phone}</code>\n\n"
-                f"📍 <b>Звідки забрати:</b>\n{clean_pickup}\n"
+                f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
+                f"👤 {order.name} • <code>{order.phone}</code>\n\n"
+                f"📍 <b>Звідки:</b> {clean_pickup}\n"
                 f"{pickup_link}\n\n"
-                f"🎯 <b>Куди везти:</b>\n{clean_destination}\n"
+                f"🎯 <b>Куди:</b> {clean_destination}\n"
                 f"{destination_link}{distance_text}\n\n"
-                f"💰 Вартість: <b>{int(order.fare_amount):.0f} грн</b>\n"
-                f"{payment_emoji} Оплата: {payment_text}\n"
+                f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n"
             )
             
             if order.comment:
-                trip_management_text += f"\n💬 <b>Коментар клієнта:</b>\n<i>{order.comment}</i>\n"
+                trip_management_text += f"\n💬 {order.comment}\n"
             
-            trip_management_text += (
-                f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"<b>📍 ЕТАПИ ВИКОНАННЯ:</b>\n\n"
-                f"1️⃣ <b>Їдьте до клієнта</b>\n"
-                f"   Натисніть: <b>📍 Я НА МІСЦІ ПОДАЧІ</b>\n\n"
-                f"2️⃣ <b>Клієнт сів в авто</b>\n"
-                f"   Натисніть: <b>✅ КЛІЄНТ В АВТО</b>\n\n"
-                f"3️⃣ <b>Довезли до місця призначення</b>\n"
-                f"   Натисніть: <b>🏁 ЗАВЕРШИТИ ПОЇЗДКУ</b>\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"💡 <b>Використовуйте кнопки внизу для керування!</b>\n"
-                f"🚗 Гарної дороги!"
+            trip_management_text += "\n🚗 Використовуйте кнопки нижче для керування поїздкою!"
+            
+            # Інлайн кнопка для геолокації
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            inline_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="📍 Поділитися геопозицією з клієнтом",
+                        callback_data=f"share_location:{order_id}"
+                    )]
+                ]
             )
             
             await call.bot.send_message(
@@ -1560,6 +1554,13 @@ def create_router(config: AppConfig) -> Router:
                 disable_web_page_preview=True
             )
             
+            # Відправити інлайн кнопку окремим повідомленням
+            await call.bot.send_message(
+                driver.tg_user_id,
+                "📍 <b>Поділіться геопозицією з клієнтом:</b>",
+                reply_markup=inline_kb
+            )
+            
             # Видалити повідомлення з приватного чату водія (якщо це було пріоритетне замовлення в ДМ)
             if call.message and call.message.chat.type == "private":
                 try:
@@ -1567,6 +1568,48 @@ def create_router(config: AppConfig) -> Router:
                     logger.info(f"✅ Повідомлення про пріоритетне замовлення #{order_id} видалено з ДМ водія {driver.tg_user_id}")
                 except Exception as e:
                     logger.warning(f"⚠️ Не вдалося видалити повідомлення з ДМ: {e}")
+    
+    @router.callback_query(F.data.startswith("share_location:"))
+    async def share_location_handler(call: CallbackQuery) -> None:
+        """Водій хоче поділитися геопозицією"""
+        if not call.from_user:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        order_id = int(call.data.split(":")[1])
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        # Запросити геолокацію
+        from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+        location_kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати мою геолокацію", request_location=True)],
+                [KeyboardButton(text="🚗 Панель водія")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.message.edit_text(
+            "📍 <b>Натисніть кнопку нижче щоб надіслати геолокацію:</b>",
+            reply_markup=None
+        )
+        
+        await call.bot.send_message(
+            driver.tg_user_id,
+            "📍 Надішліть вашу геолокацію, щоб клієнт міг відстежувати ваше місцезнаходження:",
+            reply_markup=location_kb
+        )
+        
+        await call.answer()
     
     @router.callback_query(F.data.startswith("reject_order:"))
     async def reject_order_handler(call: CallbackQuery) -> None:
@@ -2462,13 +2505,7 @@ def create_router(config: AppConfig) -> Router:
         )
         
         await message.answer(
-            f"✅ <b>Ви на місці подачі!</b>\n\n"
-            f"👋 Очікуйте клієнта:\n"
-            f"👤 {order.name}\n"
-            f"📱 <code>{order.phone}</code>\n\n"
-            f"📍 {clean_address(order.pickup_address)}\n\n"
-            f"💡 Клієнт отримав сповіщення.\n"
-            f"👇 Коли клієнт сяде - натисніть <b>✅ КЛІЄНТ В АВТО</b>",
+            f"✅ <b>Клієнт отримав повідомлення про ваше прибуття</b>",
             reply_markup=kb
         )
     
@@ -2521,17 +2558,8 @@ def create_router(config: AppConfig) -> Router:
             one_time_keyboard=False
         )
         
-        clean_destination = clean_address(order.destination_address)
-        destination_link = ""
-        if order.dest_lat and order.dest_lon:
-            destination_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Відкрити на карті</a>"
-        
         await message.answer(
-            f"🚗 <b>Поїздка розпочата!</b>\n\n"
-            f"🎯 <b>Напрямок:</b>\n"
-            f"{clean_destination}{destination_link}\n\n"
-            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n\n"
-            f"👇 Коли доїдете - натисніть <b>🏁 ЗАВЕРШИТИ ПОЇЗДКУ</b>",
+            f"✅ <b>Клієнт отримав повідомлення про початок поїздки</b>",
             reply_markup=kb
         )
     
