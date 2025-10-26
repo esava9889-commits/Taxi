@@ -2502,10 +2502,15 @@ def create_router(config: AppConfig) -> Router:
         if not driver:
             return
         
+        logger.info(f"🏁 Водій {driver.id} ({driver.full_name}) натиснув 'Завершити поїздку'")
+        
         order = await get_active_order_for_driver(config.database_path, driver.id)
         if not order:
+            logger.warning(f"⚠️ Водій {driver.id} не має активного замовлення при спробі завершити")
             await message.answer("❌ У вас немає активного замовлення")
             return
+        
+        logger.info(f"📋 Знайдено активне замовлення #{order.id}, статус: {order.status}")
         
         # Розрахунок
         fare = order.fare_amount if order.fare_amount else 100.0
@@ -2519,6 +2524,7 @@ def create_router(config: AppConfig) -> Router:
         duration_s = 0  # Можна додати розрахунок тривалості пізніше
         
         # Завершити замовлення
+        logger.info(f"💾 Спроба завершити замовлення #{order.id} (поточний статус: {order.status})")
         success = await complete_order(
             config.database_path,
             order.id,
@@ -2530,9 +2536,11 @@ def create_router(config: AppConfig) -> Router:
         )
         
         if not success:
+            logger.error(f"❌ Не вдалося завершити замовлення #{order.id}. Можливо статус вже змінений або замовлення не належить водію.")
             await message.answer("❌ Не вдалося завершити замовлення. Спробуйте ще раз.")
-            logger.error(f"Failed to complete order #{order.id}")
             return
+        
+        logger.info(f"✅ Замовлення #{order.id} успішно завершено")
         
         # 🛑 Зупинити live location трекінг
         from app.utils.live_location_manager import LiveLocationManager

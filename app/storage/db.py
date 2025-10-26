@@ -1658,8 +1658,34 @@ async def complete_order(
     duration_s: int,
     commission: float,
 ) -> bool:
+    import logging
+    logger = logging.getLogger(__name__)
+    
     now = datetime.now(timezone.utc)
     async with db_manager.connect(db_path) as db:
+        # Спочатку перевіримо поточний статус замовлення
+        async with db.execute(
+            "SELECT id, status, driver_id FROM orders WHERE id = ?",
+            (order_id,)
+        ) as check_cursor:
+            check_row = await check_cursor.fetchone()
+            if check_row:
+                current_status = check_row[1]
+                current_driver = check_row[2]
+                logger.info(f"🔍 complete_order: замовлення #{order_id}, поточний статус: {current_status}, driver_id: {current_driver}")
+                
+                if current_driver != driver_id:
+                    logger.error(f"❌ complete_order: замовлення #{order_id} належить водію {current_driver}, а не {driver_id}")
+                    return False
+                    
+                if current_status not in ('accepted', 'in_progress'):
+                    logger.error(f"❌ complete_order: замовлення #{order_id} має статус '{current_status}', не можна завершити")
+                    return False
+            else:
+                logger.error(f"❌ complete_order: замовлення #{order_id} не знайдено в БД")
+                return False
+        
+        # Тепер оновлюємо
         cur = await db.execute(
             """
             UPDATE orders
@@ -1669,7 +1695,14 @@ async def complete_order(
             (now, fare_amount, distance_m, duration_s, commission, order_id, driver_id),
         )
         await db.commit()
-        return cur.rowcount > 0
+        
+        rows_affected = cur.rowcount
+        if rows_affected > 0:
+            logger.info(f"✅ complete_order: замовлення #{order_id} успішно оновлено, статус → 'completed'")
+        else:
+            logger.error(f"❌ complete_order: замовлення #{order_id} НЕ оновлено (rows_affected=0)")
+        
+        return rows_affected > 0
 
 
 async def finalize_order_after_rating(db_path: str, order_id: int) -> bool:
