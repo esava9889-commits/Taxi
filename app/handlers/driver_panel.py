@@ -1467,14 +1467,13 @@ def create_router(config: AppConfig) -> Router:
             except Exception as e:
                 logger.warning(f"Не вдалося видалити попередні повідомлення: {e}")
             
-            # 2. Відобразити відстань якщо є
+            # 2. Підготувати дані для повідомлення водію
             distance_text = ""
             if order.distance_m:
                 km = order.distance_m / 1000.0
                 distance_text = f"\n📏 Відстань: {km:.1f} км"
             
             payment_emoji = "💵" if order.payment_method == "cash" else "💳"
-            payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
             
             # ⭐ Очистити адреси від Plus Codes
             clean_pickup = clean_address(order.pickup_address)
@@ -1490,9 +1489,7 @@ def create_router(config: AppConfig) -> Router:
             if order.dest_lat and order.dest_lon:
                 destination_link = f"<a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>📍 Відкрити на карті</a>"
             
-            # 4. ⭐ REPLY KEYBOARD - ВЕЛИКЕ МЕНЮ КЕРУВАННЯ ЗАМОВЛЕННЯМ
-            from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-            
+            # 3. ⭐ REPLY KEYBOARD - ВЕЛИКЕ МЕНЮ КЕРУВАННЯ ЗАМОВЛЕННЯМ
             kb_trip = ReplyKeyboardMarkup(
                 keyboard=[
                     # ======== ОСНОВНЕ КЕРУВАННЯ ========
@@ -1537,7 +1534,6 @@ def create_router(config: AppConfig) -> Router:
             trip_management_text += "\n🚗 Використовуйте кнопки нижче для керування поїздкою!"
             
             # Інлайн кнопка для геолокації
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             inline_kb = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(
