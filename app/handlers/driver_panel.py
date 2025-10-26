@@ -3073,6 +3073,88 @@ def create_router(config: AppConfig) -> Router:
         
         await call.message.edit_text(card_message, reply_markup=kb)
     
+    @router.callback_query(F.data.startswith("back_to_order:"))
+    async def back_to_order_info(call: CallbackQuery) -> None:
+        """Повернутися до інформації про замовлення"""
+        if not call.from_user:
+            return
+        
+        try:
+            order_id = int(call.data.split(":")[1])
+        except:
+            await call.answer("❌ Помилка", show_alert=True)
+            return
+        
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order or order.user_id != call.from_user.id:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if not order.driver_id:
+            await call.answer("❌ Водій не призначений", show_alert=True)
+            return
+        
+        driver = await get_driver_by_id(config.database_path, order.driver_id)
+        if not driver:
+            await call.answer("❌ Водій не знайдений", show_alert=True)
+            return
+        
+        await call.answer()
+        
+        # Відобразити інформацію про замовлення з водієм
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
+        
+        driver_box = create_box(
+            "👤 ВАШ ВОДІЙ",
+            f"{driver.full_name}\n"
+            f"🚗 {driver.car_make} {driver.car_model}\n"
+            f"🔢 {driver.car_plate}\n"
+            f"📱 {driver.phone}\n"
+            f"✅ {driver.total_orders} успішних поїздок"
+        )
+        
+        # Кнопки для клієнта
+        kb_client_buttons = []
+        
+        # Кнопка картки (якщо оплата карткою)
+        if order.payment_method == "card" and driver.card_number:
+            kb_client_buttons.append([
+                InlineKeyboardButton(text="💳 Картка водія", callback_data=f"show_card:{order_id}")
+            ])
+        
+        # Кнопка маршруту
+        if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
+            kb_client_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺️ Маршрут на карті",
+                    url=f"https://www.google.com/maps/dir/?api=1&origin={order.pickup_lat},{order.pickup_lon}&destination={order.dest_lat},{order.dest_lon}"
+                )
+            ])
+        
+        # Кнопка де зараз водій
+        if driver.last_lat and driver.last_lon:
+            kb_client_buttons.append([
+                InlineKeyboardButton(
+                    text="📍 Де зараз водій?",
+                    url=f"https://www.google.com/maps?q={driver.last_lat},{driver.last_lon}"
+                )
+            ])
+        
+        kb_client = InlineKeyboardMarkup(inline_keyboard=kb_client_buttons)
+        
+        client_message = (
+            f"{get_status_emoji('accepted')} <b>ВОДІЙ ПРИЙНЯВ ВАШЕ ЗАМОВЛЕННЯ!</b>\n\n"
+            f"{driver_box}\n\n"
+            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
+            f"{payment_emoji} <b>Оплата:</b> {payment_text}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💡 <b>Водій вже їде до вас!</b>\n\n"
+            f"🚗 Гарної поїздки!"
+        )
+        
+        await call.message.edit_text(client_message, reply_markup=kb_client)
+    
     @router.callback_query(F.data.startswith("paid:confirm:"))
     async def confirm_payment(call: CallbackQuery) -> None:
         """Клієнт підтвердив оплату"""
