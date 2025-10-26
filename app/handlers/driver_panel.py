@@ -1525,28 +1525,11 @@ def create_router(config: AppConfig) -> Router:
             
             trip_management_text += "\n🚗 Використовуйте кнопки нижче для керування поїздкою!"
             
-            # Інлайн кнопка для геолокації
-            inline_kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="📍 Поділитися геопозицією з клієнтом",
-                        callback_data=f"share_location:{order_id}"
-                    )]
-                ]
-            )
-            
             await call.bot.send_message(
                 driver.tg_user_id,
                 trip_management_text,
                 reply_markup=kb_trip,
                 disable_web_page_preview=True
-            )
-            
-            # Відправити інлайн кнопку окремим повідомленням
-            await call.bot.send_message(
-                driver.tg_user_id,
-                "📍 <b>Поділіться геопозицією з клієнтом:</b>",
-                reply_markup=inline_kb
             )
             
             # Видалити повідомлення з приватного чату водія (якщо це було пріоритетне замовлення в ДМ)
@@ -1556,48 +1539,6 @@ def create_router(config: AppConfig) -> Router:
                     logger.info(f"✅ Повідомлення про пріоритетне замовлення #{order_id} видалено з ДМ водія {driver.tg_user_id}")
                 except Exception as e:
                     logger.warning(f"⚠️ Не вдалося видалити повідомлення з ДМ: {e}")
-    
-    @router.callback_query(F.data.startswith("share_location:"))
-    async def share_location_handler(call: CallbackQuery) -> None:
-        """Водій хоче поділитися геопозицією"""
-        if not call.from_user:
-            return
-        
-        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
-        if not driver:
-            await call.answer("❌ Водія не знайдено", show_alert=True)
-            return
-        
-        order_id = int(call.data.split(":")[1])
-        order = await get_order_by_id(config.database_path, order_id)
-        
-        if not order:
-            await call.answer("❌ Замовлення не знайдено", show_alert=True)
-            return
-        
-        # Запросити геолокацію
-        from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-        location_kb = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📍 Надіслати мою геолокацію", request_location=True)],
-                [KeyboardButton(text="🚗 Панель водія")]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-        
-        await call.message.edit_text(
-            "📍 <b>Натисніть кнопку нижче щоб надіслати геолокацію:</b>",
-            reply_markup=None
-        )
-        
-        await call.bot.send_message(
-            driver.tg_user_id,
-            "📍 Надішліть вашу геолокацію, щоб клієнт міг відстежувати ваше місцезнаходження:",
-            reply_markup=location_kb
-        )
-        
-        await call.answer()
     
     @router.callback_query(F.data.startswith("reject_order:"))
     async def reject_order_handler(call: CallbackQuery) -> None:

@@ -139,8 +139,6 @@ def create_router(config: AppConfig) -> Router:
         await call.answer(f"✅ Дякуємо за оцінку! {stars}", show_alert=True)
         
         # ⭐ ОЧИСТИТИ ЧАТ: Видалити всі повідомлення за період замовлення
-        import logging
-        logger = logging.getLogger(__name__)
         
         try:
             if call.message:
