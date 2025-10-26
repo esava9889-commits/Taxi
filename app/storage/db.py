@@ -2584,8 +2584,8 @@ class PricingSettings:
     updated_at: Optional[datetime] = None
 
 
-async def get_pricing_settings(db_path: str) -> PricingSettings:
-    """Отримати поточні налаштування ціноутворення"""
+async def get_pricing_settings(db_path: str) -> PricingSettings | None:
+    """Отримати поточні налаштування ціноутворення (або None якщо не налаштовано)"""
     async with db_manager.connect(db_path) as db:
         try:
             async with db.execute(
@@ -2623,8 +2623,8 @@ async def get_pricing_settings(db_path: str) -> PricingSettings:
         except Exception as e:
             logger.warning(f"⚠️ Помилка читання pricing_settings: {e}")
     
-    # Повернути за замовчуванням
-    return PricingSettings()
+    # Повернути None якщо не знайдено
+    return None
 
 
 async def upsert_pricing_settings(db_path: str, settings: PricingSettings) -> bool:

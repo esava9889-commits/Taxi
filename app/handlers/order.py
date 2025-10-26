@@ -168,6 +168,11 @@ def create_router(config: AppConfig) -> Router:
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
         
+        # Якщо налаштування не знайдено - використати дефолтні значення
+        if pricing is None:
+            from app.storage.db import PricingSettings
+            pricing = PricingSettings()
+        
         # Створити словник множників класів для передачі в calculate_fare_with_class
         custom_multipliers = {
             "economy": pricing.economy_multiplier,
@@ -816,6 +821,11 @@ def create_router(config: AppConfig) -> Router:
         
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
+        
+        # Якщо налаштування не знайдено - використати дефолтні значення
+        if pricing is None:
+            from app.storage.db import PricingSettings
+            pricing = PricingSettings()
         
         custom_multipliers = {
             "economy": pricing.economy_multiplier,
@@ -1503,6 +1513,12 @@ def create_router(config: AppConfig) -> Router:
                         
                         # Отримати налаштування ціноутворення
                         pricing = await get_pricing_settings(config.database_path)
+                        
+                        # Якщо налаштування не знайдено - використати дефолтні значення
+                        if pricing is None:
+                            from app.storage.db import PricingSettings
+                            pricing = PricingSettings()
+                        
                         custom_multipliers = {
                             "economy": pricing.economy_multiplier,
                             "standard": pricing.standard_multiplier,

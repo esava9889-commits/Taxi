@@ -107,6 +107,22 @@ class SettingsStates(StatesGroup):
     demand_high = State()
     demand_medium = State()
     demand_low = State()
+    
+    # Wizard для першого налаштування (всі параметри по черзі)
+    wizard_economy = State()
+    wizard_standard = State()
+    wizard_comfort = State()
+    wizard_business = State()
+    wizard_night = State()
+    wizard_peak = State()
+    wizard_weekend = State()
+    wizard_monday = State()
+    wizard_weather = State()
+    wizard_no_drivers = State()
+    wizard_demand_very_high = State()
+    wizard_demand_high = State()
+    wizard_demand_medium = State()
+    wizard_demand_low = State()
 
 
 class BroadcastStates(StatesGroup):
@@ -745,13 +761,32 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Помилка при обробці", show_alert=True)
 
     @router.message(F.text == "⚙️ Налаштування", lambda m: m.from_user and is_admin(m.from_user.id))
-    async def show_settings(message: Message) -> None:
+    async def show_settings(message: Message, state: FSMContext) -> None:
         """Показати меню налаштувань (ТІЛЬКИ для адмінів)"""
         if not message.from_user:
             return
         
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
+        
+        # Якщо налаштування НЕ існують - запустити wizard
+        if pricing is None:
+            await state.set_state(SettingsStates.wizard_economy)
+            await message.answer(
+                "🎉 <b>ПЕРШЕ НАЛАШТУВАННЯ ЦІНОУТВОРЕННЯ</b>\n\n"
+                "Вітаю! Зараз ви налаштуєте всі параметри ціноутворення.\n"
+                "Це займе ~2 хвилини.\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "🚗 <b>КРОК 1/14: Клас ЕКОНОМ</b>\n\n"
+                "Введіть множник для класу Економ:\n\n"
+                "💡 <b>Рекомендовано:</b> <code>1.0</code> (базовий тариф)\n\n"
+                "Приклад: якщо базова ціна 100 грн, то:\n"
+                "• 1.0 → 100 грн\n"
+                "• 1.2 → 120 грн\n\n"
+                "Введіть число від 0.5 до 5.0:",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
         
         # Отримати номер картки для комісії
         admin_card = await get_admin_payment_card()
@@ -1833,6 +1868,368 @@ def create_router(config: AppConfig) -> Router:
         
         await call.answer("✅ Оновлено")
         await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    
+    # ==================== WIZARD ПЕРШОГО НАЛАШТУВАННЯ ====================
+    
+    @router.message(SettingsStates.wizard_economy)
+    async def wizard_step_economy(message: Message, state: FSMContext) -> None:
+        """Wizard крок 1: Економ"""
+        try:
+            value = float(message.text.strip())
+            if value < 0.5 or value > 5.0:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0.5 до 5.0")
+            return
+        
+        await state.update_data(economy_multiplier=value)
+        await state.set_state(SettingsStates.wizard_standard)
+        await message.answer(
+            f"✅ Економ: x{value:.2f}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚙 <b>КРОК 2/14: Клас СТАНДАРТ</b>\n\n"
+            "Введіть множник для класу Стандарт:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>1.3</code> (+30%)\n\n"
+            "Введіть число від 0.5 до 5.0:"
+        )
+    
+    @router.message(SettingsStates.wizard_standard)
+    async def wizard_step_standard(message: Message, state: FSMContext) -> None:
+        """Wizard крок 2: Стандарт"""
+        try:
+            value = float(message.text.strip())
+            if value < 0.5 or value > 5.0:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0.5 до 5.0")
+            return
+        
+        await state.update_data(standard_multiplier=value)
+        await state.set_state(SettingsStates.wizard_comfort)
+        await message.answer(
+            f"✅ Стандарт: x{value:.2f}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚘 <b>КРОК 3/14: Клас КОМФОРТ</b>\n\n"
+            "Введіть множник для класу Комфорт:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>1.6</code> (+60%)\n\n"
+            "Введіть число від 0.5 до 5.0:"
+        )
+    
+    @router.message(SettingsStates.wizard_comfort)
+    async def wizard_step_comfort(message: Message, state: FSMContext) -> None:
+        """Wizard крок 3: Комфорт"""
+        try:
+            value = float(message.text.strip())
+            if value < 0.5 or value > 5.0:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0.5 до 5.0")
+            return
+        
+        await state.update_data(comfort_multiplier=value)
+        await state.set_state(SettingsStates.wizard_business)
+        await message.answer(
+            f"✅ Комфорт: x{value:.2f}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🏆 <b>КРОК 4/14: Клас БІЗНЕС</b>\n\n"
+            "Введіть множник для класу Бізнес:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>2.0</code> (+100%)\n\n"
+            "Введіть число від 0.5 до 5.0:"
+        )
+    
+    @router.message(SettingsStates.wizard_business)
+    async def wizard_step_business(message: Message, state: FSMContext) -> None:
+        """Wizard крок 4: Бізнес"""
+        try:
+            value = float(message.text.strip())
+            if value < 0.5 or value > 5.0:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0.5 до 5.0")
+            return
+        
+        await state.update_data(business_multiplier=value)
+        await state.set_state(SettingsStates.wizard_night)
+        await message.answer(
+            f"✅ Бізнес: x{value:.2f}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🌙 <b>КРОК 5/14: НІЧНИЙ ТАРИФ</b>\n\n"
+            "Введіть надбавку для нічного тарифу (23:00-06:00):\n\n"
+            "💡 <b>Рекомендовано:</b> <code>50</code> (+50%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_night)
+    async def wizard_step_night(message: Message, state: FSMContext) -> None:
+        """Wizard крок 5: Нічний тариф"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(night_percent=value)
+        await state.set_state(SettingsStates.wizard_peak)
+        await message.answer(
+            f"✅ Нічний: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🔥 <b>КРОК 6/14: ПІКОВИЙ ЧАС</b>\n\n"
+            "Введіть надбавку для пікового часу (7-9, 17-19):\n\n"
+            "💡 <b>Рекомендовано:</b> <code>30</code> (+30%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_peak)
+    async def wizard_step_peak(message: Message, state: FSMContext) -> None:
+        """Wizard крок 6: Піковий час"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(peak_hours_percent=value)
+        await state.set_state(SettingsStates.wizard_weekend)
+        await message.answer(
+            f"✅ Піковий: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🎉 <b>КРОК 7/14: ВИХІДНІ ДНІ</b>\n\n"
+            "Введіть надбавку для вихідних (Пт-Нд 18-23):\n\n"
+            "💡 <b>Рекомендовано:</b> <code>20</code> (+20%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_weekend)
+    async def wizard_step_weekend(message: Message, state: FSMContext) -> None:
+        """Wizard крок 7: Вихідні"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(weekend_percent=value)
+        await state.set_state(SettingsStates.wizard_monday)
+        await message.answer(
+            f"✅ Вихідні: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "📅 <b>КРОК 8/14: ПОНЕДІЛОК ВРАНЦІ</b>\n\n"
+            "Введіть надбавку для понеділка вранці (7-10):\n\n"
+            "💡 <b>Рекомендовано:</b> <code>15</code> (+15%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_monday)
+    async def wizard_step_monday(message: Message, state: FSMContext) -> None:
+        """Wizard крок 8: Понеділок"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(monday_morning_percent=value)
+        await state.set_state(SettingsStates.wizard_weather)
+        await message.answer(
+            f"✅ Понеділок: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🌧️ <b>КРОК 9/14: ПОГОДНІ УМОВИ</b>\n\n"
+            "Введіть початкову надбавку за погоду:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>0</code> (вимкнено, увімкнете коли буде дощ)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_weather)
+    async def wizard_step_weather(message: Message, state: FSMContext) -> None:
+        """Wizard крок 9: Погода"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(weather_percent=value)
+        await state.set_state(SettingsStates.wizard_no_drivers)
+        await message.answer(
+            f"✅ Погода: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚫 <b>КРОК 10/14: НЕМАЄ ВОДІЇВ</b>\n\n"
+            "Введіть надбавку коли зовсім немає доступних водіїв:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>50</code> (+50%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_no_drivers)
+    async def wizard_step_no_drivers(message: Message, state: FSMContext) -> None:
+        """Wizard крок 10: Немає водіїв"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(no_drivers_percent=value)
+        await state.set_state(SettingsStates.wizard_demand_very_high)
+        await message.answer(
+            f"✅ Немає водіїв: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🔥🔥🔥 <b>КРОК 11/14: ДУЖЕ ВИСОКИЙ ПОПИТ</b>\n\n"
+            "Введіть надбавку коли >3 замовлень на одного водія:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>40</code> (+40%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_demand_very_high)
+    async def wizard_step_demand_very_high(message: Message, state: FSMContext) -> None:
+        """Wizard крок 11: Дуже високий попит"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(demand_very_high_percent=value)
+        await state.set_state(SettingsStates.wizard_demand_high)
+        await message.answer(
+            f"✅ Дуже високий: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🔥🔥 <b>КРОК 12/14: ВИСОКИЙ ПОПИТ</b>\n\n"
+            "Введіть надбавку коли >2 замовлень на одного водія:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>25</code> (+25%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_demand_high)
+    async def wizard_step_demand_high(message: Message, state: FSMContext) -> None:
+        """Wizard крок 12: Високий попит"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(demand_high_percent=value)
+        await state.set_state(SettingsStates.wizard_demand_medium)
+        await message.answer(
+            f"✅ Високий: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🔥 <b>КРОК 13/14: СЕРЕДНІЙ ПОПИТ</b>\n\n"
+            "Введіть надбавку коли >1.5 замовлень на одного водія:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>15</code> (+15%)\n\n"
+            "Введіть відсоток від 0 до 200:"
+        )
+    
+    @router.message(SettingsStates.wizard_demand_medium)
+    async def wizard_step_demand_medium(message: Message, state: FSMContext) -> None:
+        """Wizard крок 13: Середній попит"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 200:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 200")
+            return
+        
+        await state.update_data(demand_medium_percent=value)
+        await state.set_state(SettingsStates.wizard_demand_low)
+        await message.answer(
+            f"✅ Середній: +{value:.0f}%\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "💚 <b>КРОК 14/14: НИЗЬКИЙ ПОПИТ (ЗНИЖКА)</b>\n\n"
+            "Введіть ЗНИЖКУ коли <0.3 замовлень на одного водія:\n\n"
+            "💡 <b>Рекомендовано:</b> <code>10</code> (-10% знижка)\n\n"
+            "Введіть відсоток від 0 до 50:"
+        )
+    
+    @router.message(SettingsStates.wizard_demand_low)
+    async def wizard_step_demand_low(message: Message, state: FSMContext) -> None:
+        """Wizard крок 14: Низький попит - ОСТАННІЙ КРОК"""
+        try:
+            value = float(message.text.strip())
+            if value < 0 or value > 50:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Введіть коректне число від 0 до 50")
+            return
+        
+        # Отримати всі дані
+        data = await state.get_data()
+        
+        # Створити об'єкт налаштувань
+        from datetime import datetime, timezone
+        pricing = PricingSettings(
+            economy_multiplier=data['economy_multiplier'],
+            standard_multiplier=data['standard_multiplier'],
+            comfort_multiplier=data['comfort_multiplier'],
+            business_multiplier=data['business_multiplier'],
+            night_percent=data['night_percent'],
+            peak_hours_percent=data['peak_hours_percent'],
+            weekend_percent=data['weekend_percent'],
+            monday_morning_percent=data['monday_morning_percent'],
+            weather_percent=data['weather_percent'],
+            no_drivers_percent=data['no_drivers_percent'],
+            demand_very_high_percent=data['demand_very_high_percent'],
+            demand_high_percent=data['demand_high_percent'],
+            demand_medium_percent=data['demand_medium_percent'],
+            demand_low_discount_percent=value,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        
+        # Зберегти в БД
+        success = await upsert_pricing_settings(config.database_path, pricing)
+        
+        if success:
+            await state.clear()
+            await message.answer(
+                "🎉 <b>НАЛАШТУВАННЯ ЗАВЕРШЕНО!</b>\n\n"
+                "✅ Всі параметри ціноутворення збережено.\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "📊 <b>ВАШІ НАЛАШТУВАННЯ:</b>\n\n"
+                "🚗 <b>Класи авто:</b>\n"
+                f"• Економ: x{pricing.economy_multiplier:.2f}\n"
+                f"• Стандарт: x{pricing.standard_multiplier:.2f}\n"
+                f"• Комфорт: x{pricing.comfort_multiplier:.2f}\n"
+                f"• Бізнес: x{pricing.business_multiplier:.2f}\n\n"
+                "⏰ <b>Часові націнки:</b>\n"
+                f"• Нічний: +{pricing.night_percent:.0f}%\n"
+                f"• Піковий: +{pricing.peak_hours_percent:.0f}%\n"
+                f"• Вихідні: +{pricing.weekend_percent:.0f}%\n"
+                f"• Понеділок: +{pricing.monday_morning_percent:.0f}%\n\n"
+                "🌧️ <b>Погода:</b> +" + f"{pricing.weather_percent:.0f}%\n\n"
+                "📊 <b>Попит:</b>\n"
+                f"• Немає водіїв: +{pricing.no_drivers_percent:.0f}%\n"
+                f"• Дуже високий: +{pricing.demand_very_high_percent:.0f}%\n"
+                f"• Високий: +{pricing.demand_high_percent:.0f}%\n"
+                f"• Середній: +{pricing.demand_medium_percent:.0f}%\n"
+                f"• Низький: -{pricing.demand_low_discount_percent:.0f}%\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "Тепер ви можете змінювати ці параметри\n"
+                "через меню ⚙️ Налаштування",
+                reply_markup=admin_menu_keyboard()
+            )
+        else:
+            await message.answer(
+                "❌ Помилка збереження налаштувань.\n"
+                "Спробуйте ще раз через меню ⚙️ Налаштування",
+                reply_markup=admin_menu_keyboard()
+            )
     
     # Додати обробники налаштувань ціноутворення
     create_pricing_handlers(
