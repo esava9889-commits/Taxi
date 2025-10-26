@@ -247,10 +247,10 @@ def create_pricing_handlers(router: Router, config, is_admin, SettingsStates, ge
         text = (
             "📊 <b>НАЛАШТУВАННЯ ПОПИТУ</b>\n\n"
             f"• Немає водіїв: <b>+{pricing.no_drivers_percent:.0f}%</b>\n"
-            f"• Дуже високий (>3:1): <b>+{pricing.demand_very_high_percent:.0f}%</b>\n"
-            f"• Високий (>2:1): <b>+{pricing.demand_high_percent:.0f}%</b>\n"
-            f"• Середній (>1.5:1): <b>+{pricing.demand_medium_percent:.0f}%</b>\n"
-            f"• Низький (<0.3:1): <b>-{pricing.demand_low_discount_percent:.0f}%</b>\n\n"
+            f"• Дуже високий (&gt;3:1): <b>+{pricing.demand_very_high_percent:.0f}%</b>\n"
+            f"• Високий (&gt;2:1): <b>+{pricing.demand_high_percent:.0f}%</b>\n"
+            f"• Середній (&gt;1.5:1): <b>+{pricing.demand_medium_percent:.0f}%</b>\n"
+            f"• Низький (&lt;0.3:1): <b>-{pricing.demand_low_discount_percent:.0f}%</b>\n\n"
             "Співвідношення замовлень до водіїв\n\n"
             "Оберіть рівень для редагування:"
         )
@@ -281,10 +281,10 @@ def create_pricing_handlers(router: Router, config, is_admin, SettingsStates, ge
         
         demand_info = {
             "no_drivers": ("no_drivers_percent", "🚫 Немає водіїв", SettingsStates.no_drivers, False),
-            "very_high": ("demand_very_high_percent", "🔥🔥🔥 Дуже високий попит (>3:1)", SettingsStates.demand_very_high, False),
-            "high": ("demand_high_percent", "🔥🔥 Високий попит (>2:1)", SettingsStates.demand_high, False),
-            "medium": ("demand_medium_percent", "🔥 Середній попит (>1.5:1)", SettingsStates.demand_medium, False),
-            "low": ("demand_low_discount_percent", "💚 Низький попит (<0.3:1)", SettingsStates.demand_low, True)
+            "very_high": ("demand_very_high_percent", "🔥🔥🔥 Дуже високий попит (&gt;3:1)", SettingsStates.demand_very_high, False),
+            "high": ("demand_high_percent", "🔥🔥 Високий попит (&gt;2:1)", SettingsStates.demand_high, False),
+            "medium": ("demand_medium_percent", "🔥 Середній попит (&gt;1.5:1)", SettingsStates.demand_medium, False),
+            "low": ("demand_low_discount_percent", "💚 Низький попит (&lt;0.3:1)", SettingsStates.demand_low, True)
         }
         
         field_name, display_name, state_type, is_discount = demand_info[demand_type]
@@ -391,10 +391,10 @@ def create_pricing_handlers(router: Router, config, is_admin, SettingsStates, ge
             
             "📊 <b>ПОПИТ:</b>\n"
             f"• Немає водіїв: +{pricing.no_drivers_percent:.0f}%\n"
-            f"• Дуже високий (>3:1): +{pricing.demand_very_high_percent:.0f}%\n"
-            f"• Високий (>2:1): +{pricing.demand_high_percent:.0f}%\n"
-            f"• Середній (>1.5:1): +{pricing.demand_medium_percent:.0f}%\n"
-            f"• Низький (<0.3:1): -{pricing.demand_low_discount_percent:.0f}%\n\n"
+            f"• Дуже високий (&gt;3:1): +{pricing.demand_very_high_percent:.0f}%\n"
+            f"• Високий (&gt;2:1): +{pricing.demand_high_percent:.0f}%\n"
+            f"• Середній (&gt;1.5:1): +{pricing.demand_medium_percent:.0f}%\n"
+            f"• Низький (&lt;0.3:1): -{pricing.demand_low_discount_percent:.0f}%\n\n"
             
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "💳 <b>ПЛАТІЖНІ РЕКВІЗИТИ:</b>\n"
