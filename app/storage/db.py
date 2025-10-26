@@ -694,6 +694,14 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
         )
         await db.commit()
         
+        # 🛑 Зупинити live location трекінг якщо був активний
+        try:
+            from app.utils.live_location_manager import LiveLocationManager
+            import asyncio
+            asyncio.create_task(LiveLocationManager.stop_tracking(order_id))
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося зупинити live location: {e}")
+        
         # Якщо водій був призначений - зменшити його карму
         if driver_id and status == 'accepted':
             logger.warning(f"⚠️ Клієнт скасував замовлення #{order_id}, водій #{driver_id} втрачає карму")
@@ -729,6 +737,14 @@ async def cancel_order_by_driver(db_path: str, order_id: int, driver_id: int, re
             (datetime.now(timezone.utc), order_id)
         )
         await db.commit()
+        
+        # 🛑 Зупинити live location трекінг якщо був активний
+        try:
+            from app.utils.live_location_manager import LiveLocationManager
+            import asyncio
+            asyncio.create_task(LiveLocationManager.stop_tracking(order_id))
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося зупинити live location: {e}")
         
         # ВАЖЛИВО: Клієнт НЕ втрачає карму, бо скасував водій (не клієнт)
         logger.warning(f"⚠️ Водій #{driver_id} скасував замовлення #{order_id}: {reason}. Замовлення ПОВНІСТЮ скасовано, карма клієнта #{user_id} НЕ зменшена")
