@@ -37,6 +37,7 @@ from app.storage.db import (
     block_user,
     unblock_user,
     add_rides_to_client,
+    get_driver_unpaid_commission,
 )
 from app.utils.visual import (
     format_karma,
@@ -491,6 +492,9 @@ def create_router(config: AppConfig) -> Router:
                 online_status = "🟢 Онлайн" if online else "🔴 Офлайн"
                 priority_badge = "⭐" if (priority or 0) > 0 else ""
                 toggle_text = "⭐ Вимкнути пріоритет" if (priority or 0) > 0 else "⭐ Увімкнути пріоритет"
+                
+                # Отримати несплачену комісію водія
+                unpaid_commission = await get_driver_unpaid_commission(config.database_path, tg_user_id)
 
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
@@ -511,6 +515,7 @@ def create_router(config: AppConfig) -> Router:
                     f"🚗 {car_make} {car_model} ({car_plate})\n"
                     f"🎯 Клас: {car_class}\n"
                     f"⭐ Пріоритет: {'Увімкнено' if (priority or 0) > 0 else 'Вимкнено'}\n"
+                    f"💳 Несплачена комісія: <b>{unpaid_commission:.2f} грн</b>\n"
                     f"🆔 ID: {driver_id}"
                 )
 
@@ -530,7 +535,10 @@ def create_router(config: AppConfig) -> Router:
             )
             for d in rejected_drivers:
                 driver_id, tg_user_id, full_name, phone, car_make, car_model, car_plate, \
-                    car_class, status, city, online, created_at = d
+                    car_class, status, city, online, created_at, priority = d
+                
+                # Отримати несплачену комісію водія
+                unpaid_commission = await get_driver_unpaid_commission(config.database_path, tg_user_id)
                 
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
@@ -547,6 +555,7 @@ def create_router(config: AppConfig) -> Router:
                     f"📱 {phone}\n"
                     f"🏙️ {city or 'Не вказано'}\n"
                     f"🚗 {car_make} {car_model} ({car_plate})\n"
+                    f"💳 Несплачена комісія: <b>{unpaid_commission:.2f} грн</b>\n"
                     f"🆔 ID: {driver_id}"
                 )
                 
