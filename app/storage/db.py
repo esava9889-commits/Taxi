@@ -1640,8 +1640,9 @@ async def get_rejected_drivers_for_order(db_path: str, order_id: int) -> List[in
 async def start_order(db_path: str, order_id: int, driver_id: int) -> bool:
     now = datetime.now(timezone.utc)
     async with db_manager.connect(db_path) as db:
+        # Дозволяємо оновити якщо замовлення ще не почалось (accepted) або вже в процесі (in_progress)
         cur = await db.execute(
-            "UPDATE orders SET status = 'in_progress', started_at = ? WHERE id = ? AND driver_id = ? AND status = 'accepted'",
+            "UPDATE orders SET status = 'in_progress', started_at = COALESCE(started_at, ?) WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'in_progress')",
             (now, order_id, driver_id),
         )
         await db.commit()
