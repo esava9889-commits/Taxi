@@ -58,19 +58,22 @@ class LiveLocationManager:
     @classmethod
     async def stop_tracking(cls, order_id: int) -> None:
         """Зупинити відстеження для замовлення"""
-        if order_id in cls.active_locations:
-            location_data = cls.active_locations[order_id]
-            task = location_data.get("task")
-            
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            
-            del cls.active_locations[order_id]
-            logger.info(f"📍 Live location tracking stopped for order #{order_id}")
+        if order_id not in cls.active_locations:
+            logger.debug(f"📍 Order #{order_id} not in active locations, nothing to stop")
+            return
+        
+        location_data = cls.active_locations[order_id]
+        task = location_data.get("task")
+        
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        
+        del cls.active_locations[order_id]
+        logger.info(f"📍 Live location tracking stopped for order #{order_id}")
     
     @classmethod
     async def _update_location_loop(

@@ -2519,7 +2519,7 @@ def create_router(config: AppConfig) -> Router:
         duration_s = 0  # Можна додати розрахунок тривалості пізніше
         
         # Завершити замовлення
-        await complete_order(
+        success = await complete_order(
             config.database_path,
             order.id,
             driver.id,
@@ -2528,6 +2528,11 @@ def create_router(config: AppConfig) -> Router:
             duration_s,
             commission
         )
+        
+        if not success:
+            await message.answer("❌ Не вдалося завершити замовлення. Спробуйте ще раз.")
+            logger.error(f"Failed to complete order #{order.id}")
+            return
         
         # 🛑 Зупинити live location трекінг
         from app.utils.live_location_manager import LiveLocationManager
