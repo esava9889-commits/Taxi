@@ -1968,6 +1968,94 @@ async def get_driver_earnings_today(db_path: str, driver_tg_id: int) -> Tuple[fl
     return (total_earned, total_commission)
 
 
+async def get_driver_detailed_earnings_today(db_path: str, driver_tg_id: int) -> dict:
+    """
+    Повертає детальну статистику заробітку водія за сьогодні
+    
+    Returns:
+        dict: {
+            'total': float,           # Загальний заробіток
+            'cash': float,            # Готівка
+            'card': float,            # Картка
+            'commission': float,      # Комісія
+            'trips_count': int,       # Кількість поїздок
+            'hours_worked': float     # Відпрацьовано годин
+        }
+    """
+    async with db_manager.connect(db_path) as db:
+        # Отримати driver_id
+        async with db.execute(
+            "SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'",
+            (driver_tg_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        
+        if not row:
+            return {
+                'total': 0.0,
+                'cash': 0.0,
+                'card': 0.0,
+                'commission': 0.0,
+                'trips_count': 0,
+                'hours_worked': 0.0
+            }
+        
+        driver_db_id = row[0]
+        today = datetime.now(timezone.utc).date()
+        
+        # Отримати розбивку по готівці та картці
+        async with db.execute(
+            """
+            SELECT 
+                SUM(CASE WHEN payment_method = 'cash' THEN amount ELSE 0 END) as cash_total,
+                SUM(CASE WHEN payment_method = 'card' THEN amount ELSE 0 END) as card_total,
+                SUM(commission) as total_commission,
+                SUM(amount) as total_amount
+            FROM payments
+            WHERE driver_id = ? AND DATE(created_at) = ?
+            """,
+            (driver_db_id, today)
+        ) as cur:
+            row = await cur.fetchone()
+        
+        cash = row[0] if row and row[0] else 0.0
+        card = row[1] if row and row[1] else 0.0
+        commission = row[2] if row and row[2] else 0.0
+        total = row[3] if row and row[3] else 0.0
+        
+        # Отримати кількість поїздок та тривалість
+        async with db.execute(
+            """
+            SELECT 
+                COUNT(*) as trips_count,
+                SUM(COALESCE(duration_s, 0)) as total_duration_seconds
+            FROM orders
+            WHERE driver_id = ? 
+            AND status = 'completed'
+            AND DATE(created_at) = ?
+            """,
+            (driver_db_id, today)
+        ) as cur:
+            row = await cur.fetchone()
+        
+        trips_count = row[0] if row and row[0] else 0
+        total_duration_seconds = row[1] if row and row[1] else 0
+        hours_worked = total_duration_seconds / 3600.0 if total_duration_seconds else 0.0
+        
+        # Якщо немає даних про тривалість, орієнтовно 20 хв на поїздку
+        if hours_worked == 0 and trips_count > 0:
+            hours_worked = (trips_count * 20) / 60.0
+        
+        return {
+            'total': total,
+            'cash': cash,
+            'card': card,
+            'commission': commission,
+            'trips_count': trips_count,
+            'hours_worked': hours_worked
+        }
+
+
 async def get_driver_unpaid_commission(db_path: str, driver_tg_id: int) -> float:
     async with db_manager.connect(db_path) as db:
         async with db.execute("SELECT id FROM drivers WHERE tg_user_id = ? AND status = 'approved'", (driver_tg_id,)) as cur:

@@ -36,6 +36,12 @@ from app.utils.validation import validate_address, validate_comment
 from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
 from app.utils.order_timeout import start_order_timeout
 from app.handlers.car_classes import CAR_CLASSES, calculate_fare_with_class
+from app.utils.visual import (
+    format_process_message,
+    get_status_emoji,
+    get_status_text_with_emoji,
+    create_box,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -194,8 +200,9 @@ def create_router(config: AppConfig) -> Router:
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         # Показати інформацію з цінами
+        calc_message = format_process_message('calculating', 'Розрахунок маршруту')
         info_text = (
-            f"📏 <b>Розрахунок маршруту:</b>\n\n"
+            f"{calc_message}\n\n"
             f"📍 Відстань: <b>{distance_km:.1f} км</b>\n"
             f"⏱ Час в дорозі: <b>~{duration_minutes:.0f} хв</b>\n\n"
             f"💰 <b>Оберіть клас авто:</b>\n\n"
@@ -920,7 +927,8 @@ def create_router(config: AppConfig) -> Router:
         pickup = cleaned_address
         
         # Спроба геокодувати адресу в координати через Nominatim (безкоштовно!)
-        logger.info(f"🔍 Геокодую адресу через Nominatim: {pickup}")
+        geo_message = format_process_message('geocoding', f'Геокодую адресу: {pickup}')
+        logger.info(geo_message)
         coords = await geocode_address("", pickup)  # api_key не потрібен для Nominatim
         
         if coords:
@@ -1700,11 +1708,12 @@ def create_router(config: AppConfig) -> Router:
                         )
                         
                         # Відправити ОДНЕ повідомлення з ОБОМА клавіатурами (inline + reply)
+                        status_message = format_process_message('searching', 'Шукаємо водія...')
                         client_message = await message.answer(
-                            f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
-                            "🔍 Шукаємо водія...\n\n"
+                            f"{get_status_emoji('pending')} <b>Замовлення #{order_id} прийнято!</b>\n\n"
+                            f"{status_message}\n\n"
                             "Ваше замовлення надіслано водіям.\n"
-                            "Очікуйте підтвердження! ⏱",
+                            "Очікуйте підтвердження! ⏳",
                             reply_markup=kb_cancel
                         )
                         
@@ -2216,9 +2225,10 @@ def create_router(config: AppConfig) -> Router:
         
         current_fare = order.fare_amount if order.fare_amount else 100.0
         
+        status_message = format_process_message('searching', 'Шукаємо водія...')
         await call.bot.send_message(
             call.from_user.id,
-            f"🔍 <b>Шукаємо водія...</b>\n\n"
+            f"{status_message}\n\n"
             f"📍 Звідки: {order.pickup_address}\n"
             f"📍 Куди: {order.destination_address}\n\n"
             f"💰 Вартість: <b>{current_fare:.0f} грн</b>\n\n"

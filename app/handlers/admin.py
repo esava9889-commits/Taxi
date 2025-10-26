@@ -38,6 +38,11 @@ from app.storage.db import (
     unblock_user,
     add_rides_to_client,
 )
+from app.utils.visual import (
+    format_karma,
+    get_karma_emoji,
+    create_box,
+)
 
 
 CANCEL_TEXT = "Скасувати"
@@ -935,7 +940,7 @@ def create_router(config: AppConfig) -> Router:
             for client in active_clients[:20]:  # Показати перші 20
                 # Іконки для статусу
                 city_emoji = f"🏙 {client.city}" if client.city else "🌍 Місто не вказано"
-                karma_emoji = "⭐" if client.karma >= 80 else "⚠️" if client.karma >= 50 else "❌"
+                karma_emoji = get_karma_emoji(client.karma)
                 
                 text += (
                     f"👤 <b>{client.full_name}</b>\n"
@@ -1047,7 +1052,7 @@ def create_router(config: AppConfig) -> Router:
                 completed_orders = row[0] if row else 0
                 total_spent = row[1] if row and row[1] else 0
         
-        karma_emoji = "⭐" if client.karma >= 80 else "⚠️" if client.karma >= 50 else "❌"
+        karma_visual = format_karma(client.karma)
         status_emoji = "🚫" if client.is_blocked else "✅"
         
         text = (
@@ -1060,7 +1065,7 @@ def create_router(config: AppConfig) -> Router:
             f"<b>Мова:</b> {client.language}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"<b>СТАТИСТИКА:</b>\n\n"
-            f"{karma_emoji} <b>Карма:</b> {client.karma}/100\n"
+            f"{karma_visual}\n"
             f"📦 <b>Всього замовлень:</b> {client.total_orders}\n"
             f"✅ <b>Завершено:</b> {completed_orders}\n"
             f"❌ <b>Скасовано:</b> {client.cancelled_orders}\n"
@@ -1178,7 +1183,7 @@ def create_router(config: AppConfig) -> Router:
         
         # Показати коротку інформацію (як в списку)
         city_emoji = f"🏙 {client.city}" if client.city else "🌍 Місто не вказано"
-        karma_emoji = "⭐" if client.karma >= 80 else "🔶" if client.karma >= 50 else "🔻"
+        karma_emoji = get_karma_emoji(client.karma)
         status_emoji = "🔴 ЗАБЛОКОВАНИЙ" if client.is_blocked else "🟢 Активний"
         
         text = (

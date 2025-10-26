@@ -26,6 +26,7 @@ from app.storage.db import (
     start_order,
     complete_order,
     get_driver_earnings_today,
+    get_driver_detailed_earnings_today,
     get_active_order_for_driver,
     cancel_order_by_driver,
     get_driver_unpaid_commission,
@@ -41,6 +42,16 @@ from app.storage.db import (
 )
 from app.utils.rate_limiter import check_rate_limit, get_time_until_reset, format_time_remaining
 from app.utils.order_timeout import cancel_order_timeout
+from app.utils.visual import (
+    format_earnings_infographic,
+    format_driver_stats,
+    format_karma,
+    get_karma_emoji,
+    create_box,
+    get_status_emoji,
+    get_status_text_with_emoji,
+    format_process_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1339,16 +1350,19 @@ def create_router(config: AppConfig) -> Router:
             
             kb_client = InlineKeyboardMarkup(inline_keyboard=kb_client_buttons)
             
-            # СПРОЩЕНЕ повідомлення для клієнта
+            # СПРОЩЕНЕ повідомлення для клієнта з карточкою
+            driver_box = create_box(
+                "👤 ВАШ ВОДІЙ",
+                f"{driver.full_name}\n"
+                f"🚗 {driver.car_make} {driver.car_model}\n"
+                f"🔢 {driver.car_plate}\n"
+                f"📱 {driver.phone}\n"
+                f"✅ {driver.total_orders} успішних поїздок"
+            )
+            
             client_message = (
-                f"✅ <b>ВОДІЙ ПРИЙНЯВ ВАШЕ ЗАМОВЛЕННЯ!</b>\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"👤 <b>Водій:</b> {driver.full_name}\n"
-                f"🚗 <b>Автомобіль:</b> {driver.car_make} {driver.car_model}\n"
-                f"🔢 <b>Номер:</b> {driver.car_plate}\n"
-                f"📱 <b>Телефон:</b> <code>{driver.phone}</code>\n"
-                f"✅ <b>Успішних поїздок:</b> {driver.total_orders}\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{get_status_emoji('accepted')} <b>ВОДІЙ ПРИЙНЯВ ВАШЕ ЗАМОВЛЕННЯ!</b>\n\n"
+                f"{driver_box}\n\n"
                 f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
                 f"{payment_emoji} <b>Оплата:</b> {payment_text}\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -3059,23 +3073,40 @@ def create_router(config: AppConfig) -> Router:
     
     @router.callback_query(F.data == "work:earnings")
     async def show_work_earnings(call: CallbackQuery) -> None:
-        """Швидкий перегляд заробітку"""
+        """📊 Детальна інфографіка заробітку"""
         if not call.from_user:
             return
         
-        earnings_today, commission_today = await get_driver_earnings_today(
+        await call.answer()
+        
+        # Отримати детальну статистику
+        earnings_data = await get_driver_detailed_earnings_today(
             config.database_path, 
             call.from_user.id
         )
         
-        net_today = earnings_today - commission_today
+        # Створити інфографіку
+        infographic = format_earnings_infographic(
+            total=earnings_data['total'],
+            cash=earnings_data['cash'],
+            card=earnings_data['card'],
+            commission=earnings_data['commission'],
+            trips_count=earnings_data['trips_count'],
+            hours_worked=earnings_data['hours_worked']
+        )
         
-        await call.answer(
-            f"💰 Сьогодні:\n"
-            f"Заробіток: {earnings_today:.0f} грн\n"
-            f"Комісія: {commission_today:.0f} грн\n"
-            f"Чистий: {net_today:.0f} грн",
-            show_alert=True
+        # Додати кнопку оновлення
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Оновити", callback_data="work:earnings")],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="work:refresh")]
+            ]
+        )
+        
+        await call.bot.send_message(
+            call.from_user.id,
+            infographic,
+            reply_markup=kb
         )
     
     
@@ -3138,7 +3169,6 @@ def create_router(config: AppConfig) -> Router:
         
         # Карма (100 - ідеально, мінусується за відмови)
         karma = driver.karma if hasattr(driver, 'karma') else 100
-        karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
         
         # Статистика
         total_orders = driver.total_orders if hasattr(driver, 'total_orders') else 0
@@ -3147,6 +3177,9 @@ def create_router(config: AppConfig) -> Router:
         
         # Відсоток відмов
         reject_percent = (rejected_orders / total_orders * 100) if total_orders > 0 else 0
+        
+        # Візуальна карма з кольорами
+        karma_visual = format_karma(karma)
         
         # Перевірка геолокації
         from app.utils.location_tracker import check_driver_location_status
@@ -3204,8 +3237,8 @@ def create_router(config: AppConfig) -> Router:
                 f"🎨 Колір: {car_color or '❌ Не вказано'}\n"
                 f"💳 Картка: {driver.card_number or '❌ Не додана'}\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"{karma_emoji} <b>КАРМА:</b> {karma}/100\n"
-                f"{'🔴 Низька!' if karma < 50 else '🟡 Середня' if karma < 80 else '🟢 Відмінна!'}\n\n"
+                f"📊 <b>РЕЙТИНГ:</b>\n\n"
+                f"{karma_visual}\n\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"📊 <b>СТАТИСТИКА:</b>\n\n"
                 f"📦 Всього замовлень: {total_orders}\n"
