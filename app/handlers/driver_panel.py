@@ -1365,24 +1365,16 @@ def create_router(config: AppConfig) -> Router:
             
             kb_client = InlineKeyboardMarkup(inline_keyboard=kb_client_buttons)
             
-            # СПРОЩЕНЕ повідомлення для клієнта з карточкою
-            driver_box = create_box(
-                "👤 ВАШ ВОДІЙ",
-                f"{driver.full_name}\n"
-                f"🚗 {driver.car_make} {driver.car_model}\n"
-                f"🔢 {driver.car_plate}\n"
-                f"📱 {driver.phone}\n"
-                f"✅ {driver.total_orders} успішних поїздок"
-            )
-            
+            # Компактне повідомлення для клієнта
             client_message = (
-                f"{get_status_emoji('accepted')} <b>ВОДІЙ ПРИЙНЯВ ВАШЕ ЗАМОВЛЕННЯ!</b>\n\n"
-                f"{driver_box}\n\n"
-                f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
-                f"{payment_emoji} <b>Оплата:</b> {payment_text}\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"💡 <b>Водій вже їде до вас!</b>\n\n"
-                f"🚗 Гарної поїздки!"
+                f"✅ <b>ВОДІЙ ПРИЙНЯВ ЗАМОВЛЕННЯ!</b>\n\n"
+                f"👤 <b>{driver.full_name}</b>\n"
+                f"🚗 {driver.car_make} {driver.car_model} • {driver.car_plate}\n"
+                f"📱 {driver.phone}\n"
+                f"⭐ {driver.total_orders} успішних поїздок\n\n"
+                f"💰 <b>До сплати:</b> {int(order.fare_amount):.0f} грн {payment_emoji}\n\n"
+                f"📍 <b>Водій їде до вас!</b>\n"
+                f"Геолокація водія надіслана нижче ⬇️"
             )
             
             # Відправити повідомлення клієнту
@@ -3127,16 +3119,6 @@ def create_router(config: AppConfig) -> Router:
         
         # Відобразити інформацію про замовлення з водієм
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
-        payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
-        
-        driver_box = create_box(
-            "👤 ВАШ ВОДІЙ",
-            f"{driver.full_name}\n"
-            f"🚗 {driver.car_make} {driver.car_model}\n"
-            f"🔢 {driver.car_plate}\n"
-            f"📱 {driver.phone}\n"
-            f"✅ {driver.total_orders} успішних поїздок"
-        )
         
         # Кнопки для клієнта
         kb_client_buttons = []
@@ -3167,14 +3149,16 @@ def create_router(config: AppConfig) -> Router:
         
         kb_client = InlineKeyboardMarkup(inline_keyboard=kb_client_buttons)
         
+        # Компактне повідомлення
         client_message = (
-            f"{get_status_emoji('accepted')} <b>ВОДІЙ ПРИЙНЯВ ВАШЕ ЗАМОВЛЕННЯ!</b>\n\n"
-            f"{driver_box}\n\n"
-            f"💰 <b>Вартість:</b> {int(order.fare_amount):.0f} грн\n"
-            f"{payment_emoji} <b>Оплата:</b> {payment_text}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💡 <b>Водій вже їде до вас!</b>\n\n"
-            f"🚗 Гарної поїздки!"
+            f"✅ <b>ВОДІЙ ПРИЙНЯВ ЗАМОВЛЕННЯ!</b>\n\n"
+            f"👤 <b>{driver.full_name}</b>\n"
+            f"🚗 {driver.car_make} {driver.car_model} • {driver.car_plate}\n"
+            f"📱 {driver.phone}\n"
+            f"⭐ {driver.total_orders} успішних поїздок\n\n"
+            f"💰 <b>До сплати:</b> {int(order.fare_amount):.0f} грн {payment_emoji}\n\n"
+            f"📍 <b>Водій їде до вас!</b>\n"
+            f"Геолокація водія надіслана нижче ⬇️"
         )
         
         await call.message.edit_text(client_message, reply_markup=kb_client)
