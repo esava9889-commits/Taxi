@@ -624,6 +624,30 @@ async def init_postgres_db(database_url: str) -> None:
             )
         """)
         
+        # Pricing settings (налаштування ціноутворення)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pricing_settings (
+                id SERIAL PRIMARY KEY,
+                economy_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                standard_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.3,
+                comfort_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.6,
+                business_multiplier DOUBLE PRECISION NOT NULL DEFAULT 2.0,
+                night_percent DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+                peak_hours_percent DOUBLE PRECISION NOT NULL DEFAULT 30.0,
+                weekend_percent DOUBLE PRECISION NOT NULL DEFAULT 20.0,
+                monday_morning_percent DOUBLE PRECISION NOT NULL DEFAULT 15.0,
+                weather_percent DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                demand_very_high_percent DOUBLE PRECISION NOT NULL DEFAULT 40.0,
+                demand_high_percent DOUBLE PRECISION NOT NULL DEFAULT 25.0,
+                demand_medium_percent DOUBLE PRECISION NOT NULL DEFAULT 15.0,
+                demand_low_discount_percent DOUBLE PRECISION NOT NULL DEFAULT 10.0,
+                no_drivers_percent DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+            )
+        """)
+        logger.info("✅ Таблиця pricing_settings створена")
+        
         # App settings (налаштування додатку)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (

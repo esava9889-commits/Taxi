@@ -71,7 +71,21 @@ def get_car_class_multiplier(car_class: str) -> float:
     return CAR_CLASSES[car_class]["multiplier"]
 
 
-def calculate_fare_with_class(base_fare: float, car_class: str) -> float:
-    """Розрахувати вартість з урахуванням класу авто"""
-    multiplier = get_car_class_multiplier(car_class)
+def calculate_fare_with_class(base_fare: float, car_class: str, custom_multipliers: dict = None) -> float:
+    """
+    Розрахувати вартість з урахуванням класу авто
+    
+    Args:
+        base_fare: Базова вартість
+        car_class: Клас авто (economy, standard, comfort, business)
+        custom_multipliers: Опціональні кастомні множники з БД
+    
+    Returns:
+        Вартість з урахуванням класу
+    """
+    if custom_multipliers and car_class in custom_multipliers:
+        multiplier = custom_multipliers[car_class]
+    else:
+        multiplier = get_car_class_multiplier(car_class)
+    
     return base_fare * multiplier

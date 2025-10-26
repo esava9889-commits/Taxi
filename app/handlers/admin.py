@@ -38,12 +38,16 @@ from app.storage.db import (
     unblock_user,
     add_rides_to_client,
     get_driver_unpaid_commission,
+    PricingSettings,
+    get_pricing_settings,
+    upsert_pricing_settings,
 )
 from app.utils.visual import (
     format_karma,
     get_karma_emoji,
     create_box,
 )
+from app.handlers.pricing_settings_handlers import create_pricing_handlers
 
 
 CANCEL_TEXT = "Скасувати"
@@ -85,6 +89,24 @@ class SettingsStates(StatesGroup):
     night_tariff = State()  # Введення % нічного тарифу
     weather = State()  # Введення % погоди
     admin_card = State()  # Введення номера картки для комісії
+    
+    # Класи авто
+    economy_mult = State()
+    standard_mult = State()
+    comfort_mult = State()
+    business_mult = State()
+    
+    # Часові націнки
+    peak_hours = State()
+    weekend = State()
+    monday_morning = State()
+    
+    # Попит
+    no_drivers = State()
+    demand_very_high = State()
+    demand_high = State()
+    demand_medium = State()
+    demand_low = State()
 
 
 class BroadcastStates(StatesGroup):
@@ -728,45 +750,51 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
-        # Отримати поточні налаштування з БД
-        tariff = await get_latest_tariff(config.database_path)
-        
-        if not tariff:
-            await message.answer(
-                "❌ Тарифи не налаштовані. Спочатку створіть тариф через '💰 Тарифи'.",
-                reply_markup=admin_menu_keyboard()
-            )
-            return
-        
-        night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
-        weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
+        # Отримати всі налаштування ціноутворення з БД
+        pricing = await get_pricing_settings(config.database_path)
         
         # Отримати номер картки для комісії
         admin_card = await get_admin_payment_card()
         
         text = (
-            "⚙️ <b>НАЛАШТУВАННЯ</b>\n\n"
-            "<b>📊 НАЦІНКИ:</b>\n\n"
-            f"🌙 <b>Нічний тариф:</b> +{night_percent:.0f}%\n"
-            f"   (23:00 - 06:00)\n\n"
-            f"🌧️ <b>Погодні умови:</b> +{weather_percent:.0f}%\n"
-            f"   (адмін увімкнув вручну)\n\n"
+            "⚙️ <b>НАЛАШТУВАННЯ ЦІНОУТВОРЕННЯ</b>\n\n"
+            
+            "🚗 <b>КЛАСИ АВТО (множники):</b>\n"
+            f"• Економ: x{pricing.economy_multiplier:.2f}\n"
+            f"• Стандарт: x{pricing.standard_multiplier:.2f}\n"
+            f"• Комфорт: x{pricing.comfort_multiplier:.2f}\n"
+            f"• Бізнес: x{pricing.business_multiplier:.2f}\n\n"
+            
+            "⏰ <b>ЧАСОВІ НАЦІНКИ:</b>\n"
+            f"• 🌙 Нічний (23:00-06:00): +{pricing.night_percent:.0f}%\n"
+            f"• 🔥 Піковий час (7-9, 17-19): +{pricing.peak_hours_percent:.0f}%\n"
+            f"• 🎉 Вихідні (Пт-Нд 18-23): +{pricing.weekend_percent:.0f}%\n"
+            f"• 📅 Понеділок (7-10): +{pricing.monday_morning_percent:.0f}%\n\n"
+            
+            "🌧️ <b>ПОГОДА:</b>\n"
+            f"• Погодні умови: +{pricing.weather_percent:.0f}%\n\n"
+            
+            "📊 <b>ПОПИТ:</b>\n"
+            f"• Немає водіїв: +{pricing.no_drivers_percent:.0f}%\n"
+            f"• Дуже високий (>3:1): +{pricing.demand_very_high_percent:.0f}%\n"
+            f"• Високий (>2:1): +{pricing.demand_high_percent:.0f}%\n"
+            f"• Середній (>1.5:1): +{pricing.demand_medium_percent:.0f}%\n"
+            f"• Низький (<0.3:1): -{pricing.demand_low_discount_percent:.0f}%\n\n"
+            
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "<b>💳 ПЛАТІЖНІ РЕКВІЗИТИ:</b>\n\n"
-            f"💳 <b>Картка для комісії:</b>\n"
-            f"   <code>{admin_card}</code>\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "💡 <b>Про націнки:</b>\n"
-            "• Додаються до базової ціни\n"
-            "• Комбінуються (23:00 + дощ = +70%)\n\n"
-            "Оберіть що налаштувати:"
+            "💳 <b>ПЛАТІЖНІ РЕКВІЗИТИ:</b>\n"
+            f"• Картка: <code>{admin_card}</code>\n\n"
+            
+            "Оберіть категорію для налаштування:"
         )
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🌙 Нічний тариф", callback_data="settings:night")],
-                [InlineKeyboardButton(text="🌧️ Погодні умови", callback_data="settings:weather")],
-                [InlineKeyboardButton(text="💳 Картка для комісії", callback_data="settings:admin_card")],
+                [InlineKeyboardButton(text="🚗 Класи авто", callback_data="settings:car_classes")],
+                [InlineKeyboardButton(text="⏰ Часові націнки", callback_data="settings:time_surges")],
+                [InlineKeyboardButton(text="🌧️ Погода", callback_data="settings:weather")],
+                [InlineKeyboardButton(text="📊 Попит", callback_data="settings:demand")],
+                [InlineKeyboardButton(text="💳 Картка", callback_data="settings:admin_card")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="settings:back")]
             ]
         )
@@ -870,13 +898,12 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ Введіть коректне число від 0 до 200")
             return
         
-        # Отримати поточну погоду
-        tariff = await get_latest_tariff(config.database_path)
-        weather_percent = tariff.weather_percent if tariff and hasattr(tariff, 'weather_percent') else 0.0
+        # Отримати поточні налаштування
+        pricing = await get_pricing_settings(config.database_path)
+        pricing.night_percent = night_percent
         
-        # Оновити націнки
-        from app.storage.db import update_tariff_multipliers
-        success = await update_tariff_multipliers(config.database_path, night_percent, weather_percent)
+        # Зберегти
+        success = await upsert_pricing_settings(config.database_path, pricing)
         
         if success:
             await state.clear()
@@ -921,13 +948,12 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ Введіть коректне число від 0 до 200")
             return
         
-        # Отримати поточний нічний тариф
-        tariff = await get_latest_tariff(config.database_path)
-        night_percent = tariff.night_tariff_percent if tariff and hasattr(tariff, 'night_tariff_percent') else 50.0
+        # Отримати поточні налаштування
+        pricing = await get_pricing_settings(config.database_path)
+        pricing.weather_percent = weather_percent
         
-        # Оновити націнки
-        from app.storage.db import update_tariff_multipliers
-        success = await update_tariff_multipliers(config.database_path, night_percent, weather_percent)
+        # Зберегти
+        success = await upsert_pricing_settings(config.database_path, pricing)
         
         if success:
             await state.clear()
@@ -1807,5 +1833,11 @@ def create_router(config: AppConfig) -> Router:
         
         await call.answer("✅ Оновлено")
         await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    
+    # Додати обробники налаштувань ціноутворення
+    create_pricing_handlers(
+        router, config, is_admin, SettingsStates, 
+        get_pricing_settings, upsert_pricing_settings, PricingSettings
+    )
     
     return router

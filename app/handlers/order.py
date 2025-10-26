@@ -160,19 +160,31 @@ def create_router(config: AppConfig) -> Router:
         car_class_prices = {}
         car_class_explanations = {}
         from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
-        from app.storage.db import get_online_drivers_count
+        from app.storage.db import get_online_drivers_count, get_pricing_settings
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
         pending_orders_estimate = 5
         
-        # Отримати налаштування множників з БД
-        night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
-        weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
+        # Отримати всі налаштування ціноутворення з БД
+        pricing = await get_pricing_settings(config.database_path)
+        
+        # Створити словник множників класів для передачі в calculate_fare_with_class
+        custom_multipliers = {
+            "economy": pricing.economy_multiplier,
+            "standard": pricing.standard_multiplier,
+            "comfort": pricing.comfort_multiplier,
+            "business": pricing.business_multiplier
+        }
         
         for class_key in ["economy", "standard", "comfort", "business"]:
-            class_fare = calculate_fare_with_class(base_fare, class_key)
+            class_fare = calculate_fare_with_class(base_fare, class_key, custom_multipliers)
             final_price, explanation, total_mult = await calculate_dynamic_price(
-                class_fare, city, online_count, pending_orders_estimate, night_percent, weather_percent
+                class_fare, city, online_count, pending_orders_estimate,
+                pricing.night_percent, pricing.weather_percent,
+                pricing.peak_hours_percent, pricing.weekend_percent,
+                pricing.monday_morning_percent, pricing.no_drivers_percent,
+                pricing.demand_very_high_percent, pricing.demand_high_percent,
+                pricing.demand_medium_percent, pricing.demand_low_discount_percent
             )
             car_class_prices[class_key] = round(final_price, 2)
             emoji = get_surge_emoji(total_mult)
@@ -798,17 +810,28 @@ def create_router(config: AppConfig) -> Router:
         if base_fare < tariff.minimum:
             base_fare = tariff.minimum
         from app.handlers.dynamic_pricing import calculate_dynamic_price
-        from app.storage.db import get_online_drivers_count
+        from app.storage.db import get_online_drivers_count, get_pricing_settings
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
         
-        # Отримати налаштування множників з БД
-        night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
-        weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
+        # Отримати всі налаштування ціноутворення з БД
+        pricing = await get_pricing_settings(config.database_path)
         
-        class_fare = calculate_fare_with_class(base_fare, car_class)
+        custom_multipliers = {
+            "economy": pricing.economy_multiplier,
+            "standard": pricing.standard_multiplier,
+            "comfort": pricing.comfort_multiplier,
+            "business": pricing.business_multiplier
+        }
+        
+        class_fare = calculate_fare_with_class(base_fare, car_class, custom_multipliers)
         final_price, explanation, total_mult = await calculate_dynamic_price(
-            class_fare, city, online_count, 5, night_percent, weather_percent
+            class_fare, city, online_count, 5,
+            pricing.night_percent, pricing.weather_percent,
+            pricing.peak_hours_percent, pricing.weekend_percent,
+            pricing.monday_morning_percent, pricing.no_drivers_percent,
+            pricing.demand_very_high_percent, pricing.demand_high_percent,
+            pricing.demand_medium_percent, pricing.demand_low_discount_percent
         )
         await state.update_data(estimated_fare=final_price, fare_explanation=explanation)
 
@@ -1476,12 +1499,22 @@ def create_router(config: AppConfig) -> Router:
                         
                         # Застосувати клас авто (ТАК ЯК ДЛЯ КЛІЄНТА!)
                         from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
+                        from app.storage.db import get_online_drivers_count, get_pricing_settings
+                        
+                        # Отримати налаштування ціноутворення
+                        pricing = await get_pricing_settings(config.database_path)
+                        custom_multipliers = {
+                            "economy": pricing.economy_multiplier,
+                            "standard": pricing.standard_multiplier,
+                            "comfort": pricing.comfort_multiplier,
+                            "business": pricing.business_multiplier
+                        }
+                        
                         car_class = data.get('car_class', 'economy')
-                        class_fare = calculate_fare_with_class(base_fare, car_class)
+                        class_fare = calculate_fare_with_class(base_fare, car_class, custom_multipliers)
                         
                         # Динамічне ціноутворення (ТАК ЯК ДЛЯ КЛІЄНТА!)
                         from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
-                        from app.storage.db import get_online_drivers_count
                         
                         city = client_city or data.get('city', 'Київ')
                         online_count = await get_online_drivers_count(config.database_path, city)

@@ -2548,3 +2548,172 @@ async def use_bonus_ride(db_path: str, user_id: int) -> bool:
         except Exception as e:
             logger.error(f"❌ Помилка використання бонусної поїздки: {e}")
             return False
+
+# --- Pricing Settings (Налаштування ціноутворення) ---
+
+@dataclass
+class PricingSettings:
+    """Налаштування всіх множників для ціноутворення"""
+    id: Optional[int] = None
+    
+    # Класи авто (множники)
+    economy_multiplier: float = 1.0
+    standard_multiplier: float = 1.3
+    comfort_multiplier: float = 1.6
+    business_multiplier: float = 2.0
+    
+    # Часові націнки
+    night_percent: float = 50.0  # 23:00-06:00
+    peak_hours_percent: float = 30.0  # 7-9, 17-19
+    weekend_percent: float = 20.0  # Пт-Нд вечір 18-23
+    monday_morning_percent: float = 15.0  # Пн 7-10
+    
+    # Погода
+    weather_percent: float = 0.0
+    
+    # Попит (множники при різному співвідношенні замовлень/водіїв)
+    demand_very_high_percent: float = 40.0  # ratio > 3
+    demand_high_percent: float = 25.0  # ratio > 2
+    demand_medium_percent: float = 15.0  # ratio > 1.5
+    demand_low_discount_percent: float = 10.0  # ratio < 0.3 (знижка)
+    
+    # Інші параметри
+    no_drivers_percent: float = 50.0  # Коли немає водіїв взагалі
+    
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+async def get_pricing_settings(db_path: str) -> PricingSettings:
+    """Отримати поточні налаштування ціноутворення"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            async with db.execute(
+                """
+                SELECT id, economy_multiplier, standard_multiplier, comfort_multiplier, business_multiplier,
+                       night_percent, peak_hours_percent, weekend_percent, monday_morning_percent,
+                       weather_percent, demand_very_high_percent, demand_high_percent, 
+                       demand_medium_percent, demand_low_discount_percent, no_drivers_percent,
+                       created_at, updated_at
+                FROM pricing_settings ORDER BY id DESC LIMIT 1
+                """
+            ) as cursor:
+                row = await cursor.fetchone()
+            
+            if row:
+                return PricingSettings(
+                    id=row[0],
+                    economy_multiplier=row[1],
+                    standard_multiplier=row[2],
+                    comfort_multiplier=row[3],
+                    business_multiplier=row[4],
+                    night_percent=row[5],
+                    peak_hours_percent=row[6],
+                    weekend_percent=row[7],
+                    monday_morning_percent=row[8],
+                    weather_percent=row[9],
+                    demand_very_high_percent=row[10],
+                    demand_high_percent=row[11],
+                    demand_medium_percent=row[12],
+                    demand_low_discount_percent=row[13],
+                    no_drivers_percent=row[14],
+                    created_at=_parse_datetime(row[15]) if row[15] else None,
+                    updated_at=_parse_datetime(row[16]) if row[16] else None,
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка читання pricing_settings: {e}")
+    
+    # Повернути за замовчуванням
+    return PricingSettings()
+
+
+async def upsert_pricing_settings(db_path: str, settings: PricingSettings) -> bool:
+    """Створити або оновити налаштування ціноутворення"""
+    async with db_manager.connect(db_path) as db:
+        try:
+            now = datetime.now(timezone.utc)
+            
+            # Перевірити чи є запис
+            async with db.execute("SELECT id FROM pricing_settings LIMIT 1") as cursor:
+                existing = await cursor.fetchone()
+            
+            if existing:
+                # Оновити
+                await db.execute(
+                    """
+                    UPDATE pricing_settings SET
+                        economy_multiplier = ?,
+                        standard_multiplier = ?,
+                        comfort_multiplier = ?,
+                        business_multiplier = ?,
+                        night_percent = ?,
+                        peak_hours_percent = ?,
+                        weekend_percent = ?,
+                        monday_morning_percent = ?,
+                        weather_percent = ?,
+                        demand_very_high_percent = ?,
+                        demand_high_percent = ?,
+                        demand_medium_percent = ?,
+                        demand_low_discount_percent = ?,
+                        no_drivers_percent = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        settings.economy_multiplier,
+                        settings.standard_multiplier,
+                        settings.comfort_multiplier,
+                        settings.business_multiplier,
+                        settings.night_percent,
+                        settings.peak_hours_percent,
+                        settings.weekend_percent,
+                        settings.monday_morning_percent,
+                        settings.weather_percent,
+                        settings.demand_very_high_percent,
+                        settings.demand_high_percent,
+                        settings.demand_medium_percent,
+                        settings.demand_low_discount_percent,
+                        settings.no_drivers_percent,
+                        now,
+                        existing[0]
+                    )
+                )
+            else:
+                # Створити новий
+                await db.execute(
+                    """
+                    INSERT INTO pricing_settings (
+                        economy_multiplier, standard_multiplier, comfort_multiplier, business_multiplier,
+                        night_percent, peak_hours_percent, weekend_percent, monday_morning_percent,
+                        weather_percent, demand_very_high_percent, demand_high_percent,
+                        demand_medium_percent, demand_low_discount_percent, no_drivers_percent,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        settings.economy_multiplier,
+                        settings.standard_multiplier,
+                        settings.comfort_multiplier,
+                        settings.business_multiplier,
+                        settings.night_percent,
+                        settings.peak_hours_percent,
+                        settings.weekend_percent,
+                        settings.monday_morning_percent,
+                        settings.weather_percent,
+                        settings.demand_very_high_percent,
+                        settings.demand_high_percent,
+                        settings.demand_medium_percent,
+                        settings.demand_low_discount_percent,
+                        settings.no_drivers_percent,
+                        now,
+                        now
+                    )
+                )
+            
+            await db.commit()
+            logger.info("✅ Налаштування ціноутворення збережено")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка збереження pricing_settings: {e}")
+            return False
