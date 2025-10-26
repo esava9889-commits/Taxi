@@ -1031,6 +1031,10 @@ def create_router(config: AppConfig) -> Router:
         # Відправити повідомлення всім адмінам
         admin_ids = config.bot.admin_ids
         
+        # Отримати картку адміна з БД (налаштування)
+        from app.handlers.admin import get_admin_payment_card
+        admin_payment_card = await get_admin_payment_card()
+        
         for admin_id in admin_ids:
             try:
                 # Кнопки для адміна
@@ -1053,7 +1057,7 @@ def create_router(config: AppConfig) -> Router:
                         f"🚗 Авто: {driver.car_model} ({driver.car_plate})\n"
                         f"💳 Сума комісії: <b>{unpaid:.2f} грн</b>\n\n"
                         f"📋 Реквізити (куди мав переказати):\n"
-                        f"💳 {config.payment_card or '4149499901234567'}\n\n"
+                        f"💳 <code>{admin_payment_card}</code>\n\n"
                         f"⚠️ <b>Перевірте надходження коштів</b>\n"
                         f"та підтвердіть або відхиліть платіж:"
                     ),
