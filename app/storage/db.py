@@ -1404,7 +1404,8 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority,
+                   karma, total_orders, rejected_orders
             FROM drivers WHERE id = ?
             """,
             (driver_id,),
@@ -1431,8 +1432,11 @@ async def get_driver_by_id(db_path: str, driver_id: int) -> Optional[Driver]:
         last_seen_at=(_parse_datetime(row[15]) if row[15] else None),
         car_class=row[16] if row[16] else "economy",
         card_number=row[17],
-        car_color=row[18] if len(row) > 18 else None,  # ← ДОДАНО з fallback
+        car_color=row[18] if len(row) > 18 else None,
         priority=(row[19] if len(row) > 19 else 0),
+        karma=(row[20] if len(row) > 20 else 100),
+        total_orders=(row[21] if len(row) > 21 else 0),
+        rejected_orders=(row[22] if len(row) > 22 else 0),
     )
 
 
@@ -1492,7 +1496,8 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         async with db.execute(
             """
             SELECT id, tg_user_id, full_name, phone, car_make, car_model, car_plate, license_photo_file_id, status,
-                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority
+                   created_at, updated_at, city, online, last_lat, last_lon, last_seen_at, car_class, card_number, car_color, priority,
+                   karma, total_orders, rejected_orders
             FROM drivers WHERE tg_user_id = ? ORDER BY id DESC LIMIT 1
             """,
             (tg_user_id,),
@@ -1519,8 +1524,11 @@ async def get_driver_by_tg_user_id(db_path: str, tg_user_id: int) -> Optional[Dr
         last_seen_at=(_parse_datetime(row[15]) if row[15] else None),
         car_class=row[16] if row[16] else "economy",
         card_number=row[17],
-        car_color=row[18] if len(row) > 18 else None,  # ← ДОДАНО з fallback
+        car_color=row[18] if len(row) > 18 else None,
         priority=(row[19] if len(row) > 19 else 0),
+        karma=(row[20] if len(row) > 20 else 100),
+        total_orders=(row[21] if len(row) > 21 else 0),
+        rejected_orders=(row[22] if len(row) > 22 else 0),
     )
 
 

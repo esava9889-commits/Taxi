@@ -73,19 +73,12 @@ async def notify_client_trip_started(
     destination: str
 ) -> None:
     """Сповіщення: Поїздка розпочалась"""
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🆘 SOS", callback_data="sos:confirm")]
-        ]
-    )
-    
     try:
         await bot.send_message(
             client_id,
             f"🚗 <b>Поїздка розпочалась!</b>\n\n"
             f"📍 Їдемо: {destination}\n\n"
-            f"Приємної подорожі! ✨",
-            reply_markup=kb
+            f"Приємної подорожі! ✨"
         )
     except Exception as e:
         logger.error(f"Failed to notify client {client_id}: {e}")
