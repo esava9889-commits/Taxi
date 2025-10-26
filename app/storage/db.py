@@ -1663,7 +1663,7 @@ async def complete_order(
             """
             UPDATE orders
             SET status = 'completed', finished_at = ?, fare_amount = ?, distance_m = ?, duration_s = ?, commission = ?
-            WHERE id = ? AND driver_id = ? AND status = 'in_progress'
+            WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'in_progress')
             """,
             (now, fare_amount, distance_m, duration_s, commission, order_id, driver_id),
         )
