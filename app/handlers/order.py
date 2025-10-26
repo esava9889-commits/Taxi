@@ -1681,23 +1681,7 @@ def create_router(config: AppConfig) -> Router:
                         
                         is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
                         
-                        # Inline кнопка для скасування замовлення
-                        kb_cancel = InlineKeyboardMarkup(
-                            inline_keyboard=[
-                                [InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data=f"cancel_waiting_order:{order_id}")]
-                            ]
-                        )
-                        
-                        # Відправити повідомлення з inline кнопкою скасування
-                        client_message = await message.answer(
-                            f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
-                            "🔍 Шукаємо водія...\n\n"
-                            "Ваше замовлення надіслано водіям.\n"
-                            "Очікуйте підтвердження! ⏱",
-                            reply_markup=kb_cancel
-                        )
-                        
-                        # ⭐ Відправити Reply клавіатуру окремим повідомленням
+                        # ⭐ СПОЧАТКУ відправити Reply клавіатуру
                         from app.storage.db import get_driver_by_tg_user_id
                         driver = await get_driver_by_tg_user_id(config.database_path, user_id)
                         is_driver = driver is not None and driver.status == "approved"
@@ -1708,8 +1692,26 @@ def create_router(config: AppConfig) -> Router:
                             is_admin=is_admin
                         )
                         
-                        await message.answer(
-                            "📱 Оберіть дію:",
+                        # Inline кнопка для скасування замовлення
+                        kb_cancel = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data=f"cancel_waiting_order:{order_id}")]
+                            ]
+                        )
+                        
+                        # Відправити ОДНЕ повідомлення з ОБОМА клавіатурами (inline + reply)
+                        client_message = await message.answer(
+                            f"✅ <b>Замовлення #{order_id} прийнято!</b>\n\n"
+                            "🔍 Шукаємо водія...\n\n"
+                            "Ваше замовлення надіслано водіям.\n"
+                            "Очікуйте підтвердження! ⏱",
+                            reply_markup=kb_cancel
+                        )
+                        
+                        # Відправити клавіатуру окремим повідомленням (для надійності)
+                        await message.bot.send_message(
+                            chat_id=user_id,
+                            text="🚖 Можете продовжувати користуватися ботом:",
                             reply_markup=kb_reply
                         )
                         
