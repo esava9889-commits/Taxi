@@ -958,6 +958,17 @@ def create_router(config: AppConfig) -> Router:
         unpaid = await get_driver_unpaid_commission(config.database_path, message.from_user.id)
         
         if unpaid > 0:
+            # Отримати номер картки адміна з БД
+            from app.storage.db_connection import db_manager
+            admin_card = "Не вказано"
+            try:
+                async with db_manager.connect(config.database_path) as db:
+                    row = await db.fetchone("SELECT value FROM app_settings WHERE key = 'admin_payment_card'")
+                    if row:
+                        admin_card = row[0]
+            except Exception as e:
+                logger.error(f"Помилка отримання номера картки: {e}")
+            
             # Показати інлайн кнопку для підтвердження оплати
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
@@ -968,7 +979,7 @@ def create_router(config: AppConfig) -> Router:
             await message.answer(
                 f"💳 <b>Комісія до сплати:</b> {unpaid:.2f} грн\n\n"
                 f"📋 <b>Реквізити для оплати:</b>\n"
-                f"💳 Картка: <code>{config.payment_card or '4149499901234567'}</code>\n\n"
+                f"💳 Картка: <code>{admin_card}</code>\n\n"
                 f"⚠️ <b>УВАГА:</b>\n"
                 f"1. Переведіть комісію на вказану картку\n"
                 f"2. Тільки після переказу натисніть кнопку нижче\n"

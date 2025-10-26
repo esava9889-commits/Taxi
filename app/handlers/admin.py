@@ -83,6 +83,7 @@ class SettingsStates(StatesGroup):
     select_option = State()  # Вибір що налаштувати
     night_tariff = State()  # Введення % нічного тарифу
     weather = State()  # Введення % погоди
+    admin_card = State()  # Введення номера картки для комісії
 
 
 class BroadcastStates(StatesGroup):
@@ -114,6 +115,24 @@ def create_router(config: AppConfig) -> Router:
                 "INSERT INTO app_settings(key,value) VALUES('priority_mode', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 ("1" if enabled else "0",)
+            )
+            await db.commit()
+    
+    async def get_admin_payment_card() -> str:
+        """Отримати номер картки адміна для сплати комісії"""
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            row = await db.fetchone("SELECT value FROM app_settings WHERE key = 'admin_payment_card'")
+            return row[0] if row else "Не вказано"
+    
+    async def set_admin_payment_card(card_number: str) -> None:
+        """Встановити номер картки адміна для сплати комісії"""
+        from app.storage.db_connection import db_manager
+        async with db_manager.connect(config.database_path) as db:
+            await db.execute(
+                "INSERT INTO app_settings(key,value) VALUES('admin_payment_card', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (card_number,)
             )
             await db.commit()
 
@@ -713,19 +732,24 @@ def create_router(config: AppConfig) -> Router:
         night_percent = tariff.night_tariff_percent if hasattr(tariff, 'night_tariff_percent') else 50.0
         weather_percent = tariff.weather_percent if hasattr(tariff, 'weather_percent') else 0.0
         
+        # Отримати номер картки для комісії
+        admin_card = await get_admin_payment_card()
+        
         text = (
-            "⚙️ <b>НАЛАШТУВАННЯ НАЦІНОК</b>\n\n"
-            "<b>Поточні значення:</b>\n\n"
+            "⚙️ <b>НАЛАШТУВАННЯ</b>\n\n"
+            "<b>📊 НАЦІНКИ:</b>\n\n"
             f"🌙 <b>Нічний тариф:</b> +{night_percent:.0f}%\n"
             f"   (23:00 - 06:00)\n\n"
             f"🌧️ <b>Погодні умови:</b> +{weather_percent:.0f}%\n"
             f"   (адмін увімкнув вручну)\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "💡 <b>Як це працює:</b>\n\n"
-            "• При замовленні таксі ці націнки додаються до базової ціни\n"
-            "• Клієнт бачить збільшену суму під час замовлення\n"
-            "• Водії бачать збільшену суму в групі\n"
-            "• Націнки комбінуються (наприклад: 23:00 + дощ = +70%)\n\n"
+            "<b>💳 ПЛАТІЖНІ РЕКВІЗИТИ:</b>\n\n"
+            f"💳 <b>Картка для комісії:</b>\n"
+            f"   <code>{admin_card}</code>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "💡 <b>Про націнки:</b>\n"
+            "• Додаються до базової ціни\n"
+            "• Комбінуються (23:00 + дощ = +70%)\n\n"
             "Оберіть що налаштувати:"
         )
         
@@ -733,6 +757,7 @@ def create_router(config: AppConfig) -> Router:
             inline_keyboard=[
                 [InlineKeyboardButton(text="🌙 Нічний тариф", callback_data="settings:night")],
                 [InlineKeyboardButton(text="🌧️ Погодні умови", callback_data="settings:weather")],
+                [InlineKeyboardButton(text="💳 Картка для комісії", callback_data="settings:admin_card")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="settings:back")]
             ]
         )
@@ -786,6 +811,30 @@ def create_router(config: AppConfig) -> Router:
             f"• <code>0</code> → вимкнути\n\n"
             f"💡 Увімкніть вручну при дощі, снігу, тощо.\n"
             f"Не забудьте вимкнути коли погода покращає!"
+        )
+    
+    @router.callback_query(F.data == "settings:admin_card")
+    async def settings_admin_card(call: CallbackQuery, state: FSMContext) -> None:
+        """Налаштувати номер картки для комісії"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            return
+        
+        await call.answer()
+        await state.set_state(SettingsStates.admin_card)
+        
+        current_card = await get_admin_payment_card()
+        
+        await call.message.edit_text(
+            f"💳 <b>КАРТКА ДЛЯ СПЛАТИ КОМІСІЇ</b>\n\n"
+            f"Поточний номер:\n"
+            f"<code>{current_card}</code>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📝 Введіть новий номер картки:\n\n"
+            f"Наприклад:\n"
+            f"• <code>4149499012345678</code>\n"
+            f"• <code>5168 7422 1234 5678</code>\n\n"
+            f"💡 <b>Цей номер будуть бачити водії</b>\n"
+            f"при оплаті комісії!"
         )
     
     @router.callback_query(F.data == "settings:back")
@@ -911,6 +960,40 @@ def create_router(config: AppConfig) -> Router:
             )
         else:
             await message.answer("❌ Помилка оновлення", reply_markup=admin_menu_keyboard())
+    
+    @router.message(SettingsStates.admin_card)
+    async def save_admin_card(message: Message, state: FSMContext) -> None:
+        """Зберегти номер картки для комісії"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        card_number = message.text.strip()
+        
+        # Валідація номера картки (дозволити цифри та пробіли)
+        import re
+        clean_card = re.sub(r'[^\d]', '', card_number)
+        
+        if len(clean_card) < 13 or len(clean_card) > 19:
+            await message.answer(
+                "❌ Невірний формат номера картки!\n\n"
+                "Номер картки має містити від 13 до 19 цифр.\n"
+                "Спробуйте ще раз:"
+            )
+            return
+        
+        # Зберегти номер картки
+        await set_admin_payment_card(card_number)
+        await state.clear()
+        
+        await message.answer(
+            f"✅ <b>Номер картки оновлено!</b>\n\n"
+            f"Новий номер:\n"
+            f"<code>{card_number}</code>\n\n"
+            f"💡 Водії побачать цей номер при оплаті комісії.",
+            reply_markup=admin_menu_keyboard()
+        )
+        
+        logger.info(f"✅ Адмін #{message.from_user.id} оновив номер картки для комісії")
     
     @router.message(F.text == "👤 Клієнти")
     async def show_clients_list(message: Message) -> None:
