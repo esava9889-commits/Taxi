@@ -62,18 +62,26 @@ class LiveLocationManager:
             logger.debug(f"📍 Order #{order_id} not in active locations, nothing to stop")
             return
         
-        location_data = cls.active_locations[order_id]
-        task = location_data.get("task")
-        
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        
-        del cls.active_locations[order_id]
-        logger.info(f"📍 Live location tracking stopped for order #{order_id}")
+        try:
+            location_data = cls.active_locations.get(order_id)
+            if not location_data:
+                logger.debug(f"📍 Order #{order_id} disappeared from active locations")
+                return
+            
+            task = location_data.get("task")
+            
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            
+            # Використовуємо pop з default щоб уникнути KeyError
+            cls.active_locations.pop(order_id, None)
+            logger.info(f"📍 Live location tracking stopped for order #{order_id}")
+        except Exception as e:
+            logger.error(f"❌ Error stopping tracking for order #{order_id}: {e}")
     
     @classmethod
     async def _update_location_loop(
