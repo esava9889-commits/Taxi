@@ -717,12 +717,16 @@ def create_router(config: AppConfig) -> Router:
     @router.callback_query(F.data.startswith("use_address:"))
     async def use_saved_address(call: CallbackQuery, state: FSMContext) -> None:
         """Використати збережену адресу для замовлення"""
+        logger.info(f"🚗 Використання збереженої адреси: {call.data}")
+        
         if not call.from_user:
             return
         
         parts = call.data.split(":", 2)
         address_type = parts[1]  # pickup або dest
         addr_id = int(parts[2])
+        
+        logger.info(f"📍 Тип адреси: {address_type}, ID: {addr_id}")
         
         address = await get_saved_address_by_id(config.database_path, addr_id, call.from_user.id)
         
@@ -735,21 +739,43 @@ def create_router(config: AppConfig) -> Router:
         # Перейти до замовлення з цією адресою
         from app.handlers.order import OrderStates
         
+        # Закрити попереднє повідомлення
+        try:
+            await call.message.delete()
+        except:
+            pass
+        
         if address_type == "pickup":
             # Використати як точку подачі
+            logger.info(f"✅ Встановлено pickup: {address.emoji} {address.name}")
             await state.update_data(
                 pickup=address.address,
                 pickup_lat=address.lat,
                 pickup_lon=address.lon
             )
             await state.set_state(OrderStates.destination)
+            
+            # Створити клавіатуру для геолокації
+            kb = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+                    [KeyboardButton(text="❌ Скасувати замовлення")]
+                ],
+                resize_keyboard=True,
+                one_time_keyboard=False
+            )
+            
             await call.message.answer(
-                f"✅ Місце подачі: {address.emoji} {address.name}\n\n"
+                f"✅ <b>Місце подачі:</b> {address.emoji} {address.name}\n"
+                f"📍 {address.address}\n\n"
+                "━━━━━━━━━━━━━━━━━\n\n"
                 "📍 <b>Куди їдемо?</b>\n\n"
-                "Надішліть адресу або геолокацію"
+                "Надішліть адресу текстом або натисніть кнопку нижче для геолокації:",
+                reply_markup=kb
             )
         else:
             # Використати як пункт призначення
+            logger.info(f"✅ Встановлено destination: {address.emoji} {address.name}")
             await state.update_data(
                 destination=address.address,
                 dest_lat=address.lat,
@@ -760,10 +786,12 @@ def create_router(config: AppConfig) -> Router:
             data = await state.get_data()
             if data.get("pickup"):
                 # Перейти до вибору класу (ціни покажуться в order.py)
-                from app.handlers.order import OrderStates
+                logger.info("🚗 Є pickup і destination - переходимо до вибору класу")
                 await state.set_state(OrderStates.car_class)
                 await call.message.answer(
-                    f"✅ Пункт призначення: {address.emoji} {address.name}\n\n"
+                    f"✅ <b>Пункт призначення:</b> {address.emoji} {address.name}\n"
+                    f"📍 {address.address}\n\n"
+                    "━━━━━━━━━━━━━━━━━\n\n"
                     "🚗 <b>Тепер оберіть клас авто</b>\n\n"
                     "Натисніть на кнопку нижче:",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -771,11 +799,26 @@ def create_router(config: AppConfig) -> Router:
                     ])
                 )
             else:
+                logger.info("📍 Немає pickup - запитуємо звідки подати")
                 await state.set_state(OrderStates.pickup)
+                
+                # Створити клавіатуру для геолокації
+                kb = ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+                        [KeyboardButton(text="❌ Скасувати замовлення")]
+                    ],
+                    resize_keyboard=True,
+                    one_time_keyboard=False
+                )
+                
                 await call.message.answer(
-                    f"✅ Пункт призначення: {address.emoji} {address.name}\n\n"
+                    f"✅ <b>Пункт призначення:</b> {address.emoji} {address.name}\n"
+                    f"📍 {address.address}\n\n"
+                    "━━━━━━━━━━━━━━━━━\n\n"
                     "📍 <b>Звідки подати таксі?</b>\n\n"
-                    "Надішліть адресу або геолокацію"
+                    "Надішліть адресу текстом або натисніть кнопку нижче для геолокації:",
+                    reply_markup=kb
                 )
 
     return router

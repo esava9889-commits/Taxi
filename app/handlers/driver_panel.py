@@ -858,9 +858,16 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
 
     @router.message(F.location)
-    async def share_location_with_client(message: Message) -> None:
+    async def share_location_with_client(message: Message, state: FSMContext) -> None:
         """Оновити геолокацію водія (завжди) + поділитися з клієнтом (якщо є замовлення)"""
         if not message.from_user or not message.location:
+            return
+        
+        # 🔒 ВАЖЛИВО: Не обробляти геолокацію якщо користувач у state (збереження адреси, замовлення тощо)
+        current_state = await state.get_state()
+        if current_state is not None:
+            # Користувач у якомусь state - пропустити цей обробник
+            logger.debug(f"🔒 Користувач {message.from_user.id} у state {current_state} - пропускаю обробник геолокації водія")
             return
         
         # Перевірити чи це водій

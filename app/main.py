@@ -163,12 +163,12 @@ async def main() -> None:
     # Include all routers (порядок важливий!)
     dp.include_router(create_start_router(config))
     dp.include_router(create_registration_router(config))  # Registration module
+    dp.include_router(create_saved_addresses_router(config))  # Збережені адреси - ПЕРЕД order (state має пріоритет!)
     dp.include_router(create_order_router(config))  # Order перед Client!
     dp.include_router(create_admin_router(config))  # Admin ПЕРЕД driver_panel (пріоритет адміна!)
     dp.include_router(create_driver_panel_router(config))
     dp.include_router(create_driver_router(config))
     dp.include_router(create_ratings_router(config))
-    dp.include_router(create_saved_addresses_router(config))  # Збережені адреси
     dp.include_router(create_cancel_reasons_router(config))  # Причини скасування
     dp.include_router(create_chat_router(config))  # Чат
     dp.include_router(create_promocodes_router(config))  # Промокоди
