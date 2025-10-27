@@ -106,6 +106,7 @@ class DriverProfileStates(StatesGroup):
     waiting_for_city = State()
     waiting_for_color = State()
     waiting_for_card = State()
+    waiting_for_location = State()  # Очікування геолокації
 
 
 def create_router(config: AppConfig) -> Router:
@@ -404,6 +405,7 @@ def create_router(config: AppConfig) -> Router:
                     text=f"{status_emoji} УВІМКНУТИ ОНЛАЙН" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
                     callback_data="work:toggle"
                 )],
+                [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="work:update_location")],
                 [
                     InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats"),
                     InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings")
@@ -588,6 +590,7 @@ def create_router(config: AppConfig) -> Router:
                     text=f"{status_emoji} УВІМКНУТИ ОНЛАЙН" if not driver.online else "🔴 ПІТИ В ОФЛАЙН",
                     callback_data="work:toggle"
                 )],
+                [InlineKeyboardButton(text="📍 Оновити геолокацію", callback_data="work:update_location")],
                 [
                     InlineKeyboardButton(text="📊 Статистика", callback_data="work:stats"),
                     InlineKeyboardButton(text="💰 Заробіток", callback_data="work:earnings")
@@ -630,6 +633,128 @@ def create_router(config: AppConfig) -> Router:
             await call.message.edit_text(text, reply_markup=kb)
         await call.answer("✅ Оновлено!")
 
+    @router.callback_query(F.data == "work:update_location")
+    async def update_location_request(call: CallbackQuery, state: FSMContext) -> None:
+        """Запит на оновлення геолокації водія"""
+        if not call.from_user:
+            return
+        
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, call):
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        # Встановити FSM стан
+        await state.set_state(DriverProfileStates.waiting_for_location)
+        
+        # Створити Reply клавіатуру з кнопкою геолокації
+        location_kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+                [KeyboardButton(text="❌ Скасувати")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.answer()
+        
+        # Відправити запит на геолокацію
+        location_request_msg = await call.bot.send_message(
+            call.from_user.id,
+            "📍 <b>Оновлення геолокації</b>\n\n"
+            "Натисніть кнопку 📍 <b>Надіслати геолокацію</b> нижче,\n"
+            "щоб оновити вашу поточну позицію.\n\n"
+            "💡 Геолокація потрібна для:\n"
+            "• Розрахунку відстані до клієнта\n"
+            "• Трансляції вашого руху клієнту\n"
+            "• Автоматичного підбору замовлень",
+            reply_markup=location_kb
+        )
+        
+        # Зберегти ID повідомлення для подальшого видалення
+        await state.update_data(location_request_msg_id=location_request_msg.message_id)
+    
+    @router.message(DriverProfileStates.waiting_for_location, F.location)
+    async def handle_location_update(message: Message, state: FSMContext) -> None:
+        """Обробка отриманої геолокації"""
+        if not message.from_user or not message.location:
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Водія не знайдено")
+            await state.clear()
+            return
+        
+        lat = message.location.latitude
+        lon = message.location.longitude
+        
+        # Оновити геолокацію в БД
+        await update_driver_location(config.database_path, driver.id, lat, lon)
+        
+        logger.info(f"📍 Геолокацію водія {driver.full_name} оновлено: {lat}, {lon}")
+        
+        # Отримати ID повідомлення з запитом
+        data = await state.get_data()
+        location_request_msg_id = data.get("location_request_msg_id")
+        
+        # Відправити підтвердження
+        success_msg = await message.answer(
+            "✅ <b>Геолокацію оновлено!</b>\n\n"
+            f"📍 Координати: {lat:.6f}, {lon:.6f}\n\n"
+            "Тепер ви можете поділитися своїм рухом з клієнтами під час поїздки.",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        # Видалити повідомлення для чистоти чату
+        try:
+            # Видалити запит на геолокацію
+            if location_request_msg_id:
+                await message.bot.delete_message(message.from_user.id, location_request_msg_id)
+            # Видалити повідомлення з геолокацією
+            await message.delete()
+            # Видалити підтвердження через 3 секунди
+            import asyncio
+            await asyncio.sleep(3)
+            await success_msg.delete()
+        except Exception as e:
+            logger.debug(f"Не вдалося видалити повідомлення: {e}")
+        
+        # Очистити FSM стан
+        await state.clear()
+    
+    @router.message(DriverProfileStates.waiting_for_location, F.text == "❌ Скасувати")
+    async def cancel_location_update(message: Message, state: FSMContext) -> None:
+        """Скасування оновлення геолокації"""
+        if not message.from_user:
+            return
+        
+        # Отримати ID повідомлення з запитом
+        data = await state.get_data()
+        location_request_msg_id = data.get("location_request_msg_id")
+        
+        # Видалити повідомлення
+        try:
+            if location_request_msg_id:
+                await message.bot.delete_message(message.from_user.id, location_request_msg_id)
+            await message.delete()
+        except Exception as e:
+            logger.debug(f"Не вдалося видалити повідомлення: {e}")
+        
+        await message.answer(
+            "❌ Оновлення геолокації скасовано",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        # Очистити FSM стан
+        await state.clear()
+    
     @router.callback_query(F.data == "work:stats")
     async def show_stats_menu(call: CallbackQuery) -> None:
         """Статистика"""
