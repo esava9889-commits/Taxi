@@ -1410,7 +1410,7 @@ def create_router(config: AppConfig) -> Router:
         location_kb = ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(text="📍 Надіслати геолокацію для прийняття", request_location=True)],
-                [KeyboardButton(text="❌ Скасувати")]
+                [KeyboardButton(text="⏭️ Прийняти БЕЗ геолокації")]
             ],
             resize_keyboard=True,
             one_time_keyboard=True
@@ -1613,28 +1613,129 @@ def create_router(config: AppConfig) -> Router:
         # Очистити FSM стан
         await state.clear()
     
-    @router.message(DriverProfileStates.waiting_for_location_to_accept, F.text == "❌ Скасувати")
-    async def cancel_accept_order(message: Message, state: FSMContext) -> None:
-        """Скасування прийняття замовлення"""
+    @router.message(DriverProfileStates.waiting_for_location_to_accept, F.text == "⏭️ Прийняти БЕЗ геолокації")
+    async def skip_location_and_accept(message: Message, state: FSMContext) -> None:
+        """Відмова від надсилання геолокації - ПРИЙНЯТИ ЗАМОВЛЕННЯ БЕЗ LIVE LOCATION"""
         if not message.from_user:
             return
         
-        # Отримати ID повідомлення з запитом
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Водія не знайдено", reply_markup=driver_panel_keyboard())
+            await state.clear()
+            return
+        
+        # Отримати дані з FSM
         data = await state.get_data()
         location_request_msg_id = data.get("location_request_msg_id")
         order_id = data.get("accept_order_id")
         
-        # Видалити повідомлення
+        if not order_id:
+            await message.answer("❌ Помилка: замовлення не знайдено", reply_markup=driver_panel_keyboard())
+            await state.clear()
+            return
+        
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order or order.status != "pending":
+            await message.answer("❌ Замовлення вже прийнято іншим водієм", reply_markup=driver_panel_keyboard())
+            await state.clear()
+            return
+        
+        logger.info(f"⚠️ Водій {driver.id} відмовився від надсилання геолокації для замовлення #{order_id}")
+        
+        # ПРИЙНЯТИ ЗАМОВЛЕННЯ БЕЗ ГЕОЛОКАЦІЇ
+        success = await accept_order(config.database_path, order_id, driver.id)
+        
+        if not success:
+            await message.answer(
+                "❌ Не вдалося прийняти замовлення\n"
+                "(Можливо, хтось вас випередив)",
+                reply_markup=driver_panel_keyboard()
+            )
+            await state.clear()
+            return
+        
+        # СКАСУВАТИ ТАЙМЕРИ
+        cancel_order_timeout(order_id)
+        from app.utils.priority_order_manager import PriorityOrderManager
+        PriorityOrderManager.cancel_priority_timer(order_id)
+        
+        logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id} БЕЗ live location")
+        
+        # Повідомити клієнта (БЕЗ live location)
+        try:
+            await message.bot.send_message(
+                order.user_id,
+                "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
+                f"🚗 {driver.full_name}\n"
+                f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
+                f"📱 {driver.phone}\n\n"
+                "🚗 Водій їде до вас!"
+            )
+            logger.info(f"✅ Повідомлення клієнту відправлено (БЕЗ live location)")
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки повідомлення клієнту: {e}")
+        
+        # Видалити технічні повідомлення
         try:
             if location_request_msg_id:
                 await message.bot.delete_message(message.from_user.id, location_request_msg_id)
             await message.delete()
         except Exception as e:
-            logger.debug(f"Не вдалося видалити повідомлення: {e}")
+            logger.debug(f"⚠️ Не вдалося видалити технічні повідомлення: {e}")
         
+        # Створити клавіатуру керування замовленням
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                [
+                    KeyboardButton(text="📞 Клієнт", request_contact=False),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Керування поїздкою"
+        )
+        
+        # Очистити адреси
+        clean_pickup = clean_address(order.pickup_address)
+        clean_destination = clean_address(order.destination_address)
+        
+        # Посилання на карти
+        pickup_link = ""
+        destination_link = ""
+        distance_text = ""
+        
+        if order.pickup_lat and order.pickup_lon:
+            pickup_link = f"\n📍 <a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>Відкрити на карті</a>"
+        
+        if order.dest_lat and order.dest_lon:
+            destination_link = f"\n📍 <a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>Відкрити на карті</a>"
+        
+        if order.distance_m:
+            km = order.distance_m / 1000.0
+            distance_text = f"\n📏 Відстань: {km:.1f} км"
+        
+        payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+        
+        # Відправити підтвердження водію з клавіатурою
         await message.answer(
-            f"❌ Прийняття замовлення #{order_id} скасовано",
-            reply_markup=driver_panel_keyboard()
+            f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
+            f"👤 {order.name} • <code>{order.phone}</code>\n\n"
+            f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
+            f"🎯 <b>Куди:</b> {clean_destination}{destination_link}{distance_text}\n\n"
+            f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n\n"
+            "⚠️ <b>Live location НЕ активовано</b>\n"
+            "Клієнт не бачить ваше переміщення.\n\n"
+            "🚗 Використовуйте кнопки для керування поїздкою:",
+            reply_markup=kb_trip
         )
         
         # Очистити FSM стан
