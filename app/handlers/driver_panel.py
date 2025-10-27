@@ -2516,96 +2516,96 @@ def create_router(config: AppConfig) -> Router:
             logger.info(f"🏁 Водій {driver.id} ({driver.full_name}) натиснув 'Завершити поїздку'")
             
             order = await get_active_order_for_driver(config.database_path, driver.id)
-        if not order:
-            logger.warning(f"⚠️ Водій {driver.id} не має активного замовлення при спробі завершити")
-            await message.answer("❌ У вас немає активного замовлення")
-            return
-        
-        logger.info(f"📋 Знайдено активне замовлення #{order.id}, статус: {order.status}")
-        
-        # Розрахунок
-        fare = order.fare_amount if order.fare_amount else 100.0
-        tariff = await get_latest_tariff(config.database_path)
-        commission_percent = tariff.commission_percent if tariff else 0.02
-        commission = fare * commission_percent
-        net_earnings = fare - commission
-        
-        # Дані для завершення
-        distance_m = order.distance_m if order.distance_m else 0
-        duration_s = 0  # Можна додати розрахунок тривалості пізніше
-        
-        # Завершити замовлення
-        logger.info(f"💾 Спроба завершити замовлення #{order.id} (поточний статус: {order.status})")
-        success = await complete_order(
-            config.database_path,
-            order.id,
-            driver.id,
-            fare,
-            distance_m,
-            duration_s,
-            commission
-        )
-        
-        if not success:
-            logger.error(f"❌ Не вдалося завершити замовлення #{order.id}. Можливо статус вже змінений або замовлення не належить водію.")
-            await message.answer("❌ Не вдалося завершити замовлення. Спробуйте ще раз.")
-            return
-        
-        logger.info(f"✅ Замовлення #{order.id} успішно завершено")
-        
-        # 🛑 Зупинити live location трекінг
-        from app.utils.live_location_manager import LiveLocationManager
-        await LiveLocationManager.stop_tracking(order.id)
-        
-        # Зберегти платіж
-        payment = Payment(
-            id=None,
-            driver_id=driver.id,
-            order_id=order.id,
-            amount=fare,
-            commission=commission,
-            commission_paid=False,
-            payment_method=order.payment_method or 'cash',
-            created_at=datetime.now(timezone.utc)
-        )
-        await insert_payment(config.database_path, payment)
-        
-        # ⭐ ЗБІЛЬШИТИ КАРМУ ВОДІЯ за успішне замовлення
-        from app.storage.db import increase_driver_karma
-        await increase_driver_karma(config.database_path, driver.id)
-        
-        # Повідомити клієнта з кнопками оцінки
-        try:
-            payment_emoji = "💵" if order.payment_method == "cash" else "💳"
-            payment_text = "готівкою" if order.payment_method == "cash" else "на картку"
+            if not order:
+                logger.warning(f"⚠️ Водій {driver.id} не має активного замовлення при спробі завершити")
+                await message.answer("❌ У вас немає активного замовлення")
+                return
             
-            # Кнопки для оцінки водія
-            kb_rating = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.tg_user_id}:1:{order.id}"),
-                        InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:2:{order.id}"),
-                        InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:3:{order.id}"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:4:{order.id}"),
-                        InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:5:{order.id}"),
-                    ],
-                    [InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order.id}")]
-                ]
+            logger.info(f"📋 Знайдено активне замовлення #{order.id}, статус: {order.status}")
+            
+            # Розрахунок
+            fare = order.fare_amount if order.fare_amount else 100.0
+            tariff = await get_latest_tariff(config.database_path)
+            commission_percent = tariff.commission_percent if tariff else 0.02
+            commission = fare * commission_percent
+            net_earnings = fare - commission
+            
+            # Дані для завершення
+            distance_m = order.distance_m if order.distance_m else 0
+            duration_s = 0  # Можна додати розрахунок тривалості пізніше
+            
+            # Завершити замовлення
+            logger.info(f"💾 Спроба завершити замовлення #{order.id} (поточний статус: {order.status})")
+            success = await complete_order(
+                config.database_path,
+                order.id,
+                driver.id,
+                fare,
+                distance_m,
+                duration_s,
+                commission
             )
             
-            await message.bot.send_message(
-                order.user_id,
-                f"🏁 <b>Поїздка завершена!</b>\n\n"
-                f"💰 До оплати: <b>{int(fare):.0f} грн</b>\n"
-                f"{payment_emoji} Оплата: {payment_text}\n\n"
-                f"⭐ <b>Будь ласка, оцініть водія:</b>",
-                reply_markup=kb_rating
+            if not success:
+                logger.error(f"❌ Не вдалося завершити замовлення #{order.id}. Можливо статус вже змінений або замовлення не належить водію.")
+                await message.answer("❌ Не вдалося завершити замовлення. Спробуйте ще раз.")
+                return
+            
+            logger.info(f"✅ Замовлення #{order.id} успішно завершено")
+            
+            # 🛑 Зупинити live location трекінг
+            from app.utils.live_location_manager import LiveLocationManager
+            await LiveLocationManager.stop_tracking(order.id)
+            
+            # Зберегти платіж
+            payment = Payment(
+                id=None,
+                driver_id=driver.id,
+                order_id=order.id,
+                amount=fare,
+                commission=commission,
+                commission_paid=False,
+                payment_method=order.payment_method or 'cash',
+                created_at=datetime.now(timezone.utc)
             )
-        except Exception as e:
-            logger.error(f"Failed to notify client: {e}")
-        
+            await insert_payment(config.database_path, payment)
+            
+            # ⭐ ЗБІЛЬШИТИ КАРМУ ВОДІЯ за успішне замовлення
+            from app.storage.db import increase_driver_karma
+            await increase_driver_karma(config.database_path, driver.id)
+            
+            # Повідомити клієнта з кнопками оцінки
+            try:
+                payment_emoji = "💵" if order.payment_method == "cash" else "💳"
+                payment_text = "готівкою" if order.payment_method == "cash" else "на картку"
+                
+                # Кнопки для оцінки водія
+                kb_rating = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver.tg_user_id}:1:{order.id}"),
+                            InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:2:{order.id}"),
+                            InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:3:{order.id}"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:4:{order.id}"),
+                            InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver.tg_user_id}:5:{order.id}"),
+                        ],
+                        [InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order.id}")]
+                    ]
+                )
+                
+                await message.bot.send_message(
+                    order.user_id,
+                    f"🏁 <b>Поїздка завершена!</b>\n\n"
+                    f"💰 До оплати: <b>{int(fare):.0f} грн</b>\n"
+                    f"{payment_emoji} Оплата: {payment_text}\n\n"
+                    f"⭐ <b>Будь ласка, оцініть водія:</b>",
+                    reply_markup=kb_rating
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify client: {e}")
+            
             # Повернути панель водія
             commission_percent = int(commission_percent * 100)
             await message.answer(
