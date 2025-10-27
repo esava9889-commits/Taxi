@@ -18,6 +18,9 @@ from aiogram.types import (
 )
 
 from app.config.config import AppConfig
+
+# Глобальний set для захисту від подвійного натискання "Завершити поїздку"
+_finishing_orders = set()
 from app.storage.db import (
     get_driver_by_tg_user_id,
     get_driver_by_id,
@@ -2502,9 +2505,17 @@ def create_router(config: AppConfig) -> Router:
         if not driver:
             return
         
-        logger.info(f"🏁 Водій {driver.id} ({driver.full_name}) натиснув 'Завершити поїздку'")
+        # Захист від подвійного натискання
+        if driver.id in _finishing_orders:
+            logger.warning(f"⚠️ Водій {driver.id} вже завершує замовлення, ігноруємо повторне натискання")
+            return
         
-        order = await get_active_order_for_driver(config.database_path, driver.id)
+        _finishing_orders.add(driver.id)
+        
+        try:
+            logger.info(f"🏁 Водій {driver.id} ({driver.full_name}) натиснув 'Завершити поїздку'")
+            
+            order = await get_active_order_for_driver(config.database_path, driver.id)
         if not order:
             logger.warning(f"⚠️ Водій {driver.id} не має активного замовлення при спробі завершити")
             await message.answer("❌ У вас немає активного замовлення")
@@ -2595,16 +2606,19 @@ def create_router(config: AppConfig) -> Router:
         except Exception as e:
             logger.error(f"Failed to notify client: {e}")
         
-        # Повернути панель водія
-        commission_percent = int(commission_percent * 100)
-        await message.answer(
-            f"✅ <b>Поїздку завершено!</b>\n\n"
-            f"💰 Заробіток: {int(fare):.0f} грн\n"
-            f"💸 Комісія ({commission_percent}%): {int(commission):.0f} грн\n"
-            f"💵 Чистий: {int(net_earnings):.0f} грн\n\n"
-            f"🌟 Дякуємо за роботу!",
-            reply_markup=driver_panel_keyboard()
-        )
+            # Повернути панель водія
+            commission_percent = int(commission_percent * 100)
+            await message.answer(
+                f"✅ <b>Поїздку завершено!</b>\n\n"
+                f"💰 Заробіток: {int(fare):.0f} грн\n"
+                f"💸 Комісія ({commission_percent}%): {int(commission):.0f} грн\n"
+                f"💵 Чистий: {int(net_earnings):.0f} грн\n\n"
+                f"🌟 Дякуємо за роботу!",
+                reply_markup=driver_panel_keyboard()
+            )
+        finally:
+            # Завжди видаляємо з set, навіть якщо була помилка
+            _finishing_orders.discard(driver.id)
     
     @router.message(F.text == "📞 Зв'язатися з клієнтом")
     @router.message(F.text == "📞 Клієнт")
