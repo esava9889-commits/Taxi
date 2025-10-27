@@ -1880,6 +1880,15 @@ def create_router(config: AppConfig) -> Router:
         success = await cancel_order_by_client(config.database_path, order_id, call.from_user.id)
         
         if success:
+            # 🛑 Зупинити всі менеджери для цього замовлення
+            from app.utils.live_location_manager import LiveLocationManager
+            from app.utils.priority_order_manager import PriorityOrderManager
+            from app.utils.order_timeout import cancel_order_timeout
+            
+            await LiveLocationManager.stop_tracking(order_id)
+            PriorityOrderManager.cancel_priority_timer(order_id)
+            cancel_order_timeout(order_id)
+            
             await call.answer("✅ Замовлення скасовано")
             
             # Очистити FSM state якщо був в процесі створення
@@ -2151,8 +2160,13 @@ def create_router(config: AppConfig) -> Router:
         success = await cancel_order_by_client(config.database_path, order_id, call.from_user.id)
         
         if success:
-            # Скасувати таймер
+            # 🛑 Зупинити всі менеджери для цього замовлення
+            from app.utils.live_location_manager import LiveLocationManager
+            from app.utils.priority_order_manager import PriorityOrderManager
             from app.utils.order_timeout import cancel_order_timeout
+            
+            await LiveLocationManager.stop_tracking(order_id)
+            PriorityOrderManager.cancel_priority_timer(order_id)
             cancel_order_timeout(order_id)
             
             await call.answer("✅ Замовлення скасовано", show_alert=True)

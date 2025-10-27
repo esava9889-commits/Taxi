@@ -116,7 +116,7 @@ class PriorityOrderManager:
         """Скасувати таймер для замовлення (коли водій прийняв або відхилив)"""
         if order_id in _priority_timers:
             _priority_timers[order_id].cancel()
-            del _priority_timers[order_id]
+            _priority_timers.pop(order_id, None)  # Безпечне видалення
             logger.info(f"⏰ Таймер скасовано для замовлення #{order_id}")
 
 
@@ -152,9 +152,8 @@ async def _priority_timeout_handler(
         else:
             logger.info(f"✅ Замовлення #{order_id} вже має статус {order.status}, таймер завершено")
         
-        # Видалити таймер зі словника
-        if order_id in _priority_timers:
-            del _priority_timers[order_id]
+        # Видалити таймер зі словника (безпечно)
+        _priority_timers.pop(order_id, None)
             
     except asyncio.CancelledError:
         logger.info(f"⏰ Таймер для замовлення #{order_id} скасовано (водій прийняв/відхилив)")
