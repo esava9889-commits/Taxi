@@ -980,7 +980,8 @@ async def get_online_drivers(db_path: str, city: Optional[str] = None) -> List[D
                     last_seen_at=_parse_datetime(row[15]) if row[15] else None,
                     car_class=row[16] if row[16] else "economy",
                     card_number=row[17],
-                    priority=(row[18] if len(row) > 18 else 0),
+                    car_color=row[18] if len(row) > 18 else None,  # ← ВИПРАВЛЕНО
+                    priority=(row[19] if len(row) > 19 else 0),  # ← ВИПРАВЛЕНО: було row[18]
                 )
                 for row in rows
             ]
