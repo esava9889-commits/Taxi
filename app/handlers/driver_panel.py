@@ -1058,7 +1058,7 @@ def create_router(config: AppConfig) -> Router:
         
         # Отримати картку адміна з БД (налаштування)
         from app.handlers.admin import get_admin_payment_card
-        admin_payment_card = await get_admin_payment_card()
+        admin_payment_card = await get_admin_payment_card(config.database_path)
         
         for admin_id in admin_ids:
             try:

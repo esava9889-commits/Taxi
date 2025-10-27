@@ -53,6 +53,26 @@ from app.handlers.pricing_settings_handlers import create_pricing_handlers
 CANCEL_TEXT = "Скасувати"
 
 
+async def get_admin_payment_card(database_path: str) -> str:
+    """Отримати номер картки адміна для сплати комісії"""
+    from app.storage.db_connection import db_manager
+    async with db_manager.connect(database_path) as db:
+        row = await db.fetchone("SELECT value FROM app_settings WHERE key = 'admin_payment_card'")
+        return row[0] if row else "Не вказано"
+
+
+async def set_admin_payment_card(database_path: str, card_number: str) -> None:
+    """Встановити номер картки адміна для сплати комісії"""
+    from app.storage.db_connection import db_manager
+    async with db_manager.connect(database_path) as db:
+        await db.execute(
+            "INSERT INTO app_settings(key,value) VALUES('admin_payment_card', ?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (card_number,)
+        )
+        await db.commit()
+
+
 def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -154,24 +174,6 @@ def create_router(config: AppConfig) -> Router:
                 "INSERT INTO app_settings(key,value) VALUES('priority_mode', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 ("1" if enabled else "0",)
-            )
-            await db.commit()
-    
-    async def get_admin_payment_card() -> str:
-        """Отримати номер картки адміна для сплати комісії"""
-        from app.storage.db_connection import db_manager
-        async with db_manager.connect(config.database_path) as db:
-            row = await db.fetchone("SELECT value FROM app_settings WHERE key = 'admin_payment_card'")
-            return row[0] if row else "Не вказано"
-    
-    async def set_admin_payment_card(card_number: str) -> None:
-        """Встановити номер картки адміна для сплати комісії"""
-        from app.storage.db_connection import db_manager
-        async with db_manager.connect(config.database_path) as db:
-            await db.execute(
-                "INSERT INTO app_settings(key,value) VALUES('admin_payment_card', ?)"
-                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (card_number,)
             )
             await db.commit()
 
@@ -825,7 +827,7 @@ def create_router(config: AppConfig) -> Router:
             return
         
         # Отримати номер картки для комісії
-        admin_card = await get_admin_payment_card()
+        admin_card = await get_admin_payment_card(config.database_path)
         
         text = (
             "⚙️ <b>НАЛАШТУВАННЯ ЦІНОУТВОРЕННЯ</b>\n\n"
@@ -930,7 +932,7 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
         await state.set_state(SettingsStates.admin_card)
         
-        current_card = await get_admin_payment_card()
+        current_card = await get_admin_payment_card(config.database_path)
         
         await call.message.edit_text(
             f"💳 <b>КАРТКА ДЛЯ СПЛАТИ КОМІСІЇ</b>\n\n"
@@ -1088,7 +1090,7 @@ def create_router(config: AppConfig) -> Router:
             return
         
         # Зберегти номер картки
-        await set_admin_payment_card(card_number)
+        await set_admin_payment_card(config.database_path, card_number)
         await state.clear()
         
         await message.answer(
