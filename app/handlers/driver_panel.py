@@ -1822,6 +1822,9 @@ def create_router(config: AppConfig) -> Router:
         
         # Відправити live location клієнту
         try:
+            logger.info(f"📍 Відправка live location клієнту {order.user_id} для замовлення #{order_id}")
+            logger.info(f"📍 Координати: lat={lat}, lon={lon}")
+            
             location_message = await message.bot.send_location(
                 chat_id=order.user_id,
                 latitude=lat,
@@ -1829,6 +1832,8 @@ def create_router(config: AppConfig) -> Router:
                 live_period=900,  # 15 хвилин
                 disable_notification=False
             )
+            
+            logger.info(f"✅ Live location відправлено! Message ID: {location_message.message_id}")
             
             # Запустити автоматичне оновлення геопозиції
             from app.utils.live_location_manager import LiveLocationManager
@@ -1841,7 +1846,7 @@ def create_router(config: AppConfig) -> Router:
                 db_path=config.database_path
             )
             
-            logger.info(f"📍 Live location shared with client {order.user_id} for order #{order_id}")
+            logger.info(f"✅ LiveLocationManager запущено для замовлення #{order_id}")
             
             # Повідомлення клієнту
             await message.bot.send_message(
@@ -1852,8 +1857,10 @@ def create_router(config: AppConfig) -> Router:
                 "🚗 Водій їде до вас!"
             )
             
+            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id}")
+            
         except Exception as e:
-            logger.error(f"❌ Помилка відправки live location: {e}")
+            logger.error(f"❌ Помилка відправки live location: {e}", exc_info=True)
             await message.answer(
                 "❌ Помилка відправки геопозиції клієнту",
                 reply_markup=driver_panel_keyboard()
@@ -1861,27 +1868,49 @@ def create_router(config: AppConfig) -> Router:
             await state.clear()
             return
         
-        # Відправити підтвердження водію (БЕЗ координат)
-        success_msg = await message.answer(
-            "✅ <b>Клієнт отримав вашу геопозицію!</b>\n\n"
-            "Клієнт тепер може бачити ваш рух в реальному часі під час поїздки.\n"
-            "Трансляція триватиме 15 хвилин.",
-            reply_markup=driver_panel_keyboard()
+        # Створити клавіатуру керування замовленням
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                # ======== ОСНОВНЕ КЕРУВАННЯ ========
+                [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                
+                # ======== ДОДАТКОВІ ФУНКЦІЇ ========
+                [
+                    KeyboardButton(text="📞 Клієнт", request_contact=False),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Керування поїздкою"
         )
         
-        # Видалити повідомлення для чистоти чату
+        # Видалити технічні повідомлення спочатку
         try:
             # Видалити запит на геолокацію
             if location_request_msg_id:
                 await message.bot.delete_message(message.from_user.id, location_request_msg_id)
+                logger.debug(f"✅ Видалено запит на геолокацію (msg_id: {location_request_msg_id})")
             # Видалити повідомлення з геолокацією (щоб не захаращувати чат)
             await message.delete()
-            # Видалити підтвердження через 3 секунди
-            import asyncio
-            await asyncio.sleep(3)
-            await success_msg.delete()
+            logger.debug(f"✅ Видалено геолокацію водія з чату")
         except Exception as e:
-            logger.debug(f"Не вдалося видалити повідомлення: {e}")
+            logger.debug(f"⚠️ Не вдалося видалити технічні повідомлення: {e}")
+        
+        # Відправити підтвердження водію з клавіатурою (НЕ видаляти його!)
+        await message.answer(
+            "✅ <b>Клієнт отримав вашу геопозицію!</b>\n\n"
+            "Клієнт тепер може бачити ваш рух в реальному часі.\n"
+            "Трансляція триватиме 15 хвилин.\n\n"
+            "🚗 <b>Продовжуйте керувати поїздкою:</b>",
+            reply_markup=kb_trip
+        )
         
         # Очистити FSM стан
         await state.clear()
@@ -1904,9 +1933,30 @@ def create_router(config: AppConfig) -> Router:
         except Exception as e:
             logger.debug(f"Не вдалося видалити повідомлення: {e}")
         
+        # Створити клавіатуру керування замовленням
+        kb_trip = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
+                [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
+                [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
+                [
+                    KeyboardButton(text="📞 Клієнт", request_contact=False),
+                    KeyboardButton(text="🗺️ Маршрут")
+                ],
+                [
+                    KeyboardButton(text="❌ Скасувати замовлення"),
+                    KeyboardButton(text="🚗 Панель водія")
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            input_field_placeholder="Керування поїздкою"
+        )
+        
         await message.answer(
-            "❌ Поділення геопозицією скасовано",
-            reply_markup=driver_panel_keyboard()
+            "❌ Поділення геопозицією скасовано\n\n"
+            "🚗 Продовжуйте керувати поїздкою:",
+            reply_markup=kb_trip
         )
         
         # Очистити FSM стан
