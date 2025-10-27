@@ -160,11 +160,11 @@ async def main() -> None:
 
     bot = Bot(token=config.bot.token, default=DefaultBotProperties(parse_mode="HTML"))
     
-    # ⭐ FSM Strategy: USER - зберігати стан тільки по user_id (не chat_id)
+    # ⭐ FSM Strategy: GLOBAL_USER - зберігати стан тільки по user_id (не chat_id)
     # Це дозволяє водію натискати "Прийняти" в групі, а надсилати геолокацію в приватний чат
     dp = Dispatcher(
         storage=MemoryStorage(),
-        fsm_strategy=FSMStrategy.USER  # Тільки user_id, без прив'язки до chat_id
+        fsm_strategy=FSMStrategy.GLOBAL_USER  # Тільки user_id, без прив'язки до chat_id
     )
 
     # Include all routers (порядок важливий!)
