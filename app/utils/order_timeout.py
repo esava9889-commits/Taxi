@@ -67,12 +67,11 @@ class OrderTimeoutManager:
         """
         if order_id in self._timers:
             self._timers[order_id].cancel()
-            del self._timers[order_id]
+            self._timers.pop(order_id, None)  # Безпечне видалення
             logger.info(f"✅ Таймер скасовано для замовлення #{order_id}")
         
-        # Видалити лічильник
-        if order_id in self._timeout_count:
-            del self._timeout_count[order_id]
+        # Видалити лічильник (безпечно)
+        self._timeout_count.pop(order_id, None)
     
     async def _timeout_handler(
         self,
@@ -190,9 +189,8 @@ class OrderTimeoutManager:
         except Exception as e:
             logger.error(f"❌ Помилка в timeout handler для #{order_id}: {e}")
         finally:
-            # Видалити таймер зі списку
-            if order_id in self._timers:
-                del self._timers[order_id]
+            # Видалити таймер зі списку (безпечно)
+            self._timers.pop(order_id, None)
 
 
 # Глобальний екземпляр менеджера таймаутів

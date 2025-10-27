@@ -1786,9 +1786,14 @@ def create_router(config: AppConfig) -> Router:
             commission
         )
         
-        # 🛑 Зупинити live location трекінг
+        # 🛑 Зупинити всі менеджери для цього замовлення
         from app.utils.live_location_manager import LiveLocationManager
+        from app.utils.priority_order_manager import PriorityOrderManager
+        from app.utils.order_timeout import cancel_order_timeout
+        
         await LiveLocationManager.stop_tracking(order_id)
+        PriorityOrderManager.cancel_priority_timer(order_id)
+        cancel_order_timeout(order_id)
         
         # Запис у payments для обліку комісії
         payment = Payment(
@@ -2256,9 +2261,14 @@ def create_router(config: AppConfig) -> Router:
             commission
         )
         
-        # 🛑 Зупинити live location трекінг
+        # 🛑 Зупинити всі менеджери для цього замовлення
         from app.utils.live_location_manager import LiveLocationManager
+        from app.utils.priority_order_manager import PriorityOrderManager
+        from app.utils.order_timeout import cancel_order_timeout
+        
         await LiveLocationManager.stop_tracking(order.id)
+        PriorityOrderManager.cancel_priority_timer(order.id)
+        cancel_order_timeout(order.id)
         
         # Запис у payments
         payment = Payment(
@@ -2346,6 +2356,16 @@ def create_router(config: AppConfig) -> Router:
         success = await cancel_order_by_driver(config.database_path, order.id, driver.id, "Водій відмовився")
         
         if success:
+            # 🛑 Зупинити всі менеджери для цього замовлення
+            from app.utils.live_location_manager import LiveLocationManager
+            from app.utils.priority_order_manager import PriorityOrderManager
+            from app.utils.order_timeout import cancel_order_timeout
+            
+            await LiveLocationManager.stop_tracking(order.id)
+            PriorityOrderManager.cancel_priority_timer(order.id)
+            cancel_order_timeout(order.id)
+            logger.info(f"✅ Всі менеджери зупинено для скасованого замовлення #{order.id}")
+            
             # ⚠️ ЗМЕНШИТИ КАРМУ ВОДІЯ за відмову
             from app.storage.db import decrease_driver_karma
             await decrease_driver_karma(config.database_path, driver.id, amount=5)
@@ -2515,10 +2535,25 @@ def create_router(config: AppConfig) -> Router:
         try:
             logger.info(f"🏁 Водій {driver.id} ({driver.full_name}) натиснув 'Завершити поїздку'")
             
+            # Спочатку перевірити чи є взагалі замовлення у водія (для діагностики)
+            from app.storage.db_connection import db_manager
+            async with db_manager.connect(config.database_path) as db:
+                async with db.execute(
+                    "SELECT id, status, driver_id FROM orders WHERE driver_id = ? ORDER BY created_at DESC LIMIT 5",
+                    (driver.id,)
+                ) as cursor:
+                    all_orders = await cursor.fetchall()
+                    if all_orders:
+                        logger.info(f"🔍 Останні замовлення водія {driver.id}:")
+                        for o in all_orders:
+                            logger.info(f"  - Order #{o[0]}, status: {o[1]}, driver_id: {o[2]}")
+                    else:
+                        logger.warning(f"⚠️ У водія {driver.id} немає жодних замовлень в БД")
+            
             order = await get_active_order_for_driver(config.database_path, driver.id)
             if not order:
-                logger.warning(f"⚠️ Водій {driver.id} не має активного замовлення при спробі завершити")
-                await message.answer("❌ У вас немає активного замовлення")
+                logger.warning(f"⚠️ Водій {driver.id} не має активного замовлення (accepted/in_progress) при спробі завершити")
+                await message.answer("❌ У вас немає активного замовлення для завершення")
                 return
             
             logger.info(f"📋 Знайдено активне замовлення #{order.id}, статус: {order.status}")
@@ -2553,9 +2588,15 @@ def create_router(config: AppConfig) -> Router:
             
             logger.info(f"✅ Замовлення #{order.id} успішно завершено")
             
-            # 🛑 Зупинити live location трекінг
+            # 🛑 Зупинити всі менеджери для цього замовлення
             from app.utils.live_location_manager import LiveLocationManager
+            from app.utils.priority_order_manager import PriorityOrderManager
+            from app.utils.order_timeout import cancel_order_timeout
+            
             await LiveLocationManager.stop_tracking(order.id)
+            PriorityOrderManager.cancel_priority_timer(order.id)
+            cancel_order_timeout(order.id)
+            logger.info(f"✅ Всі менеджери зупинено для замовлення #{order.id}")
             
             # Зберегти платіж
             payment = Payment(
