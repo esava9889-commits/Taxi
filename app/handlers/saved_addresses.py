@@ -125,6 +125,8 @@ def create_router(config: AppConfig) -> Router:
     @router.message(SaveAddressStates.name)
     async def save_name(message: Message, state: FSMContext) -> None:
         """Зберегти назву адреси"""
+        logger.info(f"📝 Отримано назву адреси від користувача {message.from_user.id if message.from_user else 'Unknown'}: {message.text}")
+        
         name = message.text.strip() if message.text else ""
         if len(name) < 2:
             # Не створювати нове повідомлення - просто показати помилку коротко
@@ -144,6 +146,12 @@ def create_router(config: AppConfig) -> Router:
             await message.delete()
         except:
             pass
+        
+        # Перевірити чи це редагування
+        data = await state.get_data()
+        is_editing = 'editing_address_id' in data
+        
+        logger.info(f"📝 Режим: {'Редагування' if is_editing else 'Створення нової адреси'}")
         
         await state.update_data(name=name)
         await state.set_state(SaveAddressStates.emoji)
@@ -200,7 +208,36 @@ def create_router(config: AppConfig) -> Router:
     async def save_emoji(call: CallbackQuery, state: FSMContext) -> None:
         """Зберегти емодзі"""
         emoji = call.data.split(":", 1)[1]
+        logger.info(f"✨ Обрано емодзі: {emoji}")
+        
         await state.update_data(emoji=emoji)
+        
+        # Перевірити чи це редагування
+        data = await state.get_data()
+        is_editing = 'editing_address_id' in data
+        
+        if is_editing:
+            # Режим редагування - зберегти зміни
+            addr_id = data.get('editing_address_id')
+            new_name = data.get('name')
+            new_emoji = emoji
+            
+            logger.info(f"✏️ Редагування адреси #{addr_id}: нова назва={new_name}, емодзі={new_emoji}")
+            
+            success = await update_saved_address(config.database_path, addr_id, call.from_user.id, new_name, new_emoji)
+            
+            await state.clear()
+            
+            if success:
+                await call.answer("✅ Адресу оновлено!", show_alert=True)
+                # Показати оновлений список
+                await _show_addresses_list(call.from_user.id, edit_message=call.message)
+            else:
+                await call.answer("❌ Помилка оновлення", show_alert=True)
+            
+            return
+        
+        # Режим створення нової адреси
         await state.set_state(SaveAddressStates.address)
         
         await call.answer()
@@ -367,8 +404,13 @@ def create_router(config: AppConfig) -> Router:
     @router.message(SaveAddressStates.address, F.location)
     async def save_address_location(message: Message, state: FSMContext) -> None:
         """Зберегти адресу з геолокації"""
+        logger.info(f"📍 Отримано геолокацію для збереження адреси від користувача {message.from_user.id if message.from_user else 'Unknown'}")
+        
         if not message.from_user or not message.location:
+            logger.warning("⚠️ Немає from_user або location")
             return
+        
+        logger.info(f"📍 Координати: {message.location.latitude}, {message.location.longitude}")
         
         # Видалити повідомлення користувача
         try:
@@ -377,6 +419,7 @@ def create_router(config: AppConfig) -> Router:
             pass
         
         data = await state.get_data()
+        logger.info(f"📊 State data: {data}")
         loc = message.location
         
         # Reverse geocoding - отримати адресу з координат
@@ -603,6 +646,36 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=kb
         )
 
+    @router.callback_query(F.data.startswith("address:edit:"))
+    async def edit_address(call: CallbackQuery, state: FSMContext) -> None:
+        """Редагувати адресу"""
+        if not call.from_user:
+            return
+        
+        addr_id = int(call.data.split(":", 2)[2])
+        address = await get_saved_address_by_id(config.database_path, addr_id, call.from_user.id)
+        
+        if not address:
+            await call.answer("❌ Адресу не знайдено", show_alert=True)
+            return
+        
+        await call.answer()
+        
+        # Зберегти ID адреси для редагування
+        await state.update_data(editing_address_id=addr_id, editing_address_current=address)
+        await state.set_state(SaveAddressStates.name)
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="address:cancel")]
+        ])
+        
+        await call.message.edit_text(
+            f"✏️ <b>Редагування адреси</b>\n\n"
+            f"Поточна назва: <b>{address.name}</b>\n\n"
+            f"Введіть нову назву або відправте ту саму:",
+            reply_markup=kb
+        )
+    
     @router.callback_query(F.data.startswith("address:delete:"))
     async def delete_address(call: CallbackQuery) -> None:
         """Видалити адресу"""
