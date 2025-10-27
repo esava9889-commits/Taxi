@@ -94,6 +94,28 @@ def create_router(config: AppConfig) -> Router:
             # Логування причини
             logger.info(f"Order #{order_id} cancelled by client {call.from_user.id}. Reason: {reason_text}")
             
+            # 🚗 ПОВІДОМИТИ ВОДІЯ якщо замовлення було прийнято
+            order = await get_order_by_id(config.database_path, order_id)
+            if order and order.driver_id and order.status == 'accepted':
+                try:
+                    from app.storage.db import get_driver_by_id
+                    from app.handlers.keyboards import driver_panel_keyboard
+                    
+                    driver = await get_driver_by_id(config.database_path, order.driver_id)
+                    if driver:
+                        await call.bot.send_message(
+                            driver.tg_user_id,
+                            f"❌ <b>Замовлення #{order.id} скасовано клієнтом</b>\n\n"
+                            f"📍 Маршрут: {order.pickup_address} → {order.destination_address}\n\n"
+                            f"Причина: {reason_text}\n\n"
+                            f"ℹ️ Клієнт відмовився від замовлення.\n"
+                            f"Ваша карма не змінилася.",
+                            reply_markup=driver_panel_keyboard()
+                        )
+                        logger.info(f"✅ Водій {driver.full_name} повідомлений про скасування #{order.id} (причина: {reason_text})")
+                except Exception as e:
+                    logger.error(f"❌ Не вдалося повідомити водія: {e}")
+            
             # Оновити повідомлення
             await call.message.edit_text(
                 f"❌ <b>Замовлення #{order_id} скасовано</b>\n\n"
@@ -102,7 +124,6 @@ def create_router(config: AppConfig) -> Router:
             )
             
             # Повідомити в групу водіїв (групу міста клієнта)
-            order = await get_order_by_id(config.database_path, order_id)
             if order and order.group_message_id:
                 try:
                     from app.config.config import get_city_group_id

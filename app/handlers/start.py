@@ -430,6 +430,26 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("✅ Замовлення скасовано", show_alert=True)
             await call.message.answer("✅ <b>Замовлення скасовано</b>\n\nВи можете створити нове замовлення будь-коли.")
             
+            # 🚗 ПОВІДОМИТИ ВОДІЯ якщо замовлення було прийнято (статус accepted)
+            if order.driver_id and order.status == 'accepted':
+                try:
+                    from app.storage.db import get_driver_by_id
+                    from app.handlers.keyboards import driver_panel_keyboard
+                    
+                    driver = await get_driver_by_id(config.database_path, order.driver_id)
+                    if driver:
+                        await call.bot.send_message(
+                            driver.tg_user_id,
+                            f"❌ <b>Замовлення #{order.id} скасовано клієнтом</b>\n\n"
+                            f"📍 Маршрут: {order.pickup_address} → {order.destination_address}\n\n"
+                            f"ℹ️ Клієнт відмовився від замовлення.\n"
+                            f"Ваша карма не змінилася.",
+                            reply_markup=driver_panel_keyboard()
+                        )
+                        logger.info(f"✅ Водій {driver.full_name} (ID: {driver.id}) повідомлений про скасування замовлення #{order.id}")
+                except Exception as e:
+                    logger.error(f"❌ Не вдалося повідомити водія про скасування: {e}")
+            
             # Повідомити в групу водіїв (групу міста клієнта)
             if order.group_message_id:
                 try:

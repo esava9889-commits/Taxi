@@ -1558,15 +1558,17 @@ def create_router(config: AppConfig) -> Router:
                 from app.storage.db_connection import db_manager
                 from app.utils.priority_order_manager import PriorityOrderManager
                 
-                # Перевірити чи увімкнено режим пріоритету
-                priority_enabled = False
-                async with db_manager.connect(config.database_path) as db:
-                    async with db.execute("SELECT value FROM app_settings WHERE key = 'priority_mode'") as cur:
-                        row = await cur.fetchone()
-                        priority_enabled = bool(row and str(row[0]).lower() in ("1","true","on","yes"))
-
                 # Отримати онлайн водіїв міста
                 online_drivers = await get_online_drivers(config.database_path, client_city or data.get('city'))
+                
+                # Перевірити чи є водії з увімкненим пріоритетом (priority > 0)
+                # Якщо є - використовувати пріоритетну систему автоматично
+                priority_drivers_count = len([d for d in online_drivers if hasattr(d, 'priority') and d.priority > 0])
+                
+                logger.info(f"🎯 Онлайн водіїв: {len(online_drivers)}")
+                logger.info(f"🎯 Водіїв з пріоритетом (priority > 0): {priority_drivers_count}")
+                logger.info(f"🎯 Клас авто замовлення: {data.get('car_class', 'economy')}")
+                logger.info(f"🎯 Місто клієнта: {client_city}")
                 
                 # Підготувати деталі замовлення для відправки
                 order_details = {
@@ -1586,9 +1588,10 @@ def create_router(config: AppConfig) -> Router:
                     'db_path': config.database_path,
                 }
                 
-                # Спробувати відправити пріоритетним водіям
+                # Спробувати відправити пріоритетним водіям якщо є хоча б один з priority > 0
+                from app.utils.priority_order_manager import PriorityOrderManager
                 sent_to_priority = False
-                if priority_enabled and online_drivers:
+                if priority_drivers_count > 0 and online_drivers:
                     sent_to_priority = await PriorityOrderManager.send_to_priority_drivers(
                         bot=message.bot,
                         order_id=order_id,
@@ -1888,6 +1891,26 @@ def create_router(config: AppConfig) -> Router:
             await LiveLocationManager.stop_tracking(order_id)
             PriorityOrderManager.cancel_priority_timer(order_id)
             cancel_order_timeout(order_id)
+            
+            # 🚗 ПОВІДОМИТИ ВОДІЯ якщо замовлення було прийнято
+            if order.driver_id and order.status == 'accepted':
+                try:
+                    from app.storage.db import get_driver_by_id
+                    from app.handlers.keyboards import driver_panel_keyboard
+                    
+                    driver = await get_driver_by_id(config.database_path, order.driver_id)
+                    if driver:
+                        await call.bot.send_message(
+                            driver.tg_user_id,
+                            f"❌ <b>Замовлення #{order.id} скасовано клієнтом</b>\n\n"
+                            f"📍 Маршрут: {order.pickup_address} → {order.destination_address}\n\n"
+                            f"ℹ️ Клієнт відмовився від замовлення.\n"
+                            f"Ваша карма не змінилася.",
+                            reply_markup=driver_panel_keyboard()
+                        )
+                        logger.info(f"✅ Водій {driver.full_name} повідомлений про скасування #{order.id}")
+                except Exception as e:
+                    logger.error(f"❌ Не вдалося повідомити водія: {e}")
             
             await call.answer("✅ Замовлення скасовано")
             

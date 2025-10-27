@@ -701,10 +701,11 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
         except Exception as e:
             logger.warning(f"⚠️ Не вдалося зупинити live location: {e}")
         
-        # Якщо водій був призначений - зменшити його карму
+        # Якщо водій був призначений (статус accepted) - повідомити водія
         if driver_id and status == 'accepted':
-            logger.warning(f"⚠️ Клієнт скасував замовлення #{order_id}, водій #{driver_id} втрачає карму")
+            logger.warning(f"⚠️ Клієнт скасував замовлення #{order_id}, водій #{driver_id} буде повідомлений")
             # Тут не зменшуємо карму водія, бо це клієнт скасував, не водій
+            # Водій буде повідомлений в обробнику скасування
         
         return cur.rowcount > 0
 
