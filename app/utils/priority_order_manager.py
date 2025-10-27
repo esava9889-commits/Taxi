@@ -38,7 +38,8 @@ class PriorityOrderManager:
         from app.storage.db import Driver
         
         # Відфільтрувати водіїв з priority > 0
-        priority_drivers = [d for d in drivers if hasattr(d, 'priority') and d.priority > 0]
+        # Безпечне порівняння: priority може бути строкою або None
+        priority_drivers = [d for d in drivers if hasattr(d, 'priority') and int(d.priority or 0) > 0]
         
         if not priority_drivers:
             logger.info(f"📢 Замовлення #{order_id}: немає пріоритетних водіїв, відправка в групу")

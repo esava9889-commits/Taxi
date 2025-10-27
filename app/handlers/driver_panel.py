@@ -1582,7 +1582,8 @@ def create_router(config: AppConfig) -> Router:
             if client_city:
                 # Отримати всіх онлайн водіїв з пріоритетом для цього міста
                 all_drivers = await get_drivers_by_city(config.database_path, client_city)
-                priority_drivers = [d for d in all_drivers if d.online and hasattr(d, 'priority') and d.priority > 0]
+                # Безпечне порівняння: priority може бути строкою або None
+                priority_drivers = [d for d in all_drivers if d.online and hasattr(d, 'priority') and int(d.priority or 0) > 0]
                 
                 # Відфільтрувати водіїв за класом авто
                 order_class = order.car_class or 'economy'

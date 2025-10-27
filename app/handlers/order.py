@@ -1563,7 +1563,8 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Перевірити чи є водії з увімкненим пріоритетом (priority > 0)
                 # Якщо є - використовувати пріоритетну систему автоматично
-                priority_drivers_count = len([d for d in online_drivers if hasattr(d, 'priority') and d.priority > 0])
+                # Безпечне порівняння: priority може бути строкою
+                priority_drivers_count = len([d for d in online_drivers if hasattr(d, 'priority') and int(d.priority or 0) > 0])
                 
                 logger.info(f"🎯 Онлайн водіїв: {len(online_drivers)}")
                 logger.info(f"🎯 Водіїв з пріоритетом (priority > 0): {priority_drivers_count}")
