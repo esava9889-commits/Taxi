@@ -1561,11 +1561,28 @@ def create_router(config: AppConfig) -> Router:
             
             trip_management_text += "\n🚗 Використовуйте кнопки нижче для керування поїздкою!"
             
+            # Inline кнопка для поділитися геопозицією
+            inline_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="📍 Поділитися геопозицією з клієнтом",
+                        callback_data=f"share_location:{order_id}"
+                    )]
+                ]
+            )
+            
             await call.bot.send_message(
                 driver.tg_user_id,
                 trip_management_text,
-                reply_markup=kb_trip,
+                reply_markup=inline_kb,
                 disable_web_page_preview=True
+            )
+            
+            # Також відправити reply keyboard окремим повідомленням
+            await call.bot.send_message(
+                driver.tg_user_id,
+                "🎯 Панель керування:",
+                reply_markup=kb_trip
             )
             
             # Видалити повідомлення з приватного чату водія (якщо це було пріоритетне замовлення в ДМ)
@@ -1575,6 +1592,93 @@ def create_router(config: AppConfig) -> Router:
                     logger.info(f"✅ Повідомлення про пріоритетне замовлення #{order_id} видалено з ДМ водія {driver.tg_user_id}")
                 except Exception as e:
                     logger.warning(f"⚠️ Не вдалося видалити повідомлення з ДМ: {e}")
+    
+    @router.callback_query(F.data.startswith("share_location:"))
+    async def share_live_location(call: CallbackQuery) -> None:
+        """Водій ділиться своєю геопозицією з клієнтом"""
+        if not call.from_user:
+            return
+        
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, call):
+            return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, call.from_user.id)
+        if not driver:
+            await call.answer("❌ Водія не знайдено", show_alert=True)
+            return
+        
+        order_id = int(call.data.split(":")[1])
+        order = await get_order_by_id(config.database_path, order_id)
+        
+        if not order:
+            await call.answer("❌ Замовлення не знайдено", show_alert=True)
+            return
+        
+        if order.driver_id != driver.id:
+            await call.answer("❌ Це не ваше замовлення", show_alert=True)
+            return
+        
+        # Перевірити чи є геолокація водія
+        if not driver.last_lat or not driver.last_lon:
+            await call.answer(
+                "❌ Немає вашої геолокації!\n\n"
+                "Спочатку надішліть свою геолокацію через:\n"
+                "🚀 Почати роботу → 📍 Оновити геолокацію",
+                show_alert=True
+            )
+            return
+        
+        # Відправити live location клієнту
+        try:
+            location_message = await call.bot.send_location(
+                chat_id=order.user_id,
+                latitude=driver.last_lat,
+                longitude=driver.last_lon,
+                live_period=900,  # 15 хвилин
+                disable_notification=False
+            )
+            
+            # Запустити автоматичне оновлення геопозиції
+            from app.utils.live_location_manager import LiveLocationManager
+            await LiveLocationManager.start_tracking(
+                bot=call.bot,
+                order_id=order_id,
+                user_id=order.user_id,
+                driver_id=driver.id,
+                message_id=location_message.message_id,
+                db_path=config.database_path
+            )
+            
+            logger.info(f"📍 Live location shared with client {order.user_id} for order #{order_id}")
+            
+            # Повідомлення клієнту
+            await call.bot.send_message(
+                order.user_id,
+                "📍 <b>Водій поділився своєю геопозицією!</b>\n\n"
+                "Ви можете бачити рух водія в реальному часі.\n"
+                "Геопозиція оновлюється кожні 20 секунд протягом 15 хвилин.\n\n"
+                "🚗 Водій їде до вас!"
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки live location: {e}")
+            await call.answer("❌ Помилка відправки геопозиції", show_alert=True)
+            return
+        
+        # Видалити кнопку з повідомлення водія (редагувати без inline keyboard)
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося видалити кнопку: {e}")
+        
+        # Показати alert водію
+        await call.answer(
+            "✅ Ви поділилися геопозицією з клієнтом!\n\n"
+            "Клієнт тепер може бачити ваш рух в реальному часі під час поїздки.",
+            show_alert=True
+        )
     
     @router.callback_query(F.data.startswith("reject_order:"))
     async def reject_order_handler(call: CallbackQuery) -> None:
