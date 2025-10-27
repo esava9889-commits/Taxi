@@ -9,6 +9,7 @@ import sys
 from aiogram import Dispatcher, Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.strategy import FSMStrategy
 from aiohttp import web
 
 from app.config.config import load_config
@@ -158,7 +159,13 @@ async def main() -> None:
     await init_db(config.database_path)
 
     bot = Bot(token=config.bot.token, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher(storage=MemoryStorage())
+    
+    # ⭐ FSM Strategy: USER - зберігати стан тільки по user_id (не chat_id)
+    # Це дозволяє водію натискати "Прийняти" в групі, а надсилати геолокацію в приватний чат
+    dp = Dispatcher(
+        storage=MemoryStorage(),
+        fsm_strategy=FSMStrategy.USER  # Тільки user_id, без прив'язки до chat_id
+    )
 
     # Include all routers (порядок важливий!)
     dp.include_router(create_start_router(config))
