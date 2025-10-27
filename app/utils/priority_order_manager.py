@@ -49,15 +49,19 @@ class PriorityOrderManager:
         # Сортувати за priority (DESC)
         priority_drivers.sort(key=lambda d: d.priority, reverse=True)
         
-        # Взяти топ-5 пріоритетних водіїв
-        top_drivers = priority_drivers[:5]
+        # Взяти ТІЛЬКИ ОДНОГО водія з найвищим пріоритетом
+        top_driver = priority_drivers[0]
         
-        # Створити клавіатуру для водіїв
+        # Створити клавіатуру з кнопками Прийняти/Відхилити
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(
                     text="✅ Прийняти замовлення",
                     callback_data=f"accept_order:{order_id}"
+                )],
+                [InlineKeyboardButton(
+                    text="❌ Відхилити замовлення",
+                    callback_data=f"reject_order:{order_id}"
                 )]
             ]
         )
@@ -65,20 +69,19 @@ class PriorityOrderManager:
         # Сформувати повідомлення
         message_text = _build_priority_message(order_id, order_details)
         
-        # Відправити кожному пріоритетному водію
+        # Відправити пріоритетному водію
         sent_count = 0
-        for driver in top_drivers:
-            try:
-                await bot.send_message(
-                    chat_id=driver.tg_user_id,
-                    text=message_text,
-                    reply_markup=kb,
-                    parse_mode="HTML"
-                )
-                sent_count += 1
-                logger.info(f"📨 Замовлення #{order_id} відправлено пріоритетному водію {driver.full_name} (ID: {driver.id})")
-            except Exception as e:
-                logger.error(f"❌ Помилка відправки водію {driver.id}: {e}")
+        try:
+            await bot.send_message(
+                chat_id=top_driver.tg_user_id,
+                text=message_text,
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
+            sent_count = 1
+            logger.info(f"📨 Замовлення #{order_id} відправлено пріоритетному водію {top_driver.full_name} (ID: {top_driver.id}, priority: {top_driver.priority})")
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки водію {top_driver.id}: {e}")
         
         if sent_count > 0:
             # Запустити таймер на 1 хвилину
@@ -339,8 +342,9 @@ def _build_priority_message(order_id: int, order_details: dict) -> str:
         )
     
     return (
-        f"⭐ <b>ПРІОРИТЕТНЕ ЗАМОВЛЕННЯ #{order_id}</b> ⭐\n\n"
-        f"<i>У вас є 60 секунд для прийняття рішення!</i>\n\n"
+        f"⭐⭐⭐ <b>ПРІОРИТЕТНЕ ЗАМОВЛЕННЯ #{order_id}</b> ⭐⭐⭐\n\n"
+        f"<b>🎯 Це замовлення надіслано особисто вам!</b>\n"
+        f"<i>У вас є 60 секунд для прийняття рішення</i>\n\n"
         f"👤 Клієнт: {order_details.get('name', 'Не вказано')}\n"
         f"📱 Телефон: {order_details.get('phone', 'Не вказано')}\n\n"
         f"📍 Звідки: {clean_pickup}\n"
@@ -350,6 +354,7 @@ def _build_priority_message(order_id: int, order_details: dict) -> str:
         f"{fare_text}\n"
         f"💬 Коментар: {order_details.get('comment', 'Немає')}\n"
         f"{route_link}\n\n"
-        f"⏰ Якщо ви не прийміте або не відхилите замовлення протягом 1 хвилини,\n"
-        f"воно автоматично з'явиться в загальній групі."
+        f"✅ <b>Прийміть</b> замовлення, якщо можете його виконати\n"
+        f"❌ <b>Відхиліть</b>, якщо не можете — воно автоматично перейде в загальну групу\n\n"
+        f"⏰ Через 60 секунд замовлення автоматично з'явиться в групі."
     )
