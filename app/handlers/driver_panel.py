@@ -106,7 +106,8 @@ class DriverProfileStates(StatesGroup):
     waiting_for_city = State()
     waiting_for_color = State()
     waiting_for_card = State()
-    waiting_for_location = State()  # Очікування геолокації
+    waiting_for_location = State()  # Очікування геолокації для оновлення
+    waiting_for_location_to_share = State()  # Очікування геолокації для передачі клієнту
 
 
 def create_router(config: AppConfig) -> Router:
@@ -695,8 +696,8 @@ def create_router(config: AppConfig) -> Router:
         lat = message.location.latitude
         lon = message.location.longitude
         
-        # Оновити геолокацію в БД
-        await update_driver_location(config.database_path, driver.id, lat, lon)
+        # Оновити геолокацію в БД (використовуємо tg_user_id, а не driver.id)
+        await update_driver_location(config.database_path, message.from_user.id, lat, lon)
         
         logger.info(f"📍 Геолокацію водія {driver.full_name} оновлено: {lat}, {lon}")
         
@@ -1719,8 +1720,8 @@ def create_router(config: AppConfig) -> Router:
                     logger.warning(f"⚠️ Не вдалося видалити повідомлення з ДМ: {e}")
     
     @router.callback_query(F.data.startswith("share_location:"))
-    async def share_live_location(call: CallbackQuery) -> None:
-        """Водій ділиться своєю геопозицією з клієнтом"""
+    async def share_live_location_request(call: CallbackQuery, state: FSMContext) -> None:
+        """Водій хоче поділитися геопозицією - запит свіжої геолокації"""
         if not call.from_user:
             return
         
@@ -1745,22 +1746,86 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Це не ваше замовлення", show_alert=True)
             return
         
-        # Перевірити чи є геолокація водія
-        if not driver.last_lat or not driver.last_lon:
-            await call.answer(
-                "❌ Немає вашої геолокації!\n\n"
-                "Спочатку надішліть свою геолокацію через:\n"
-                "🚀 Почати роботу → 📍 Оновити геолокацію",
-                show_alert=True
-            )
+        # Видалити кнопку з повідомлення водія
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося видалити кнопку: {e}")
+        
+        # Встановити FSM стан і зберегти order_id
+        await state.set_state(DriverProfileStates.waiting_for_location_to_share)
+        await state.update_data(share_order_id=order_id)
+        
+        # Створити Reply клавіатуру з кнопкою геолокації
+        location_kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📍 Надіслати свою геолокацію зараз", request_location=True)],
+                [KeyboardButton(text="❌ Скасувати")]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        
+        await call.answer()
+        
+        # Відправити запит на геолокацію
+        location_request_msg = await call.bot.send_message(
+            call.from_user.id,
+            "📍 <b>Поділитися геопозицією з клієнтом</b>\n\n"
+            "Натисніть кнопку 📍 <b>Надіслати свою геолокацію зараз</b>,\n"
+            "щоб клієнт зміг бачити ваш рух в реальному часі.\n\n"
+            "💡 Це допоможе клієнту:\n"
+            "• Бачити де ви зараз\n"
+            "• Відстежити ваш рух до нього\n"
+            "• Знати коли ви прибудете",
+            reply_markup=location_kb
+        )
+        
+        # Зберегти ID повідомлення для подальшого видалення
+        await state.update_data(location_request_msg_id=location_request_msg.message_id)
+    
+    @router.message(DriverProfileStates.waiting_for_location_to_share, F.location)
+    async def handle_location_share_with_client(message: Message, state: FSMContext) -> None:
+        """Обробка геолокації для передачі клієнту"""
+        if not message.from_user or not message.location:
             return
+        
+        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
+        if not driver:
+            await message.answer("❌ Водія не знайдено")
+            await state.clear()
+            return
+        
+        # Отримати order_id з FSM
+        data = await state.get_data()
+        order_id = data.get("share_order_id")
+        location_request_msg_id = data.get("location_request_msg_id")
+        
+        if not order_id:
+            await message.answer("❌ Помилка: замовлення не знайдено")
+            await state.clear()
+            return
+        
+        order = await get_order_by_id(config.database_path, order_id)
+        if not order or order.driver_id != driver.id:
+            await message.answer("❌ Замовлення не знайдено або це не ваше замовлення")
+            await state.clear()
+            return
+        
+        lat = message.location.latitude
+        lon = message.location.longitude
+        
+        # Зберегти геолокацію в БД
+        await update_driver_location(config.database_path, message.from_user.id, lat, lon)
+        
+        logger.info(f"📍 Водій {driver.full_name} ділиться геопозицією {lat}, {lon} з клієнтом для замовлення #{order_id}")
         
         # Відправити live location клієнту
         try:
-            location_message = await call.bot.send_location(
+            location_message = await message.bot.send_location(
                 chat_id=order.user_id,
-                latitude=driver.last_lat,
-                longitude=driver.last_lon,
+                latitude=lat,
+                longitude=lon,
                 live_period=900,  # 15 хвилин
                 disable_notification=False
             )
@@ -1768,7 +1833,7 @@ def create_router(config: AppConfig) -> Router:
             # Запустити автоматичне оновлення геопозиції
             from app.utils.live_location_manager import LiveLocationManager
             await LiveLocationManager.start_tracking(
-                bot=call.bot,
+                bot=message.bot,
                 order_id=order_id,
                 user_id=order.user_id,
                 driver_id=driver.id,
@@ -1779,7 +1844,7 @@ def create_router(config: AppConfig) -> Router:
             logger.info(f"📍 Live location shared with client {order.user_id} for order #{order_id}")
             
             # Повідомлення клієнту
-            await call.bot.send_message(
+            await message.bot.send_message(
                 order.user_id,
                 "📍 <b>Водій поділився своєю геопозицією!</b>\n\n"
                 "Ви можете бачити рух водія в реальному часі.\n"
@@ -1789,21 +1854,63 @@ def create_router(config: AppConfig) -> Router:
             
         except Exception as e:
             logger.error(f"❌ Помилка відправки live location: {e}")
-            await call.answer("❌ Помилка відправки геопозиції", show_alert=True)
+            await message.answer(
+                "❌ Помилка відправки геопозиції клієнту",
+                reply_markup=driver_panel_keyboard()
+            )
+            await state.clear()
             return
         
-        # Видалити кнопку з повідомлення водія (редагувати без inline keyboard)
-        try:
-            await call.message.edit_reply_markup(reply_markup=None)
-        except Exception as e:
-            logger.warning(f"⚠️ Не вдалося видалити кнопку: {e}")
-        
-        # Показати alert водію
-        await call.answer(
-            "✅ Ви поділилися геопозицією з клієнтом!\n\n"
-            "Клієнт тепер може бачити ваш рух в реальному часі під час поїздки.",
-            show_alert=True
+        # Відправити підтвердження водію (БЕЗ координат)
+        success_msg = await message.answer(
+            "✅ <b>Клієнт отримав вашу геопозицію!</b>\n\n"
+            "Клієнт тепер може бачити ваш рух в реальному часі під час поїздки.\n"
+            "Трансляція триватиме 15 хвилин.",
+            reply_markup=driver_panel_keyboard()
         )
+        
+        # Видалити повідомлення для чистоти чату
+        try:
+            # Видалити запит на геолокацію
+            if location_request_msg_id:
+                await message.bot.delete_message(message.from_user.id, location_request_msg_id)
+            # Видалити повідомлення з геолокацією (щоб не захаращувати чат)
+            await message.delete()
+            # Видалити підтвердження через 3 секунди
+            import asyncio
+            await asyncio.sleep(3)
+            await success_msg.delete()
+        except Exception as e:
+            logger.debug(f"Не вдалося видалити повідомлення: {e}")
+        
+        # Очистити FSM стан
+        await state.clear()
+    
+    @router.message(DriverProfileStates.waiting_for_location_to_share, F.text == "❌ Скасувати")
+    async def cancel_location_share(message: Message, state: FSMContext) -> None:
+        """Скасування поділення геопозицією"""
+        if not message.from_user:
+            return
+        
+        # Отримати ID повідомлення з запитом
+        data = await state.get_data()
+        location_request_msg_id = data.get("location_request_msg_id")
+        
+        # Видалити повідомлення
+        try:
+            if location_request_msg_id:
+                await message.bot.delete_message(message.from_user.id, location_request_msg_id)
+            await message.delete()
+        except Exception as e:
+            logger.debug(f"Не вдалося видалити повідомлення: {e}")
+        
+        await message.answer(
+            "❌ Поділення геопозицією скасовано",
+            reply_markup=driver_panel_keyboard()
+        )
+        
+        # Очистити FSM стан
+        await state.clear()
     
     @router.callback_query(F.data.startswith("reject_order:"))
     async def reject_order_handler(call: CallbackQuery) -> None:
