@@ -1556,7 +1556,7 @@ def create_router(config: AppConfig) -> Router:
         order_id = int(call.data.split(":")[1])
         
         # Додати водія до списку відхилених для цього замовлення
-        from app.storage.db import add_rejected_driver
+        from app.storage.db import add_rejected_driver, get_rejected_drivers_for_order
         await add_rejected_driver(config.database_path, order_id, driver.id)
         
         await call.answer("❌ Ви відхилили замовлення", show_alert=False)
@@ -1568,45 +1568,69 @@ def create_router(config: AppConfig) -> Router:
             except:
                 pass
         
-        # ВІДПРАВИТИ ПРІОРИТЕТНЕ ЗАМОВЛЕННЯ В ГРУПУ ПРИ ВІДХИЛЕННІ
-        from app.utils.priority_order_manager import PriorityOrderManager
-        PriorityOrderManager.cancel_priority_timer(order_id)
+        logger.info(f"❌ Водій {driver.full_name} (ID: {driver.id}) відхилив замовлення #{order_id}")
         
         # Перевірити чи замовлення все ще pending (тобто пріоритетне)
         order = await get_order_by_id(config.database_path, order_id)
         if order and order.status == "pending" and not order.group_message_id:
-            # Замовлення було тільки у пріоритетних водіїв - відправити в групу
-            logger.info(f"📢 Пріоритетний водій відхилив замовлення #{order_id}, відправляю в групу")
-            
-            # Отримати деталі замовлення та відправити в групу
-            from app.config.config import get_city_group_id
-            from app.storage.db import get_user_by_id
+            # Отримати всіх пріоритетних водіїв для цього міста/класу авто
+            from app.storage.db import get_user_by_id, get_drivers_by_city
             
             user = await get_user_by_id(config.database_path, order.user_id)
-            client_city = user.city if user else None
-            city_group_id = get_city_group_id(config, client_city)
+            client_city = user.city if user and user.city else None
             
-            if city_group_id:
-                from app.utils.priority_order_manager import _send_to_group
-                order_details = {
-                    'name': order.name,
-                    'phone': order.phone,
-                    'pickup': order.pickup_address,
-                    'destination': order.destination_address,
-                    'comment': order.comment,
-                    'pickup_lat': order.pickup_lat,
-                    'pickup_lon': order.pickup_lon,
-                    'dest_lat': order.dest_lat,
-                    'dest_lon': order.dest_lon,
-                    'distance_m': order.distance_m,
-                    'duration_s': order.duration_s,
-                    'estimated_fare': order.fare_amount,
-                    'car_class': order.car_class,
-                    'db_path': config.database_path,
-                }
-                await _send_to_group(call.bot, order_id, city_group_id, order_details)
-        
-        logger.info(f"❌ Водій {driver.full_name} відхилив замовлення #{order_id}")
+            if client_city:
+                # Отримати всіх онлайн водіїв з пріоритетом для цього міста
+                all_drivers = await get_drivers_by_city(config.database_path, client_city)
+                priority_drivers = [d for d in all_drivers if d.online and hasattr(d, 'priority') and d.priority > 0]
+                
+                # Відфільтрувати водіїв за класом авто
+                order_class = order.car_class or 'economy'
+                priority_drivers = [d for d in priority_drivers if (d.car_class or 'economy') == order_class]
+                
+                # Отримати список водіїв що відхилили це замовлення
+                rejected_driver_ids = await get_rejected_drivers_for_order(config.database_path, order_id)
+                
+                logger.info(f"📊 Замовлення #{order_id}: пріоритетних водіїв={len(priority_drivers)}, відхилили={len(rejected_driver_ids)}")
+                
+                # Перевірити чи ВСІ пріоритетні водії відхилили
+                all_rejected = len(priority_drivers) > 0 and len(rejected_driver_ids) >= len(priority_drivers)
+                
+                if all_rejected:
+                    # ВСІ пріоритетні водії відхилили - відправити в групу
+                    logger.info(f"📢 ВСІ пріоритетні водії відхилили замовлення #{order_id}, відправляю в групу")
+                    
+                    # Скасувати пріоритетний таймер
+                    from app.utils.priority_order_manager import PriorityOrderManager
+                    PriorityOrderManager.cancel_priority_timer(order_id)
+                    
+                    # Відправити в групу
+                    from app.config.config import get_city_group_id
+                    city_group_id = get_city_group_id(config, client_city)
+                    
+                    if city_group_id:
+                        from app.utils.priority_order_manager import _send_to_group
+                        order_details = {
+                            'name': order.name,
+                            'phone': order.phone,
+                            'pickup': order.pickup_address,
+                            'destination': order.destination_address,
+                            'comment': order.comment,
+                            'pickup_lat': order.pickup_lat,
+                            'pickup_lon': order.pickup_lon,
+                            'dest_lat': order.dest_lat,
+                            'dest_lon': order.dest_lon,
+                            'distance_m': order.distance_m,
+                            'duration_s': order.duration_s,
+                            'estimated_fare': order.fare_amount,
+                            'car_class': order.car_class,
+                            'db_path': config.database_path,
+                        }
+                        await _send_to_group(call.bot, order_id, city_group_id, order_details)
+                else:
+                    # Ще є пріоритетні водії що не відхилили - вони все ще бачать замовлення
+                    remaining = len(priority_drivers) - len(rejected_driver_ids)
+                    logger.info(f"✅ Замовлення #{order_id} все ще доступне для {remaining} пріоритетних водіїв")
 
     @router.callback_query(F.data.startswith("arrived:"))
     async def driver_arrived(call: CallbackQuery) -> None:
