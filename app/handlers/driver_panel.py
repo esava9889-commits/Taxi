@@ -993,95 +993,18 @@ def create_router(config: AppConfig) -> Router:
             await call.message.edit_text(text, reply_markup=kb)
         await call.answer()
 
-    @router.message(F.location)
-    async def share_location_with_client(message: Message, state: FSMContext) -> None:
-        """Оновити геолокацію водія (завжди) + поділитися з клієнтом (якщо є замовлення)"""
-        if not message.from_user or not message.location:
-            return
-        
-        # 🔒 ВАЖЛИВО: Не обробляти геолокацію якщо користувач у state (збереження адреси, замовлення тощо)
-        current_state = await state.get_state()
-        if current_state is not None:
-            # Користувач у якомусь state - пропустити цей обробник
-            logger.debug(f"🔒 Користувач {message.from_user.id} у state {current_state} - пропускаю обробник геолокації водія")
-            return
-        
-        # Перевірити чи це водій
-        driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
-        if not driver or driver.status != "approved":
-            return
-        
-        lat = message.location.latitude
-        lon = message.location.longitude
-        
-        # ⭐ ЗАВЖДИ ОНОВЛЮЄМО ГЕОЛОКАЦІЮ В БД
-        from app.storage.db import update_driver_location
-        await update_driver_location(config.database_path, message.from_user.id, lat, lon)
-        
-        # Знайти активне замовлення водія
-        active_order = await get_active_order_for_driver(config.database_path, driver.id)
-        
-        # ⭐ ЯКЩО Є АКТИВНЕ ЗАМОВЛЕННЯ - відправити клієнту
-        if active_order:
-            try:
-                # Надіслати live location клієнту (оновлюється автоматично 15 хвилин)
-                await message.bot.send_location(
-                    active_order.user_id,
-                    latitude=lat,
-                    longitude=lon,
-                    live_period=900,  # 15 хвилин
-                )
-                
-                # Надіслати повідомлення з інформацією
-                kb = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(
-                            text="🗺️ Відкрити в Google Maps",
-                            url=f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-                        )]
-                    ]
-                )
-                
-                await message.bot.send_message(
-                    active_order.user_id,
-                    f"📍 <b>Водій поділився локацією!</b>\n\n"
-                    f"🚗 {driver.full_name}\n"
-                    f"🚙 {driver.car_make} {driver.car_model}\n"
-                    f"📱 <code>{driver.phone}</code>\n\n"
-                    f"Ви можете відстежувати його переміщення\n"
-                    f"протягом наступних 15 хвилин.",
-                    reply_markup=kb
-                )
-                
-                await message.answer(
-                    f"✅ <b>Локацію надіслано клієнту!</b>\n\n"
-                    f"👤 Клієнт: {active_order.name}\n"
-                    f"📱 {active_order.phone}\n\n"
-                    f"Клієнт тепер бачить вашу локацію в реальному часі.\n"
-                    f"⏱️ Live tracking активний: 15 хвилин",
-                    reply_markup=driver_panel_keyboard()
-                )
-                
-                logger.info(f"Driver {driver.tg_user_id} shared location with client for order #{active_order.id}")
-                
-            except Exception as e:
-                logger.error(f"Failed to share location with client: {e}")
-                await message.answer(
-                    "❌ Не вдалося надіслати локацію клієнту.\n"
-                    "Спробуйте ще раз.",
-                    reply_markup=driver_panel_keyboard()
-                )
-        else:
-            # ⭐ НЕМАЄ АКТИВНОГО ЗАМОВЛЕННЯ - просто оновили геолокацію
-            await message.answer(
-                "✅ <b>Геолокацію оновлено!</b>\n\n"
-                "📍 Ваша поточна позиція збережена.\n\n"
-                "💡 Коли ви приймете замовлення, клієнт зможе\n"
-                "бачити вашу геолокацію в реальному часі.",
-                reply_markup=driver_panel_keyboard()
-            )
-            
-            logger.info(f"Driver {driver.tg_user_id} updated location (no active order)")
+    # ⭐ ВИДАЛЕНО СТАРИЙ ОБРОБНИК share_location_with_client (рядки 996-1084)
+    # 
+    # ПРИЧИНА ВИДАЛЕННЯ:
+    # 1. Цей обробник реєструвався РАНІШЕ за інші обробники геолокації
+    # 2. Коли він робив `return` (навіть якщо state != None), aiogram вважав подію "handled"
+    # 3. Інші обробники (waiting_for_location_to_share) НЕ ВИКЛИКАЛИСЬ!
+    # 4. Це блокувало нову логіку з кнопкою "Поділитися геопозицією"
+    #
+    # ТЕПЕР:
+    # - Live location відправляється ТІЛЬКИ через кнопку (FSM)
+    # - Водій контролює коли ділитися геолокацією
+    # - Завжди свіжі координати (запитуються зараз, не з БД)
 
     # ⛔ ВИДАЛЕНО: "Мій заробіток" - тепер в "⚙️ Особиста інформація"
 
@@ -1904,6 +1827,7 @@ def create_router(config: AppConfig) -> Router:
         
         current_state = await state.get_state()
         logger.info(f"🟡 Поточний FSM стан: {current_state}")
+        logger.info(f"🟡 Очікуваний стан: {DriverProfileStates.waiting_for_location_to_share}")
         
         data = await state.get_data()
         logger.info(f"🟡 FSM дані: {data}")
@@ -1911,11 +1835,18 @@ def create_router(config: AppConfig) -> Router:
         # Якщо це водій очікує поділитися геолокацією
         if current_state == DriverProfileStates.waiting_for_location_to_share:
             logger.warning(f"⚠️ FSM стан правильний, але основний обробник не спрацював!")
-            # Передати обробку основному обробнику - не робимо нічого тут
+            logger.warning(f"⚠️ Можливо проблема з порядком обробників!")
+            # НЕ повертаємо, спробуємо обробити тут
+        else:
+            # Інші випадки
+            logger.info(f"ℹ️ Геолокація отримана поза FSM процесом")
             return
         
-        # Інші випадки
-        logger.info(f"ℹ️ Геолокація отримана поза FSM процесом")
+        # СПРОБУВАТИ ОБРОБИТИ ТУТ (якщо основний обробник не спрацював)
+        logger.info(f"🟡 FALLBACK пробує обробити геолокацію замість основного обробника")
+        
+        # Викликати основний обробник вручну
+        await handle_location_share_with_client(message, state)
     
     @router.message(DriverProfileStates.waiting_for_location_to_share, F.text == "❌ Скасувати")
     async def cancel_location_share(message: Message, state: FSMContext) -> None:
