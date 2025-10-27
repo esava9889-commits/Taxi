@@ -1697,6 +1697,8 @@ def create_router(config: AppConfig) -> Router:
     @router.callback_query(F.data.startswith("share_location:"))
     async def share_live_location_request(call: CallbackQuery, state: FSMContext) -> None:
         """Водій хоче поділитися геопозицією - запит свіжої геолокації"""
+        logger.info(f"🔵 share_live_location_request викликано для user {call.from_user.id if call.from_user else 'unknown'}")
+        
         if not call.from_user:
             return
         
@@ -1730,6 +1732,7 @@ def create_router(config: AppConfig) -> Router:
         # Встановити FSM стан і зберегти order_id
         await state.set_state(DriverProfileStates.waiting_for_location_to_share)
         await state.update_data(share_order_id=order_id)
+        logger.info(f"✅ FSM стан встановлено: waiting_for_location_to_share для order #{order_id}")
         
         # Створити Reply клавіатуру з кнопкою геолокації
         location_kb = ReplyKeyboardMarkup(
@@ -1762,7 +1765,11 @@ def create_router(config: AppConfig) -> Router:
     @router.message(DriverProfileStates.waiting_for_location_to_share, F.location)
     async def handle_location_share_with_client(message: Message, state: FSMContext) -> None:
         """Обробка геолокації для передачі клієнту"""
+        logger.info(f"🔵 handle_location_share_with_client викликано для user {message.from_user.id if message.from_user else 'unknown'}")
+        logger.info(f"🔵 Отримано геолокацію: lat={message.location.latitude if message.location else 'None'}, lon={message.location.longitude if message.location else 'None'}")
+        
         if not message.from_user or not message.location:
+            logger.warning(f"⚠️ Відхилено: from_user={message.from_user is not None}, location={message.location is not None}")
             return
         
         driver = await get_driver_by_tg_user_id(config.database_path, message.from_user.id)
@@ -1889,6 +1896,26 @@ def create_router(config: AppConfig) -> Router:
         
         # Очистити FSM стан
         await state.clear()
+    
+    @router.message(F.location)
+    async def handle_any_location(message: Message, state: FSMContext) -> None:
+        """Fallback обробник для будь-якої геолокації (для діагностики)"""
+        logger.info(f"🟡 FALLBACK: Отримано геолокацію від user {message.from_user.id if message.from_user else 'unknown'}")
+        
+        current_state = await state.get_state()
+        logger.info(f"🟡 Поточний FSM стан: {current_state}")
+        
+        data = await state.get_data()
+        logger.info(f"🟡 FSM дані: {data}")
+        
+        # Якщо це водій очікує поділитися геолокацією
+        if current_state == DriverProfileStates.waiting_for_location_to_share:
+            logger.warning(f"⚠️ FSM стан правильний, але основний обробник не спрацював!")
+            # Передати обробку основному обробнику - не робимо нічого тут
+            return
+        
+        # Інші випадки
+        logger.info(f"ℹ️ Геолокація отримана поза FSM процесом")
     
     @router.message(DriverProfileStates.waiting_for_location_to_share, F.text == "❌ Скасувати")
     async def cancel_location_share(message: Message, state: FSMContext) -> None:
