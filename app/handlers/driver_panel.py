@@ -1373,6 +1373,32 @@ def create_router(config: AppConfig) -> Router:
             )
             return
 
+        # ⭐ ВИДАЛИТИ повідомлення з групи ОДРАЗУ (щоб інші водії не натискали)
+        if order.group_message_id:
+            try:
+                # Отримати ID групи міста клієнта
+                from app.config.config import get_city_group_id
+                from app.storage.db import get_user_by_id
+                
+                user = await get_user_by_id(config.database_path, order.user_id)
+                client_city = user.city if user and user.city else None
+                
+                group_id = get_city_group_id(config, client_city)
+                
+                if group_id:
+                    # Видалити повідомлення з групи водіїв
+                    await call.bot.delete_message(
+                        chat_id=group_id,
+                        message_id=order.group_message_id
+                    )
+                    logger.info(f"✅ Повідомлення про замовлення #{order_id} видалено з групи {group_id} (місто: {client_city})")
+                else:
+                    logger.warning(f"⚠️ Не знайдено ID групи для міста {client_city}")
+            except Exception as e:
+                logger.error(f"❌ Не вдалося видалити повідомлення з групи: {e}", exc_info=True)
+        else:
+            logger.warning(f"⚠️ Замовлення не має group_message_id, пропускаю видалення")
+
         # ⭐ НОВА ЛОГІКА: Запитати геолокацію ПЕРЕД прийняттям замовлення
         # Зберегти order_id в FSM state
         await state.set_state(DriverProfileStates.waiting_for_location_to_accept)
@@ -1412,227 +1438,10 @@ def create_router(config: AppConfig) -> Router:
             await state.update_data(location_request_msg_id=location_request_msg.message_id)
         except Exception as e:
             logger.error(f"❌ Помилка відправки запиту на геолокацію: {e}")
-            # Fallback: прийняти без геолокації
+            # Fallback: прийняти без геолокації (якщо помилка відправки запиту)
             await state.clear()
             success = await accept_order(config.database_path, order_id, driver.id)
-        
-        # СТАРА ЛОГІКА (закоментована, буде викликана після отримання геолокації)
-        if False:  # success:
-            # СКАСУВАТИ ТАЙМЕР: Замовлення прийнято водієм
-            cancel_order_timeout(order_id)
-            
-            # СКАСУВАТИ ПРІОРИТЕТНИЙ ТАЙМЕР
-            from app.utils.priority_order_manager import PriorityOrderManager
-            PriorityOrderManager.cancel_priority_timer(order_id)
-            
-            logger.info(f"✅ Таймер скасовано для замовлення #{order_id} (прийнято водієм)")
-            
-            await call.answer("✅ Замовлення прийнято!", show_alert=True)
-            
-            # Розрахувати відстань і час
-            distance_text = ""
-            eta_text = ""
-            if order.distance_m:
-                km = order.distance_m / 1000.0
-                distance_text = f"\n📏 <b>Відстань:</b> {km:.1f} км"
-                # Орієнтовний час (припустимо 50 км/год в місті)
-                eta_minutes = int((km / 50) * 60)
-                if eta_minutes > 0:
-                    eta_text = f"\n⏱ <b>Орієнтовний час:</b> {eta_minutes} хв"
-            
-            # Очистити адреси від Plus Codes
-            clean_pickup = clean_address(order.pickup_address)
-            clean_destination = clean_address(order.destination_address)
-            
-            # Текст про геолокацію (автоматично надіслана)
-            if driver.last_lat and driver.last_lon:
-                location_status = "📍 <b>Геолокація водія активна!</b>\nВи бачите його переміщення на карті в реальному часі (15 хв)."
-            else:
-                location_status = "⚠️ <b>Геолокація водія недоступна</b>\nВодій ще не оновив свою геолокацію."
-            
-            # Текст про оплату
-            payment_emoji = "💵" if order.payment_method == "cash" else "💳"
-            payment_text = "Готівка" if order.payment_method == "cash" else "Картка"
-            
-            # Кнопки для клієнта
-            kb_client_buttons = []
-            
-            # Кнопка картки (якщо оплата карткою)
-            if order.payment_method == "card" and driver.card_number:
-                kb_client_buttons.append([
-                    InlineKeyboardButton(text="💳 Картка водія", callback_data=f"show_card:{order_id}")
-                ])
-            
-            # Кнопка маршруту
-            if order.pickup_lat and order.pickup_lon and order.dest_lat and order.dest_lon:
-                kb_client_buttons.append([
-                    InlineKeyboardButton(
-                        text="🗺️ Маршрут на карті",
-                        url=f"https://www.google.com/maps/dir/?api=1&origin={order.pickup_lat},{order.pickup_lon}&destination={order.dest_lat},{order.dest_lon}"
-                    )
-                ])
-            
-            # Кнопка де зараз водій
-            if driver.last_lat and driver.last_lon:
-                kb_client_buttons.append([
-                    InlineKeyboardButton(
-                        text="📍 Де зараз водій?",
-                        url=f"https://www.google.com/maps?q={driver.last_lat},{driver.last_lon}"
-                    )
-                ])
-            
-            kb_client = InlineKeyboardMarkup(inline_keyboard=kb_client_buttons)
-            
-            # Компактне повідомлення для клієнта
-            client_message = (
-                f"✅ <b>ВОДІЙ ПРИЙНЯВ ЗАМОВЛЕННЯ!</b>\n\n"
-                f"👤 <b>{driver.full_name}</b>\n"
-                f"🚗 {driver.car_make} {driver.car_model} • {driver.car_plate}\n"
-                f"📱 {driver.phone}\n"
-                f"⭐ {driver.total_orders} успішних поїздок\n\n"
-                f"💰 <b>До сплати:</b> {int(order.fare_amount):.0f} грн {payment_emoji}\n\n"
-                f"📍 <b>Водій їде до вас!</b>\n"
-                f"Геолокація водія надіслана нижче ⬇️"
-            )
-            
-            # Відправити повідомлення клієнту
-            try:
-                await call.bot.send_message(
-                    order.user_id,
-                    client_message,
-                    reply_markup=kb_client
-                )
-                logger.info(f"✅ Повідомлення про прийняття відправлено клієнту {order.user_id}")
-            except Exception as e:
-                logger.error(f"❌ Не вдалося відправити повідомлення клієнту: {e}")
-            
-            # ВИДАЛИТИ повідомлення з групи (для приватності)
-            if order.group_message_id:
-                try:
-                    # Отримати ID групи міста клієнта
-                    from app.config.config import get_city_group_id
-                    from app.storage.db import get_user_by_id
-                    
-                    user = await get_user_by_id(config.database_path, order.user_id)
-                    client_city = user.city if user and user.city else None
-                    
-                    group_id = get_city_group_id(config, client_city)
-                    
-                    if group_id:
-                        # Видалити повідомлення з групи водіїв
-                        await call.bot.delete_message(
-                            chat_id=group_id,
-                            message_id=order.group_message_id
-                        )
-                        logger.info(f"✅ Повідомлення про замовлення #{order_id} видалено з групи {group_id} (місто: {client_city})")
-                    else:
-                        logger.warning(f"⚠️ Не знайдено ID групи для міста {client_city}")
-                except Exception as e:
-                    logger.error(f"❌ Не вдалося видалити повідомлення з групи: {e}", exc_info=True)
-            else:
-                logger.warning(f"⚠️ Замовлення не має group_message_id, пропускаю видалення")
-            
-            # ⭐ Live location відправляється АВТОМАТИЧНО при прийнятті замовлення
-            # Водій надає геолокацію при підтвердженні прийняття
-            # Це забезпечує СВІЖІ координати, а не застарілі дані з БД
-            
-            # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню з Reply Keyboard
-            
-            # 1. Спробувати видалити останні повідомлення в чаті водія
-            try:
-                # Видалити останні 20 повідомлень (очистити чат)
-                for i in range(1, 21):
-                    try:
-                        await call.bot.delete_message(
-                            chat_id=driver.tg_user_id,
-                            message_id=call.message.message_id - i if call.message else 0
-                        )
-                    except:
-                        pass  # Ігноруємо помилки видалення
-            except Exception as e:
-                logger.warning(f"Не вдалося видалити попередні повідомлення: {e}")
-            
-            # 2. Підготувати дані для повідомлення водію
-            distance_text = ""
-            if order.distance_m:
-                km = order.distance_m / 1000.0
-                distance_text = f"\n📏 Відстань: {km:.1f} км"
-            
-            payment_emoji = "💵" if order.payment_method == "cash" else "💳"
-            
-            # ⭐ Очистити адреси від Plus Codes
-            clean_pickup = clean_address(order.pickup_address)
-            clean_destination = clean_address(order.destination_address)
-            
-            # ⭐ Створити посилання на Google Maps якщо є координати
-            pickup_link = ""
-            destination_link = ""
-            
-            if order.pickup_lat and order.pickup_lon:
-                pickup_link = f"<a href='https://www.google.com/maps?q={order.pickup_lat},{order.pickup_lon}'>📍 Відкрити на карті</a>"
-            
-            if order.dest_lat and order.dest_lon:
-                destination_link = f"<a href='https://www.google.com/maps?q={order.dest_lat},{order.dest_lon}'>📍 Відкрити на карті</a>"
-            
-            # 3. ⭐ REPLY KEYBOARD - ВЕЛИКЕ МЕНЮ КЕРУВАННЯ ЗАМОВЛЕННЯМ
-            kb_trip = ReplyKeyboardMarkup(
-                keyboard=[
-                    # ======== ОСНОВНЕ КЕРУВАННЯ ========
-                    # Велика кнопка "Я на місці" (перший крок)
-                    [KeyboardButton(text="📍 Я НА МІСЦІ ПОДАЧІ")],
-                    # Велика кнопка "Клієнт в авто" (другий крок)
-                    [KeyboardButton(text="✅ КЛІЄНТ В АВТО")],
-                    # Велика кнопка "Завершити поїздку" (третій крок)
-                    [KeyboardButton(text="🏁 ЗАВЕРШИТИ ПОЇЗДКУ")],
-                    
-                    # ======== ДОДАТКОВІ ФУНКЦІЇ ========
-                    # Ряд з 2 кнопками
-                    [
-                        KeyboardButton(text="📞 Клієнт", request_contact=False),
-                        KeyboardButton(text="🗺️ Маршрут")
-                    ],
-                    # Ряд з 2 кнопками
-                    [
-                        KeyboardButton(text="❌ Скасувати замовлення"),
-                        KeyboardButton(text="🚗 Панель водія")
-                    ]
-                ],
-                resize_keyboard=True,
-                one_time_keyboard=False,
-                input_field_placeholder="Керування поїздкою"
-            )
-            
-            # Компактний текст
-            trip_management_text = (
-                f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
-                f"👤 {order.name} • <code>{order.phone}</code>\n\n"
-                f"📍 <b>Звідки:</b> {clean_pickup}\n"
-                f"{pickup_link}\n\n"
-                f"🎯 <b>Куди:</b> {clean_destination}\n"
-                f"{destination_link}{distance_text}\n\n"
-                f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n"
-            )
-            
-            if order.comment:
-                trip_management_text += f"\n💬 {order.comment}\n"
-            
-            trip_management_text += "\n🚗 Використовуйте кнопки нижче для керування поїздкою!"
-            
-            # Відправити повідомлення з інформацією про замовлення та Reply клавіатурою
-            await call.bot.send_message(
-                driver.tg_user_id,
-                trip_management_text,
-                reply_markup=kb_trip,
-                disable_web_page_preview=True
-            )
-            
-            # Видалити повідомлення з приватного чату водія (якщо це було пріоритетне замовлення в ДМ)
-            if call.message and call.message.chat.type == "private":
-                try:
-                    await call.message.delete()
-                    logger.info(f"✅ Повідомлення про пріоритетне замовлення #{order_id} видалено з ДМ водія {driver.tg_user_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Не вдалося видалити повідомлення з ДМ: {e}")
+            logger.warning(f"⚠️ Замовлення #{order_id} прийнято БЕЗ геолокації через помилку")
     
     @router.message(DriverProfileStates.waiting_for_location_to_accept, F.location)
     async def handle_location_for_accept_order(message: Message, state: FSMContext) -> None:
