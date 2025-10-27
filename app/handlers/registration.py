@@ -61,7 +61,10 @@ def create_registration_router(config: AppConfig) -> Router:
             )
             
             if isinstance(event, CallbackQuery):
-                await event.answer("Забагато спроб реєстрації!", show_alert=True)
+                try:
+                    await event.answer("Забагато спроб реєстрації!", show_alert=True)
+                except Exception as e:
+                    logger.debug(f"Не вдалося відповісти на callback: {e}")
                 if event.message:
                     await event.message.answer(error_text, parse_mode="HTML")
             else:
@@ -78,7 +81,10 @@ def create_registration_router(config: AppConfig) -> Router:
             
             text = f"✅ Ви вже зареєстровані!\n\n📍 Місто: {user.city}\n📱 Телефон: {user.phone}"
             if isinstance(event, CallbackQuery):
-                await event.answer("Ви вже зареєстровані!")
+                try:
+                    await event.answer("Ви вже зареєстровані!")
+                except Exception as e:
+                    logger.debug(f"Не вдалося відповісти на callback: {e}")
                 try:
                     await event.message.edit_text(text)
                 except:
@@ -89,7 +95,12 @@ def create_registration_router(config: AppConfig) -> Router:
             return
         
         if isinstance(event, CallbackQuery):
-            await event.answer()
+            # Спроба відповісти на callback (може бути застарілий)
+            try:
+                await event.answer()
+            except Exception as e:
+                # Ігноруємо помилки типу "query is too old"
+                logger.debug(f"Не вдалося відповісти на callback: {e}")
         
         # Вибір міста
         text = "📍 <b>Крок 1/2: Оберіть ваше місто</b>\n\nВиберіть місто, в якому ви плануєте користуватися таксі:"
