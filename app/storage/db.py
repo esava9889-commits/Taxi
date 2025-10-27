@@ -697,8 +697,7 @@ async def cancel_order_by_client(db_path: str, order_id: int, user_id: int) -> b
         # 🛑 Зупинити live location трекінг якщо був активний
         try:
             from app.utils.live_location_manager import LiveLocationManager
-            import asyncio
-            asyncio.create_task(LiveLocationManager.stop_tracking(order_id))
+            await LiveLocationManager.stop_tracking(order_id)
         except Exception as e:
             logger.warning(f"⚠️ Не вдалося зупинити live location: {e}")
         
@@ -741,8 +740,7 @@ async def cancel_order_by_driver(db_path: str, order_id: int, driver_id: int, re
         # 🛑 Зупинити live location трекінг якщо був активний
         try:
             from app.utils.live_location_manager import LiveLocationManager
-            import asyncio
-            asyncio.create_task(LiveLocationManager.stop_tracking(order_id))
+            await LiveLocationManager.stop_tracking(order_id)
         except Exception as e:
             logger.warning(f"⚠️ Не вдалося зупинити live location: {e}")
         
