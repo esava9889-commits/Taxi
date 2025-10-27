@@ -117,6 +117,11 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, message):
+            return
+        
         # Видалити повідомлення користувача для чистого чату
         try:
             await message.delete()
@@ -341,6 +346,11 @@ def create_router(config: AppConfig) -> Router:
     async def start_work(message: Message) -> None:
         """Меню керування роботою - розширена версія"""
         if not message.from_user:
+            return
+        
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, message):
             return
         
         # Видалити повідомлення користувача для чистого чату
@@ -955,6 +965,11 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, message):
+            return
+        
         # Видалити повідомлення користувача для чистого чату
         try:
             await message.delete()
@@ -1215,6 +1230,11 @@ def create_router(config: AppConfig) -> Router:
         if not message.from_user:
             return
         
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, message):
+            return
+        
         orders = await get_driver_order_history(config.database_path, message.from_user.id, limit=5)
         
         if not orders:
@@ -1249,6 +1269,12 @@ def create_router(config: AppConfig) -> Router:
             return
         
         logger.info(f"🔔 accept_order callback from user {call.from_user.id} (username: @{call.from_user.username})")
+        
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ: Перевірити чи не заблокований водій
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, call):
+            logger.warning(f"🚫 Blocked driver {call.from_user.id} tried to accept order")
+            return
         
         # RATE LIMITING: Перевірка ліміту прийняття замовлень (максимум 20 спроб на годину)
         if not check_rate_limit(call.from_user.id, "accept_order", max_requests=20, window_seconds=3600):
@@ -1885,6 +1911,11 @@ def create_router(config: AppConfig) -> Router:
     async def show_wallet(message: Message) -> None:
         """Гаманець водія - картка для отримання оплати"""
         if not message.from_user:
+            return
+        
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, message):
             return
         
         # Видалити повідомлення користувача для чистого чату
@@ -3311,6 +3342,11 @@ def create_router(config: AppConfig) -> Router:
         
         if not message.from_user:
             logger.error("❌ Налаштування: message.from_user is None!")
+            return
+        
+        # 🚫 ПЕРЕВІРКА БЛОКУВАННЯ
+        from app.handlers.driver_blocked_check import check_driver_blocked_and_notify
+        if await check_driver_blocked_and_notify(config.database_path, message):
             return
         
         # Видалити повідомлення користувача
