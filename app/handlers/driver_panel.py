@@ -1529,6 +1529,15 @@ def create_router(config: AppConfig) -> Router:
             logger.info(f"✅ LiveLocationManager запущено для замовлення #{order_id}")
             
             # Повідомлення клієнту про прийняття замовлення + live location
+            # Створити кнопки для клієнта
+            client_buttons = []
+            if order.payment_method == "card" and driver.card_number:
+                client_buttons.append([
+                    InlineKeyboardButton(text="💳 Картка водія для оплати", callback_data=f"show_card:{order_id}")
+                ])
+            
+            client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
+            
             await message.bot.send_message(
                 order.user_id,
                 "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
@@ -1538,7 +1547,8 @@ def create_router(config: AppConfig) -> Router:
                 "📍 <b>Водій поділився геопозицією!</b>\n"
                 "Ви можете бачити його рух в реальному часі.\n"
                 "Геопозиція оновлюється кожні 20 секунд протягом 15 хвилин.\n\n"
-                "🚗 Водій їде до вас!"
+                "🚗 Водій їде до вас!",
+                reply_markup=client_kb
             )
             
             logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id}")
@@ -1664,13 +1674,23 @@ def create_router(config: AppConfig) -> Router:
         
         # Повідомити клієнта (БЕЗ live location)
         try:
+            # Створити кнопки для клієнта
+            client_buttons = []
+            if order.payment_method == "card" and driver.card_number:
+                client_buttons.append([
+                    InlineKeyboardButton(text="💳 Картка водія для оплати", callback_data=f"show_card:{order_id}")
+                ])
+            
+            client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
+            
             await message.bot.send_message(
                 order.user_id,
                 "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
-                "🚗 Водій їде до вас!"
+                "🚗 Водій їде до вас!",
+                reply_markup=client_kb
             )
             logger.info(f"✅ Повідомлення клієнту відправлено (БЕЗ live location)")
         except Exception as e:
@@ -3306,21 +3326,24 @@ def create_router(config: AppConfig) -> Router:
         await call.answer()
         
         card_message = (
-            f"💳 <b>КАРТКА ДЛЯ ОПЛАТИ</b>\n\n"
+            f"💳 <b>КАРТКА ДЛЯ ОПЛАТИ ПОЇЗДКИ</b>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"👤 <b>Водій:</b> {driver.full_name}\n"
             f"💳 <b>Номер картки:</b>\n"
             f"<code>{driver.card_number}</code>\n\n"
             f"💰 <b>До сплати:</b> {int(order.fare_amount):.0f} грн\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"💡 <b>Натисніть на номер картки щоб скопіювати</b>\n\n"
-            f"⚠️ Після оплати обов'язково повідомте водія!"
+            f"💡 <b>Інструкція:</b>\n"
+            f"1. Натисніть на номер картки щоб скопіювати\n"
+            f"2. Перейдіть в свій банківський додаток\n"
+            f"3. Виконайте переказ на цю картку\n"
+            f"4. Після оплати натисніть 'Я оплатив'\n\n"
+            f"⚠️ Водій отримає повідомлення про оплату"
         )
         
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Я оплатив(ла)", callback_data=f"paid:confirm:{order_id}")],
-                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"back_to_order:{order_id}")]
+                [InlineKeyboardButton(text="✅ Я оплатив(ла) поїздку", callback_data=f"paid:confirm:{order_id}")]
             ]
         )
         
