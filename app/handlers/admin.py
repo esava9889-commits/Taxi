@@ -533,6 +533,21 @@ def create_router(config: AppConfig) -> Router:
                 
                 # Отримати несплачену комісію водія
                 unpaid_commission = await get_driver_unpaid_commission(config.database_path, tg_user_id)
+                
+                # Отримати додаткову статистику водія
+                from app.storage.db import get_driver_average_rating
+                driver = await get_driver_by_id(config.database_path, driver_id)
+                
+                # Середній рейтинг
+                avg_rating = await get_driver_average_rating(config.database_path, tg_user_id)
+                rating_text = f"{avg_rating:.1f}⭐" if avg_rating else "Немає оцінок"
+                
+                # Карма та кількість поїздок
+                karma = driver.karma if driver else 100
+                total_orders = driver.total_orders if driver else 0
+                
+                # Емодзі для карми
+                karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
 
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
@@ -553,6 +568,9 @@ def create_router(config: AppConfig) -> Router:
                     f"🚗 {car_make} {car_model} ({car_plate})\n"
                     f"🎯 Клас: {car_class}\n"
                     f"⭐ Пріоритет: {'Увімкнено' if (priority or 0) > 0 else 'Вимкнено'}\n"
+                    f"📊 Рейтинг: {rating_text}\n"
+                    f"{karma_emoji} Карма: {karma}/100\n"
+                    f"🚕 Поїздок: {total_orders}\n"
                     f"💳 Несплачена комісія: <b>{unpaid_commission:.2f} грн</b>\n"
                     f"🆔 ID: {driver_id}"
                 )
@@ -578,6 +596,21 @@ def create_router(config: AppConfig) -> Router:
                 # Отримати несплачену комісію водія
                 unpaid_commission = await get_driver_unpaid_commission(config.database_path, tg_user_id)
                 
+                # Отримати додаткову статистику водія
+                from app.storage.db import get_driver_average_rating
+                driver = await get_driver_by_id(config.database_path, driver_id)
+                
+                # Середній рейтинг
+                avg_rating = await get_driver_average_rating(config.database_path, tg_user_id)
+                rating_text = f"{avg_rating:.1f}⭐" if avg_rating else "Немає оцінок"
+                
+                # Карма та кількість поїздок
+                karma = driver.karma if driver else 100
+                total_orders = driver.total_orders if driver else 0
+                
+                # Емодзі для карми
+                karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
+                
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
@@ -593,6 +626,9 @@ def create_router(config: AppConfig) -> Router:
                     f"📱 {phone}\n"
                     f"🏙️ {city or 'Не вказано'}\n"
                     f"🚗 {car_make} {car_model} ({car_plate})\n"
+                    f"📊 Рейтинг: {rating_text}\n"
+                    f"{karma_emoji} Карма: {karma}/100\n"
+                    f"🚕 Поїздок: {total_orders}\n"
                     f"💳 Несплачена комісія: <b>{unpaid_commission:.2f} грн</b>\n"
                     f"🆔 ID: {driver_id}"
                 )
@@ -1727,6 +1763,7 @@ def create_router(config: AppConfig) -> Router:
             elif action == "stats":
                 # Показати статистику водія
                 from app.storage.db_connection import db_manager
+                from app.storage.db import get_driver_average_rating
                 
                 async with db_manager.connect(config.database_path) as db:
                     # Загальна кількість замовлень
@@ -1747,15 +1784,30 @@ def create_router(config: AppConfig) -> Router:
                     
                     net_earnings = total_earnings - total_commission
                 
+                # Отримати рейтинг водія
+                avg_rating = await get_driver_average_rating(config.database_path, driver.tg_user_id)
+                rating_text = f"{avg_rating:.1f}⭐" if avg_rating else "Немає оцінок"
+                
+                # Карма
+                karma = driver.karma
+                karma_emoji = "🟢" if karma >= 80 else "🟡" if karma >= 50 else "🔴"
+                
                 stats_text = (
                     f"📊 <b>Статистика водія</b>\n\n"
                     f"👤 {driver.full_name}\n"
                     f"📱 {driver.phone}\n"
                     f"🚗 {driver.car_make} {driver.car_model}\n\n"
-                    f"✅ Виконано замовлень: {completed_orders}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"⭐ Рейтинг: {rating_text}\n"
+                    f"{karma_emoji} Карма: {karma}/100\n"
+                    f"🚕 Всього поїздок: {driver.total_orders}\n"
+                    f"✅ Виконано: {completed_orders}\n"
+                    f"❌ Відмов: {driver.rejected_orders}\n\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"💰 Загальний заробіток: {total_earnings:.2f} грн\n"
                     f"💸 Комісія сплачена: {total_commission:.2f} грн\n"
                     f"💵 Чистий заробіток: {net_earnings:.2f} грн\n\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"🏙️ Місто: {driver.city or 'Не вказано'}\n"
                     f"🎯 Клас авто: {driver.car_class}\n"
                     f"📅 Реєстрація: {driver.created_at.strftime('%Y-%m-%d')}"
