@@ -1576,34 +1576,9 @@ def create_router(config: AppConfig) -> Router:
             else:
                 logger.warning(f"⚠️ Замовлення не має group_message_id, пропускаю видалення")
             
-            # ⭐ АВТОМАТИЧНА LIVE LOCATION ДЛЯ КЛІЄНТА З ПОСТІЙНИМ ОНОВЛЕННЯМ
-            if driver.last_lat and driver.last_lon:
-                try:
-                    # Надіслати live location (15 хвилин)
-                    location_message = await call.bot.send_location(
-                        order.user_id,
-                        latitude=driver.last_lat,
-                        longitude=driver.last_lon,
-                        live_period=900,  # 15 хвилин
-                    )
-                    logger.info(f"📍 Live location відправлено клієнту для замовлення #{order_id}")
-                    
-                    # Запустити автоматичне оновлення локації кожні 20 секунд
-                    from app.utils.live_location_manager import LiveLocationManager
-                    await LiveLocationManager.start_tracking(
-                        bot=call.bot,
-                        order_id=order_id,
-                        user_id=order.user_id,
-                        driver_id=driver.id,
-                        message_id=location_message.message_id,
-                        db_path=config.database_path
-                    )
-                    logger.info(f"🔄 Автоматичне оновлення локації запущено для замовлення #{order_id}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ Не вдалося відправити/налаштувати live location: {e}")
-            else:
-                logger.warning(f"⚠️ Водій {driver.id} не має збереженої геолокації, live location не відправлено")
+            # ⭐ Live location тепер відправляється через КНОПКУ "Поділитися геопозицією з клієнтом"
+            # Водій сам вирішує коли поділитися своєю актуальною геолокацією
+            # Це забезпечує СВІЖІ координати, а не застарілі дані з БД
             
             # ⭐ НОВА ЛОГІКА: Видалити попередні повідомлення і показати ОДНЕ меню з Reply Keyboard
             
