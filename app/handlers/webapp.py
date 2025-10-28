@@ -36,12 +36,17 @@ def create_router(config: AppConfig) -> Router:
         """
         Обробник даних з WebApp (карти)
         """
+        logger.info(f"🗺 WebApp data received from user {message.from_user.id}")
+        
         if not message.web_app_data:
+            logger.error("❌ message.web_app_data is None!")
             return
         
         try:
             # Парсинг даних з WebApp
+            logger.info(f"📦 Raw WebApp data: {message.web_app_data.data}")
             data = json.loads(message.web_app_data.data)
+            logger.info(f"✅ Parsed data: {data}")
             
             if data.get('type') == 'location':
                 latitude = data.get('latitude')

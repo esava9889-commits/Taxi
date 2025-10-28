@@ -176,9 +176,15 @@
     <script>
         // Ініціалізація Telegram WebApp
         const tg = window.Telegram.WebApp;
+        console.log('🚀 Telegram WebApp initialized:', tg);
+        console.log('📱 Version:', tg.version);
+        console.log('👤 User:', tg.initDataUnsafe?.user);
+        
         tg.expand(); // Розгорнути на весь екран
         tg.MainButton.setText('✅ Підтвердити місце');
         tg.MainButton.hide(); // Спочатку сховати
+        
+        console.log('🔘 MainButton configured');
         
         // Застосувати тему Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
@@ -230,6 +236,7 @@
         // Обробник кліку по карті
         map.on('click', (e) => {
             const { lat, lng } = e.latlng;
+            console.log('🗺 Map clicked:', lat, lng);
             
             // Видалити попередній маркер
             if (selectedMarker) {
@@ -243,6 +250,7 @@
             
             // Зберегти координати
             selectedCoords = { lat, lng };
+            console.log('💾 Coordinates saved:', selectedCoords);
             
             // Показати координати
             document.getElementById('coords-text').textContent = 
@@ -251,6 +259,7 @@
             
             // Показати кнопку підтвердження
             tg.MainButton.show();
+            console.log('✅ MainButton shown');
             
             // Легка вібрація (якщо доступна)
             if (tg.HapticFeedback) {
@@ -260,18 +269,34 @@
         
         // Обробник кнопки "Підтвердити"
         tg.MainButton.onClick(() => {
+            console.log('🔘 MainButton clicked!');
+            console.log('📍 Selected coords:', selectedCoords);
+            
             if (selectedCoords) {
-                // Відправити дані в бота
-                tg.sendData(JSON.stringify({
+                const dataToSend = {
                     type: 'location',
                     latitude: selectedCoords.lat,
                     longitude: selectedCoords.lng
-                }));
+                };
                 
-                // Вібрація успіху
-                if (tg.HapticFeedback) {
-                    tg.HapticFeedback.notificationOccurred('success');
+                console.log('📤 Sending data to bot:', dataToSend);
+                
+                try {
+                    // Відправити дані в бота
+                    tg.sendData(JSON.stringify(dataToSend));
+                    console.log('✅ Data sent successfully!');
+                    
+                    // Вібрація успіху
+                    if (tg.HapticFeedback) {
+                        tg.HapticFeedback.notificationOccurred('success');
+                    }
+                } catch (error) {
+                    console.error('❌ Error sending data:', error);
+                    alert('Помилка відправки даних: ' + error.message);
                 }
+            } else {
+                console.warn('⚠️ No coordinates selected!');
+                alert('Будь ласка, оберіть точку на карті');
             }
         });
         
