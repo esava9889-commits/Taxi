@@ -368,13 +368,59 @@ def create_router(config: AppConfig) -> Router:
 
     @router.callback_query(F.data == "order:pickup:send_location")
     async def pickup_request_location(call: CallbackQuery, state: FSMContext) -> None:
-        """Попросити користувача надіслати геолокацію для pickup"""
+        """Показати вибір: карта або GPS геолокація для pickup"""
+        await call.answer()
+        
+        # Зберегти що ми чекаємо pickup
+        await state.update_data(waiting_for='pickup')
+        
+        # Створити інлайн кнопки з вибором
+        kb_buttons = []
+        
+        # Додати кнопку карти, якщо WEBAPP_URL налаштовано
+        if config.webapp_url:
+            from aiogram.types import WebAppInfo
+            # Для InlineKeyboard використовуємо web_app
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺 Обрати на інтерактивній карті",
+                    web_app=WebAppInfo(url=config.webapp_url)
+                )
+            ])
+        
+        # Кнопка GPS геолокації (через callback → ReplyKeyboard)
+        kb_buttons.append([
+            InlineKeyboardButton(
+                text="📍 Надіслати мої координати GPS",
+                callback_data="order:pickup:gps"
+            )
+        ])
+        
+        kb_buttons.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="order:pickup:back"),
+            InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        await call.message.edit_text(
+            "📍 <b>Звідки вас забрати?</b>\n\n"
+            "🗺 <b>Інтерактивна карта</b> - оберіть точку на карті\n"
+            "📍 <b>GPS координати</b> - ваше поточне місцезнаходження\n\n"
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "order:pickup:gps")
+    async def pickup_request_gps(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити GPS геолокацію для pickup"""
         await call.answer()
         
         # Тут ПОТРІБЕН ReplyKeyboard для request_location
         kb = ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+                [KeyboardButton(text="📍 Надіслати мої GPS координати", request_location=True)],
+                [KeyboardButton(text="❌ Скасувати")],
             ],
             resize_keyboard=True,
             one_time_keyboard=True
@@ -388,7 +434,8 @@ def create_router(config: AppConfig) -> Router:
         
         # Показати нове з ReplyKeyboard
         msg = await call.message.answer(
-            "📍 Натисніть кнопку нижче, щоб надіслати вашу геолокацію:",
+            "📍 <b>Надішліть GPS координати</b>\n\n"
+            "Натисніть кнопку нижче, щоб поділитися вашим поточним місцезнаходженням:",
             reply_markup=kb
         )
         await state.update_data(last_message_id=msg.message_id)
@@ -562,12 +609,62 @@ def create_router(config: AppConfig) -> Router:
     
     @router.callback_query(F.data == "order:dest:send_location")
     async def dest_request_location(call: CallbackQuery, state: FSMContext) -> None:
-        """Попросити користувача надіслати геолокацію для destination"""
+        """Показати вибір: карта або GPS геолокація для destination"""
+        await call.answer()
+        
+        # Зберегти що ми чекаємо destination
+        await state.update_data(waiting_for='destination')
+        
+        # Створити інлайн кнопки з вибором
+        kb_buttons = []
+        
+        # Додати кнопку карти, якщо WEBAPP_URL налаштовано
+        if config.webapp_url:
+            from aiogram.types import WebAppInfo
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺 Обрати на інтерактивній карті",
+                    web_app=WebAppInfo(url=config.webapp_url)
+                )
+            ])
+        
+        # Кнопка GPS геолокації
+        kb_buttons.append([
+            InlineKeyboardButton(
+                text="📍 Надіслати мої координати GPS",
+                callback_data="order:dest:gps"
+            )
+        ])
+        
+        kb_buttons.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup"),
+            InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")
+        ])
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        # Отримати pickup адресу для відображення
+        data = await state.get_data()
+        pickup_address = data.get('pickup', 'Не вказано')
+        
+        await call.message.edit_text(
+            f"✅ <b>Місце подачі:</b>\n{pickup_address}\n\n"
+            "📍 <b>Куди їдемо?</b>\n\n"
+            "🗺 <b>Інтерактивна карта</b> - оберіть точку на карті\n"
+            "📍 <b>GPS координати</b> - місце призначення\n\n"
+            "💡 Оберіть спосіб:",
+            reply_markup=kb
+        )
+    
+    @router.callback_query(F.data == "order:dest:gps")
+    async def dest_request_gps(call: CallbackQuery, state: FSMContext) -> None:
+        """Попросити GPS геолокацію для destination"""
         await call.answer()
         
         kb = ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="📍 Надіслати геолокацію", request_location=True)],
+                [KeyboardButton(text="📍 Надіслати GPS координати", request_location=True)],
+                [KeyboardButton(text="❌ Скасувати")],
             ],
             resize_keyboard=True,
             one_time_keyboard=True
@@ -579,7 +676,8 @@ def create_router(config: AppConfig) -> Router:
             pass
         
         msg = await call.message.answer(
-            "📍 Натисніть кнопку нижче, щоб надіслати геолокацію призначення:",
+            "📍 <b>Надішліть координати місця призначення</b>\n\n"
+            "Натисніть кнопку нижче:",
             reply_markup=kb
         )
         await state.update_data(last_message_id=msg.message_id)
