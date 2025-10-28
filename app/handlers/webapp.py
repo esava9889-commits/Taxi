@@ -66,19 +66,29 @@ def create_router(config: AppConfig) -> Router:
                 current_state = await state.get_state()
                 state_data = await state.get_data()
                 
-                logger.info(f"📍 WebApp location: lat={latitude}, lng={longitude}, address={address}, state={current_state}, waiting_for={state_data.get('waiting_for')}")
+                waiting_for = state_data.get('waiting_for')
+                logger.info(f"📍 WebApp location received:")
+                logger.info(f"  - Latitude: {latitude}")
+                logger.info(f"  - Longitude: {longitude}")
+                logger.info(f"  - Address: {address}")
+                logger.info(f"  - Current state: {current_state}")
+                logger.info(f"  - Waiting for: {waiting_for}")
+                logger.info(f"  - All state data keys: {list(state_data.keys())}")
                 
                 # Перевірити в якому стані користувач (pickup або destination)
-                if current_state == "OrderStates:pickup" or state_data.get('waiting_for') == 'pickup':
+                # ВАЖЛИВО: перевіряємо waiting_for ПЕРШИМ (надійніший спосіб!)
+                if waiting_for == 'pickup':
                     # ===== PICKUP =====
                     # Зберегти адресу подачі (використовуємо ключі як в order.py!)
                     await state.update_data(
                         pickup=address,  # ← ключ як в order.py
                         pickup_lat=latitude,
                         pickup_lon=longitude,  # ← lon, не lng!
+                        waiting_for=None,  # Очистити, щоб не було конфліктів
                     )
                     
                     logger.info(f"✅ WebApp pickup збережено: {address} ({latitude}, {longitude})")
+                    logger.info(f"📦 State після збереження pickup: {await state.get_data()}")
                     
                     # Перейти до наступного кроку - destination
                     from app.handlers.order import OrderStates
@@ -108,16 +118,18 @@ def create_router(config: AppConfig) -> Router:
                         reply_markup=kb
                     )
                     
-                elif current_state == "OrderStates:destination" or state_data.get('waiting_for') == 'destination':
+                elif waiting_for == 'destination':
                     # ===== DESTINATION =====
                     # Зберегти адресу призначення (використовуємо ключі як в order.py!)
                     await state.update_data(
                         destination=address,  # ← ключ як в order.py
                         dest_lat=latitude,
                         dest_lon=longitude,  # ← lon, не lng!
+                        waiting_for=None,  # Очистити, щоб не було конфліктів
                     )
                     
                     logger.info(f"✅ WebApp destination збережено: {address} ({latitude}, {longitude})")
+                    logger.info(f"📦 State після збереження destination: {await state.get_data()}")
                     
                     # Показати повідомлення про розрахунок
                     await message.answer(
@@ -133,10 +145,16 @@ def create_router(config: AppConfig) -> Router:
                     await show_car_class_selection_with_prices(message, state)
                     
                 else:
-                    # Невідомий стан - просто показати адресу
+                    # Невідомий стан - показати помилку і дані для діагностики
+                    logger.error(f"❌ Unknown waiting_for state: {waiting_for}, current_state: {current_state}")
                     await message.answer(
+                        f"⚠️ <b>Помилка:</b> невідомий стан замовлення\n\n"
                         f"📍 <b>Обрана адреса:</b>\n{address}\n\n"
-                        f"Координати: {latitude:.6f}, {longitude:.6f}"
+                        f"Координати: {latitude:.6f}, {longitude:.6f}\n\n"
+                        f"🔧 Діагностика:\n"
+                        f"State: {current_state}\n"
+                        f"Waiting for: {waiting_for}\n\n"
+                        f"Будь ласка, почніть замовлення спочатку /order"
                     )
                 
                 logger.info(f"📍 WebApp location processed: {latitude}, {longitude} -> {address}")
