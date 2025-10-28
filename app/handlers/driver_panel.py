@@ -2719,18 +2719,13 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ У вас немає активного замовлення")
             return
         
-        # Повідомити клієнта
+        # Повідомити клієнта (коротке повідомлення)
         try:
             await message.bot.send_message(
                 order.user_id,
-                f"📍 <b>Водій на місці подачі!</b>\n\n"
-                f"🚗 {driver.full_name}\n"
-                f"🚙 {driver.car_make} {driver.car_model}\n"
-                f"🔢 {driver.car_plate}\n\n"
-                f"📱 <code>{driver.phone}</code>\n\n"
-                f"💡 Водій очікує вас на адресі:\n"
-                f"📍 {clean_address(order.pickup_address)}"
+                "🚗 <b>Водій вже на місці</b>"
             )
+            logger.info(f"✅ Клієнту {order.user_id} надіслано повідомлення про прибуття водія")
         except Exception as e:
             logger.error(f"Failed to notify client: {e}")
         
