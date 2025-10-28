@@ -2719,6 +2719,9 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ У вас немає активного замовлення")
             return
         
+        # Зберегти message_id повідомлення водія (текст кнопки)
+        add_order_message(order.id, message.message_id)
+        
         # Повідомити клієнта (коротке повідомлення)
         try:
             await message.bot.send_message(
@@ -2769,6 +2772,9 @@ def create_router(config: AppConfig) -> Router:
             await message.answer("❌ У вас немає активного замовлення")
             return
         
+        # Зберегти message_id повідомлення водія (текст кнопки)
+        add_order_message(order.id, message.message_id)
+        
         # Оновити статус на "in_progress"
         await start_order(config.database_path, order.id, driver.id)
         
@@ -2799,10 +2805,12 @@ def create_router(config: AppConfig) -> Router:
             one_time_keyboard=False
         )
         
-        await message.answer(
+        # Відправити повідомлення і зберегти message_id
+        sent_msg = await message.answer(
             f"✅ <b>Клієнт отримав повідомлення про початок поїздки</b>",
             reply_markup=kb
         )
+        add_order_message(order.id, sent_msg.message_id)
     
     @router.message(F.text == "🏁 ЗАВЕРШИТИ ПОЇЗДКУ")
     async def finish_trip(message: Message) -> None:
@@ -2823,6 +2831,12 @@ def create_router(config: AppConfig) -> Router:
         
         try:
             logger.info(f"🏁 Водій {driver.id} ({driver.full_name}) натиснув 'Завершити поїздку'")
+            
+            # Отримати замовлення для збереження message_id
+            order = await get_active_order_for_driver(config.database_path, driver.id)
+            if order:
+                # Зберегти message_id повідомлення водія (текст кнопки)
+                add_order_message(order.id, message.message_id)
             
             # Спочатку перевірити чи є взагалі замовлення у водія (для діагностики)
             from app.storage.db_connection import db_manager
