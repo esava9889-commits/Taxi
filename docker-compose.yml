@@ -1,0 +1,39 @@
+# Docker Compose для локального запуску
+# Usage: docker-compose up -d
+
+version: '3.8'
+
+services:
+  telegram-taxi-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-taxi-bot
+    restart: unless-stopped
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Persistent volume for SQLite database
+    volumes:
+      - ./data:/app/data
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Named volume (alternative to bind mount)
+# volumes:
+#   taxi-bot-data:

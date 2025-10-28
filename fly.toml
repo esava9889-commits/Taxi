@@ -1,0 +1,24 @@
+# Fly.io configuration for Telegram Taxi Bot
+# Deploy: flyctl deploy
+
+app = "telegram-taxi-bot"
+primary_region = "ams"  # Amsterdam (близько до України)
+
+[build]
+
+[env]
+  ADMIN_IDS = "6828579427"
+  DB_PATH = "/data/taxi.sqlite3"
+  PYTHONUNBUFFERED = "1"
+  TZ = "Europe/Kiev"
+
+# Persistent storage для SQLite
+[mounts]
+  source = "taxi_data"
+  destination = "/data"
+
+# Налаштування VM (Free tier: 256MB RAM)
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

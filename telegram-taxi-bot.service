@@ -1,0 +1,50 @@
+# Systemd service file for Telegram Taxi Bot
+# Installation:
+#   1. sudo cp telegram-taxi-bot.service /etc/systemd/system/
+#   2. Edit User and WorkingDirectory to match your setup
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable telegram-taxi-bot
+#   5. sudo systemctl start telegram-taxi-bot
+
+[Unit]
+Description=Telegram Taxi Bot
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/telegram-taxi-bot
+
+# Environment
+Environment="PATH=/home/ubuntu/telegram-taxi-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Load .env file
+EnvironmentFile=/home/ubuntu/telegram-taxi-bot/.env
+
+# Start command
+ExecStart=/home/ubuntu/telegram-taxi-bot/venv/bin/python -m app.main
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=5min
+StartLimitBurst=4
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-taxi-bot
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits (optional)
+# MemoryMax=512M
+# CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
