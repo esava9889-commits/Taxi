@@ -21,6 +21,38 @@ from app.config.config import AppConfig
 
 # Глобальний set для захисту від подвійного натискання "Завершити поїздку"
 _finishing_orders = set()
+
+# Глобальний словник для збереження message_id повідомлень водія по замовленню
+# Формат: {order_id: [message_id1, message_id2, ...]}
+_order_messages: dict[int, list[int]] = {}
+
+
+def add_order_message(order_id: int, message_id: int) -> None:
+    """Додати message_id до списку повідомлень замовлення"""
+    if order_id not in _order_messages:
+        _order_messages[order_id] = []
+    _order_messages[order_id].append(message_id)
+    logger.debug(f"📝 Збережено message_id={message_id} для замовлення #{order_id}")
+
+
+async def clear_order_messages(bot, chat_id: int, order_id: int) -> None:
+    """Видалити всі повідомлення замовлення з чату водія"""
+    if order_id not in _order_messages:
+        logger.debug(f"🔍 Немає збережених повідомлень для замовлення #{order_id}")
+        return
+    
+    message_ids = _order_messages.pop(order_id)
+    logger.info(f"🧹 Очищення {len(message_ids)} повідомлень для замовлення #{order_id}")
+    
+    deleted_count = 0
+    for msg_id in message_ids:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            deleted_count += 1
+        except Exception as e:
+            logger.debug(f"⚠️ Не вдалося видалити message_id={msg_id}: {e}")
+    
+    logger.info(f"✅ Видалено {deleted_count}/{len(message_ids)} повідомлень з чату водія")
 from app.storage.db import (
     get_driver_by_tg_user_id,
     get_driver_by_id,
@@ -342,7 +374,9 @@ def create_router(config: AppConfig) -> Router:
             input_field_placeholder="Керування поїздкою"
         )
         
-        await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+        # Відправити повідомлення і зберегти message_id для подальшого видалення
+        sent_msg = await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+        add_order_message(order.id, sent_msg.message_id)
 
     @router.message(F.text == "🚀 Почати роботу")
     async def start_work(message: Message) -> None:
@@ -1615,8 +1649,8 @@ def create_router(config: AppConfig) -> Router:
         
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
-        # Відправити підтвердження водію з клавіатурою
-        await message.answer(
+        # Відправити підтвердження водію з клавіатурою і зберегти message_id
+        sent_msg = await message.answer(
             f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
             f"👤 {order.name} • <code>{order.phone}</code>\n\n"
             f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
@@ -1627,6 +1661,7 @@ def create_router(config: AppConfig) -> Router:
             "🚗 Використовуйте кнопки для керування поїздкою:",
             reply_markup=kb_trip
         )
+        add_order_message(order_id, sent_msg.message_id)
         
         # Очистити FSM стан
         await state.clear()
@@ -1753,8 +1788,8 @@ def create_router(config: AppConfig) -> Router:
         
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
-        # Відправити підтвердження водію з клавіатурою
-        await message.answer(
+        # Відправити підтвердження водію з клавіатурою і зберегти message_id
+        sent_msg = await message.answer(
             f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
             f"👤 {order.name} • <code>{order.phone}</code>\n\n"
             f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
@@ -1765,6 +1800,7 @@ def create_router(config: AppConfig) -> Router:
             "🚗 Використовуйте кнопки для керування поїздкою:",
             reply_markup=kb_trip
         )
+        add_order_message(order_id, sent_msg.message_id)
         
         # Очистити FSM стан
         await state.clear()
@@ -2060,6 +2096,10 @@ def create_router(config: AppConfig) -> Router:
         await insert_payment(config.database_path, payment)
         
         await call.answer(f"✅ Завершено! {fare:.0f} грн", show_alert=True)
+        
+        # 🧹 ОЧИСТИТИ ЧАТ ВОДІЯ - видалити всі повідомлення про замовлення
+        if call.from_user:
+            await clear_order_messages(call.bot, call.from_user.id, order_id)
         
         if call.message:
             await call.message.edit_text(f"✅ Поїздка завершена!\n💰 {fare:.0f} грн")
@@ -2712,10 +2752,12 @@ def create_router(config: AppConfig) -> Router:
             one_time_keyboard=False
         )
         
-        await message.answer(
+        # Відправити повідомлення і зберегти message_id
+        sent_msg = await message.answer(
             f"✅ <b>Клієнт отримав повідомлення про ваше прибуття</b>",
             reply_markup=kb
         )
+        add_order_message(order.id, sent_msg.message_id)
     
     @router.message(F.text == "✅ КЛІЄНТ В АВТО")
     async def client_in_car(message: Message) -> None:
@@ -2898,6 +2940,9 @@ def create_router(config: AppConfig) -> Router:
                 )
             except Exception as e:
                 logger.error(f"Failed to notify client: {e}")
+            
+            # 🧹 ОЧИСТИТИ ЧАТ ВОДІЯ - видалити всі повідомлення про замовлення
+            await clear_order_messages(message.bot, message.chat.id, order.id)
             
             # Повернути панель водія
             commission_percent = int(commission_percent * 100)
