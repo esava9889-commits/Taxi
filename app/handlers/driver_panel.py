@@ -2727,19 +2727,15 @@ def create_router(config: AppConfig) -> Router:
         # Оновити статус на "in_progress"
         await start_order(config.database_path, order.id, driver.id)
         
-        # Повідомити клієнта
+        # Повідомити клієнта (коротке повідомлення)
         try:
-            clean_destination = clean_address(order.destination_address)
             await message.bot.send_message(
                 order.user_id,
-                f"🚗 <b>Поїздка почалася!</b>\n\n"
-                f"Водій везе вас до місця призначення:\n"
-                f"🎯 {clean_destination}\n\n"
-                f"💰 Вартість: {int(order.fare_amount):.0f} грн\n\n"
-                f"🚗 Гарної дороги!"
+                "🚗 <b>Гарної поїздки!</b> 🌟"
             )
+            logger.info(f"✅ Клієнту {order.user_id} надіслано повідомлення 'Гарної поїздки'")
         except Exception as e:
-            logger.error(f"Failed to notify client: {e}")
+            logger.error(f"❌ Помилка відправки повідомлення клієнту: {e}")
         
         # Оновлена клавіатура - прибрати "Клієнт в авто"
         kb = ReplyKeyboardMarkup(
@@ -3440,8 +3436,6 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("❌ Замовлення не знайдено", show_alert=True)
             return
         
-        await call.answer("✅ Дякуємо! Водій отримає повідомлення", show_alert=True)
-        
         # Сповістити водія
         if order.driver_id:
             driver = await get_driver_by_id(config.database_path, order.driver_id)
@@ -3457,11 +3451,30 @@ def create_router(config: AppConfig) -> Router:
                 except:
                     pass
         
-        await call.message.edit_text(
-            "✅ <b>ДЯКУЄМО ЗА ОПЛАТУ!</b>\n\n"
-            "Водій отримав повідомлення.\n"
-            "Гарної поїздки! 🚗"
-        )
+        # Повернути компактне повідомлення про замовлення
+        driver = await get_driver_by_id(config.database_path, order.driver_id) if order.driver_id else None
+        
+        if driver:
+            # Компактна інформація про замовлення після оплати
+            order_info = (
+                f"✅ <b>Водій прийняв ваше замовлення</b>\n\n"
+                f"🚗 {driver.full_name}\n"
+                f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
+                f"📱 {driver.phone}\n\n"
+                f"💳 <b>Оплата підтверджена!</b>\n"
+                f"💰 {int(order.fare_amount):.0f} грн\n\n"
+                f"🚗 Гарної поїздки!"
+            )
+            
+            await call.message.edit_text(order_info)
+        else:
+            await call.message.edit_text(
+                "✅ <b>ДЯКУЄМО ЗА ОПЛАТУ!</b>\n\n"
+                "Водій отримав повідомлення.\n"
+                "Гарної поїздки! 🚗"
+            )
+        
+        await call.answer("✅ Дякуємо! Оплату підтверджено", show_alert=True)
     
     @router.callback_query(F.data == "work:earnings")
     async def show_work_earnings(call: CallbackQuery) -> None:
