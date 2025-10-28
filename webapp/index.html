@@ -194,25 +194,15 @@
             zoomControl: false, // Прибрати стандартний zoom control
         }).setView([48.3794, 31.1656], 6); // Україна
         
-        // Темна карта (схожа на Apple Maps / Uber)
-        // Автоматично адаптується під тему Telegram
-        const isDarkMode = tg.colorScheme === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches;
+        // 🌙 ЗАВЖДИ ТЕМНА КАРТА (як Uber/Apple Maps Dark)
+        // Незалежно від теми Telegram - завжди темна і стильна!
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© CARTO',
+            maxZoom: 19,
+            subdomains: 'abcd'
+        }).addTo(map);
         
-        if (isDarkMode) {
-            // Темна тема - CartoDB Dark Matter (схожа на Uber/Apple Maps Dark)
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '© CARTO',
-                maxZoom: 19,
-                subdomains: 'abcd'
-            }).addTo(map);
-        } else {
-            // Світла тема - Positron (м'яка світла карта)
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                attribution: '© CARTO',
-                maxZoom: 19,
-                subdomains: 'abcd'
-            }).addTo(map);
-        }
+        console.log('🌙 Dark map theme loaded');
         
         // Додати zoom control в інше місце
         L.control.zoom({
