@@ -283,13 +283,22 @@
                 
                 try {
                     // Відправити дані в бота
-                    tg.sendData(JSON.stringify(dataToSend));
+                    const jsonData = JSON.stringify(dataToSend);
+                    console.log('📦 JSON data:', jsonData);
+                    
+                    tg.sendData(jsonData);
                     console.log('✅ Data sent successfully!');
                     
                     // Вібрація успіху
                     if (tg.HapticFeedback) {
                         tg.HapticFeedback.notificationOccurred('success');
                     }
+                    
+                    // ВАЖЛИВО! Закрити WebApp після відправки
+                    // Це дозволить Telegram передати дані в бота
+                    console.log('🚪 Closing WebApp...');
+                    tg.close();
+                    
                 } catch (error) {
                     console.error('❌ Error sending data:', error);
                     alert('Помилка відправки даних: ' + error.message);
