@@ -194,15 +194,22 @@
             zoomControl: false, // Прибрати стандартний zoom control
         }).setView([48.3794, 31.1656], 6); // Україна
         
-        // 🌙 ЗАВЖДИ ТЕМНА КАРТА (як Uber/Apple Maps Dark)
-        // Незалежно від теми Telegram - завжди темна і стильна!
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        // 🌙 ТЕМНА КАРТА з гарною контрастністю (як Uber/Apple Maps Dark)
+        // Voyager Dark - темна але дороги та вода добре видно!
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
             attribution: '© CARTO',
             maxZoom: 19,
             subdomains: 'abcd'
         }).addTo(map);
         
-        console.log('🌙 Dark map theme loaded');
+        // Додати шар з підписами зверху для кращої читабельності
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+            attribution: '',
+            maxZoom: 19,
+            subdomains: 'abcd'
+        }).addTo(map);
+        
+        console.log('🌙 Dark Voyager map theme loaded (high contrast)');
         
         // Додати zoom control в інше місце
         L.control.zoom({
