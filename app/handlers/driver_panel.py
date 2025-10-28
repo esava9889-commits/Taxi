@@ -416,12 +416,16 @@ def create_router(config: AppConfig) -> Router:
         
         # Посилання на групу водіїв для міста
         city_invite_link = None
-        if driver.city and driver.city in config.city_invite_links:
-            city_invite_link = config.city_invite_links[driver.city]
+        city_group_id = None
+        if driver.city:
+            city_invite_link = config.city_invite_links.get(driver.city)
+            city_group_id = config.city_groups.get(driver.city)
         
         # Текст про групу
         if city_invite_link:
             group_text = f"📢 <a href=\"{city_invite_link}\">Група водіїв {driver.city}</a>\n"
+        elif city_group_id:
+            group_text = f"📢 Група: {driver.city} (налаштована)\n"
         else:
             group_text = f"📢 Група: {driver.city or 'не налаштовано'}\n"
         
@@ -600,12 +604,16 @@ def create_router(config: AppConfig) -> Router:
         
         # Посилання на групу водіїв для міста
         city_invite_link = None
-        if driver.city and driver.city in config.city_invite_links:
-            city_invite_link = config.city_invite_links[driver.city]
+        city_group_id = None
+        if driver.city:
+            city_invite_link = config.city_invite_links.get(driver.city)
+            city_group_id = config.city_groups.get(driver.city)
         
         # Текст про групу
         if city_invite_link:
             group_text = f"📢 <a href=\"{city_invite_link}\">Група водіїв {driver.city}</a>\n"
+        elif city_group_id:
+            group_text = f"📢 Група: {driver.city} (налаштована)\n"
         else:
             group_text = f"📢 Група: {driver.city or 'не налаштовано'}\n"
         
