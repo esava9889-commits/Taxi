@@ -313,9 +313,6 @@
             console.log('🔍 Type of selectedCoords:', typeof selectedCoords);
             console.log('🔍 selectedCoords value:', JSON.stringify(selectedCoords));
 
-            // 🔔 ДІАГНОСТИКА: Alert для телефону
-            alert('🔘 Кнопка натиснута!\nКоординати: ' + (selectedCoords ? 'Є ✅' : 'НЕМАЄ ❌'));
-
             if (selectedCoords) {
                 console.log('✅ Coordinates are valid, preparing data...');
                 
@@ -330,12 +327,6 @@
                 console.log('  - latitude:', dataToSend.latitude);
                 console.log('  - longitude:', dataToSend.longitude);
 
-                // 🔔 ДІАГНОСТИКА: Показати дані
-                alert('📦 Дані підготовлено:\n' + 
-                      'Lat: ' + dataToSend.latitude + '\n' + 
-                      'Lng: ' + dataToSend.longitude + '\n\n' +
-                      'Зараз відправлю в бота...');
-
                 try {
                     // Відправити дані в бота
                     const jsonData = JSON.stringify(dataToSend);
@@ -346,20 +337,21 @@
                     tg.sendData(jsonData);
                     console.log('✅ tg.sendData() called successfully!');
 
-                    // 🔔 ДІАГНОСТИКА: sendData викликано
-                    alert('✅ sendData() викликано!\nЗараз закриваю карту...');
-
                     // Вібрація успіху
                     if (tg.HapticFeedback) {
                         console.log('📳 Triggering success haptic');
                         tg.HapticFeedback.notificationOccurred('success');
                     }
 
-                    // ВАЖЛИВО! Закрити WebApp після відправки
-                    // Це дозволить Telegram передати дані в бота
-                    console.log('🚪 Calling tg.close()...');
+                    // КРИТИЧНО ВАЖЛИВО! Закрити WebApp після відправки
+                    // БЕЗ tg.close() дані НЕ відправляться в бота!
+                    console.log('🚪 CALLING tg.close() - THIS IS CRITICAL!');
+                    console.log('⏰ Time before close:', new Date().toISOString());
+                    
                     tg.close();
+                    
                     console.log('✅ tg.close() called!');
+                    console.log('⏰ Time after close:', new Date().toISOString());
                     console.log('='.repeat(60));
 
                 } catch (error) {
@@ -370,14 +362,18 @@
                     console.error('Error message:', error.message);
                     console.error('Error stack:', error.stack);
                     console.error('='.repeat(60));
-                    alert('❌ ПОМИЛКА:\n' + error.message);
+                    
+                    // Показати помилку користувачу
+                    alert('❌ Помилка відправки даних:\n' + error.message + '\n\nПеревірте консоль для деталей');
                 }
             } else {
                 console.warn('='.repeat(60));
                 console.warn('⚠️ NO COORDINATES SELECTED!');
                 console.warn('='.repeat(60));
                 console.warn('selectedCoords is:', selectedCoords);
-                alert('⚠️ Будь ласка, оберіть точку на карті');
+                
+                // Показати попередження користувачу
+                alert('⚠️ Будь ласка, спочатку оберіть точку на карті');
             }
         });
         console.log('✅ MainButton.onClick handler registered');
