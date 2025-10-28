@@ -174,17 +174,37 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
+        // ===== ДЕТАЛЬНЕ ЛОГУВАННЯ =====
+        console.log('='.repeat(60));
+        console.log('🚀 WEBAPP START:', new Date().toISOString());
+        console.log('='.repeat(60));
+        
         // Ініціалізація Telegram WebApp
         const tg = window.Telegram.WebApp;
-        console.log('🚀 Telegram WebApp initialized:', tg);
+        console.log('✅ Telegram WebApp initialized:', tg);
         console.log('📱 Version:', tg.version);
+        console.log('📱 Platform:', tg.platform);
+        console.log('🎨 Color scheme:', tg.colorScheme);
         console.log('👤 User:', tg.initDataUnsafe?.user);
+        console.log('🔍 initData present:', !!tg.initData);
+        
+        // Перевірка API
+        console.log('🔍 API methods available:');
+        console.log('  - MainButton:', typeof tg.MainButton);
+        console.log('  - sendData:', typeof tg.sendData);
+        console.log('  - close:', typeof tg.close);
+        console.log('  - expand:', typeof tg.expand);
         
         tg.expand(); // Розгорнути на весь екран
+        console.log('✅ WebApp expanded');
+        
         tg.MainButton.setText('✅ Підтвердити місце');
         tg.MainButton.hide(); // Спочатку сховати
         
         console.log('🔘 MainButton configured');
+        console.log('  - Text:', tg.MainButton.text);
+        console.log('  - isVisible:', tg.MainButton.isVisible);
+        console.log('='.repeat(60));
         
         // Застосувати тему Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
@@ -233,30 +253,45 @@
         // Обробник кліку по карті
         map.on('click', (e) => {
             const { lat, lng } = e.latlng;
-            console.log('🗺 Map clicked:', lat, lng);
+            console.log('='.repeat(60));
+            console.log('🗺 MAP CLICKED:', new Date().toISOString());
+            console.log('='.repeat(60));
+            console.log('📍 Click position:', lat, lng);
+            console.log('📍 e.latlng object:', e.latlng);
             
             // Видалити попередній маркер
             if (selectedMarker) {
+                console.log('🗑 Removing previous marker');
                 map.removeLayer(selectedMarker);
             }
             
             // Додати новий маркер
+            console.log('📌 Adding new marker...');
             selectedMarker = L.marker([lat, lng], {
                 icon: createMarkerIcon()
             }).addTo(map);
+            console.log('✅ Marker added to map');
             
             // Зберегти координати
             selectedCoords = { lat, lng };
-            console.log('💾 Coordinates saved:', selectedCoords);
+            console.log('💾 Coordinates saved to selectedCoords:', selectedCoords);
+            console.log('🔍 Type of selectedCoords:', typeof selectedCoords);
+            console.log('🔍 selectedCoords.lat:', selectedCoords.lat);
+            console.log('🔍 selectedCoords.lng:', selectedCoords.lng);
             
             // Показати координати
-            document.getElementById('coords-text').textContent = 
-                `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            const coordsText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            document.getElementById('coords-text').textContent = coordsText;
             document.getElementById('coordinates').style.display = 'block';
+            console.log('✅ Coordinates displayed:', coordsText);
             
             // Показати кнопку підтвердження
+            console.log('🔘 Showing MainButton...');
+            console.log('  - BEFORE show(): isVisible =', tg.MainButton.isVisible);
             tg.MainButton.show();
-            console.log('✅ MainButton shown');
+            console.log('  - AFTER show(): isVisible =', tg.MainButton.isVisible);
+            console.log('✅ MainButton.show() executed');
+            console.log('='.repeat(60));
             
             // Легка вібрація (якщо доступна)
             if (tg.HapticFeedback) {
@@ -265,46 +300,71 @@
         });
         
         // Обробник кнопки "Підтвердити"
+        console.log('🔧 Registering MainButton.onClick handler...');
         tg.MainButton.onClick(() => {
-            console.log('🔘 MainButton clicked!');
+            console.log('='.repeat(60));
+            console.log('🔘 MAINBUTTON CLICK EVENT:', new Date().toISOString());
+            console.log('='.repeat(60));
             console.log('📍 Selected coords:', selectedCoords);
-            
+            console.log('🔍 Type of selectedCoords:', typeof selectedCoords);
+            console.log('🔍 selectedCoords value:', JSON.stringify(selectedCoords));
+
             if (selectedCoords) {
+                console.log('✅ Coordinates are valid, preparing data...');
+                
                 const dataToSend = {
                     type: 'location',
                     latitude: selectedCoords.lat,
                     longitude: selectedCoords.lng
                 };
-                
-                console.log('📤 Sending data to bot:', dataToSend);
-                
+
+                console.log('📤 Data to send:', dataToSend);
+                console.log('  - type:', dataToSend.type);
+                console.log('  - latitude:', dataToSend.latitude);
+                console.log('  - longitude:', dataToSend.longitude);
+
                 try {
                     // Відправити дані в бота
                     const jsonData = JSON.stringify(dataToSend);
-                    console.log('📦 JSON data:', jsonData);
-                    
+                    console.log('📦 JSON string:', jsonData);
+                    console.log('📦 JSON length:', jsonData.length);
+
+                    console.log('📡 Calling tg.sendData()...');
                     tg.sendData(jsonData);
-                    console.log('✅ Data sent successfully!');
-                    
+                    console.log('✅ tg.sendData() called successfully!');
+
                     // Вібрація успіху
                     if (tg.HapticFeedback) {
+                        console.log('📳 Triggering success haptic');
                         tg.HapticFeedback.notificationOccurred('success');
                     }
-                    
+
                     // ВАЖЛИВО! Закрити WebApp після відправки
                     // Це дозволить Telegram передати дані в бота
-                    console.log('🚪 Closing WebApp...');
+                    console.log('🚪 Calling tg.close()...');
                     tg.close();
-                    
+                    console.log('✅ tg.close() called!');
+                    console.log('='.repeat(60));
+
                 } catch (error) {
-                    console.error('❌ Error sending data:', error);
+                    console.error('='.repeat(60));
+                    console.error('❌ ERROR in try block:', new Date().toISOString());
+                    console.error('='.repeat(60));
+                    console.error('Error type:', error.constructor.name);
+                    console.error('Error message:', error.message);
+                    console.error('Error stack:', error.stack);
+                    console.error('='.repeat(60));
                     alert('Помилка відправки даних: ' + error.message);
                 }
             } else {
-                console.warn('⚠️ No coordinates selected!');
+                console.warn('='.repeat(60));
+                console.warn('⚠️ NO COORDINATES SELECTED!');
+                console.warn('='.repeat(60));
+                console.warn('selectedCoords is:', selectedCoords);
                 alert('Будь ласка, оберіть точку на карті');
             }
         });
+        console.log('✅ MainButton.onClick handler registered');
         
         // Кнопка "Моя геолокація"
         document.getElementById('locate-btn').addEventListener('click', () => {

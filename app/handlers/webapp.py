@@ -36,31 +36,60 @@ def create_router(config: AppConfig) -> Router:
         """
         Обробник даних з WebApp (карти)
         """
-        logger.info(f"🗺 WebApp data received from user {message.from_user.id}")
+        logger.info("=" * 60)
+        logger.info(f"🗺 WEBAPP DATA RECEIVED from user {message.from_user.id}")
+        logger.info("=" * 60)
+        logger.info(f"📦 Message object: {message}")
+        logger.info(f"📦 Message type: {message.content_type}")
+        logger.info(f"📦 Has web_app_data: {hasattr(message, 'web_app_data')}")
+        logger.info(f"📦 web_app_data is None: {message.web_app_data is None}")
         
         if not message.web_app_data:
-            logger.error("❌ message.web_app_data is None!")
+            logger.error("=" * 60)
+            logger.error("❌ ERROR: message.web_app_data is None!")
+            logger.error("=" * 60)
+            logger.error(f"Message dict: {message.model_dump()}")
+            await message.answer("❌ Помилка: не отримано даних з WebApp")
             return
         
         try:
             # Парсинг даних з WebApp
-            logger.info(f"📦 Raw WebApp data: {message.web_app_data.data}")
-            data = json.loads(message.web_app_data.data)
-            logger.info(f"✅ Parsed data: {data}")
+            raw_data = message.web_app_data.data
+            logger.info(f"📦 Raw WebApp data string: '{raw_data}'")
+            logger.info(f"📦 Data type: {type(raw_data)}")
+            logger.info(f"📦 Data length: {len(raw_data)}")
+            
+            logger.info("🔧 Parsing JSON...")
+            data = json.loads(raw_data)
+            logger.info(f"✅ Parsed JSON successfully: {data}")
+            logger.info(f"🔍 Data keys: {list(data.keys())}")
+            logger.info(f"🔍 Data type field: '{data.get('type')}'")
             
             if data.get('type') == 'location':
+                logger.info("✅ Data type is 'location'")
+                
                 latitude = data.get('latitude')
                 longitude = data.get('longitude')
                 
+                logger.info(f"📍 Extracted coordinates:")
+                logger.info(f"  - latitude: {latitude} (type: {type(latitude)})")
+                logger.info(f"  - longitude: {longitude} (type: {type(longitude)})")
+                
                 if not latitude or not longitude:
+                    logger.error(f"❌ Missing coordinates! lat={latitude}, lon={longitude}")
                     await message.answer("❌ Помилка: не вдалося отримати координати")
                     return
                 
+                logger.info("✅ Coordinates are valid")
+                
                 # Отримати адресу з координат (reverse geocoding)
+                logger.info(f"🌍 Calling reverse_geocode({latitude}, {longitude})...")
                 address = await reverse_geocode("", latitude, longitude)
+                logger.info(f"✅ Reverse geocoding result: '{address}'")
                 
                 if not address:
                     address = f"📍 Координати: {latitude:.6f}, {longitude:.6f}"
+                    logger.warning(f"⚠️ No address found, using coordinates: {address}")
                 
                 # Зберегти в state залежно від поточного стану
                 current_state = await state.get_state()
@@ -159,11 +188,21 @@ def create_router(config: AppConfig) -> Router:
                 
                 logger.info(f"📍 WebApp location processed: {latitude}, {longitude} -> {address}")
                 
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse WebApp data: {message.web_app_data.data}")
-            await message.answer("❌ Помилка обробки даних з карти")
+        except json.JSONDecodeError as e:
+            logger.error("=" * 60)
+            logger.error("❌ JSON DECODE ERROR")
+            logger.error("=" * 60)
+            logger.error(f"Error: {e}")
+            logger.error(f"Raw data that failed: '{message.web_app_data.data}'")
+            logger.error("=" * 60)
+            await message.answer("❌ Помилка обробки даних з карти (невірний формат JSON)")
         except Exception as e:
-            logger.error(f"Error handling WebApp data: {e}", exc_info=True)
+            logger.error("=" * 60)
+            logger.error("❌ EXCEPTION in WebApp handler")
+            logger.error("=" * 60)
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception message: {e}", exc_info=True)
+            logger.error("=" * 60)
             await message.answer("❌ Виникла помилка. Спробуйте ще раз.")
     
     return router
