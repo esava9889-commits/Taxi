@@ -259,6 +259,10 @@
             console.log('📍 Click position:', lat, lng);
             console.log('📍 e.latlng object:', e.latlng);
             
+            // 🔔 ДІАГНОСТИКА: Alert при кліку на карту
+            // (Закоментовано щоб не заважало, розкоментуйте якщо потрібно)
+            // alert('🗺 Клік по карті!\nLat: ' + lat.toFixed(4) + '\nLng: ' + lng.toFixed(4));
+            
             // Видалити попередній маркер
             if (selectedMarker) {
                 console.log('🗑 Removing previous marker');
@@ -309,6 +313,9 @@
             console.log('🔍 Type of selectedCoords:', typeof selectedCoords);
             console.log('🔍 selectedCoords value:', JSON.stringify(selectedCoords));
 
+            // 🔔 ДІАГНОСТИКА: Alert для телефону
+            alert('🔘 Кнопка натиснута!\nКоординати: ' + (selectedCoords ? 'Є ✅' : 'НЕМАЄ ❌'));
+
             if (selectedCoords) {
                 console.log('✅ Coordinates are valid, preparing data...');
                 
@@ -323,6 +330,12 @@
                 console.log('  - latitude:', dataToSend.latitude);
                 console.log('  - longitude:', dataToSend.longitude);
 
+                // 🔔 ДІАГНОСТИКА: Показати дані
+                alert('📦 Дані підготовлено:\n' + 
+                      'Lat: ' + dataToSend.latitude + '\n' + 
+                      'Lng: ' + dataToSend.longitude + '\n\n' +
+                      'Зараз відправлю в бота...');
+
                 try {
                     // Відправити дані в бота
                     const jsonData = JSON.stringify(dataToSend);
@@ -332,6 +345,9 @@
                     console.log('📡 Calling tg.sendData()...');
                     tg.sendData(jsonData);
                     console.log('✅ tg.sendData() called successfully!');
+
+                    // 🔔 ДІАГНОСТИКА: sendData викликано
+                    alert('✅ sendData() викликано!\nЗараз закриваю карту...');
 
                     // Вібрація успіху
                     if (tg.HapticFeedback) {
@@ -354,14 +370,14 @@
                     console.error('Error message:', error.message);
                     console.error('Error stack:', error.stack);
                     console.error('='.repeat(60));
-                    alert('Помилка відправки даних: ' + error.message);
+                    alert('❌ ПОМИЛКА:\n' + error.message);
                 }
             } else {
                 console.warn('='.repeat(60));
                 console.warn('⚠️ NO COORDINATES SELECTED!');
                 console.warn('='.repeat(60));
                 console.warn('selectedCoords is:', selectedCoords);
-                alert('Будь ласка, оберіть точку на карті');
+                alert('⚠️ Будь ласка, оберіть точку на карті');
             }
         });
         console.log('✅ MainButton.onClick handler registered');
