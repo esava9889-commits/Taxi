@@ -22,6 +22,7 @@ class AppConfig:
     admin_username: Optional[str]
     city_groups: dict
     city_invite_links: dict
+    webapp_url: Optional[str]  # URL для WebApp з картою
     
 # Список доступних міст (тільки 5 міст)
 AVAILABLE_CITIES = [
@@ -128,6 +129,9 @@ def load_config() -> AppConfig:
         "Одеса": os.getenv("ODESA_GROUP_INVITE_LINK") or None,
     }
 
+    # WebApp URL для інтерактивної карти (опціонально)
+    webapp_url = os.getenv("WEBAPP_URL") or None
+    
     # Ensure the parent directory exists (if not /tmp)
     db_dir = os.path.dirname(db_path)
     if db_dir and db_dir != "/tmp":
@@ -143,6 +147,7 @@ def load_config() -> AppConfig:
         admin_username=admin_username,
         city_groups=city_groups,
         city_invite_links=city_invite_links,
+        webapp_url=webapp_url,
     )
 
 

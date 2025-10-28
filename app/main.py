@@ -34,6 +34,7 @@ from app.handlers.client_rating import create_router as create_client_rating_rou
 from app.handlers.voice_input import create_router as create_voice_input_router
 # Розширена аналітика ПРИБРАНО - не потрібна
 # from app.handlers.driver_analytics import create_router as create_driver_analytics_router
+from app.handlers.webapp import create_router as create_webapp_router  # WebApp з картою
 from app.storage.db import init_db
 from app.utils.scheduler import start_scheduler
 
@@ -168,6 +169,7 @@ async def main() -> None:
     )
 
     # Include all routers (порядок важливий!)
+    dp.include_router(create_webapp_router(config))  # WebApp ПЕРШИМ (обробляє web_app_data!)
     dp.include_router(create_start_router(config))
     dp.include_router(create_registration_router(config))  # Registration module
     dp.include_router(create_saved_addresses_router(config))  # Збережені адреси - ПЕРЕД order (state має пріоритет!)
