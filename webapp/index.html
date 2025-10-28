@@ -188,11 +188,25 @@
             zoomControl: false, // Прибрати стандартний zoom control
         }).setView([48.3794, 31.1656], 6); // Україна
         
-        // Додати карту OpenStreetMap
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap',
-            maxZoom: 19,
-        }).addTo(map);
+        // Темна карта (схожа на Apple Maps / Uber)
+        // Автоматично адаптується під тему Telegram
+        const isDarkMode = tg.colorScheme === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        if (isDarkMode) {
+            // Темна тема - CartoDB Dark Matter (схожа на Uber/Apple Maps Dark)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© CARTO',
+                maxZoom: 19,
+                subdomains: 'abcd'
+            }).addTo(map);
+        } else {
+            // Світла тема - Positron (м'яка світла карта)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© CARTO',
+                maxZoom: 19,
+                subdomains: 'abcd'
+            }).addTo(map);
+        }
         
         // Додати zoom control в інше місце
         L.control.zoom({
