@@ -82,7 +82,7 @@ async def telegram_webhook_handler(request, bot, dp):
 
 async def start_webhook_server(bot=None, dp=None):
     """
-    Запустити HTTP сервер для Webhook та health checks
+    Запустити HTTP сервер для Webhook, health checks та статичних файлів
     
     Args:
         bot: Bot instance (для webhook)
@@ -93,6 +93,21 @@ async def start_webhook_server(bot=None, dp=None):
     # Health check endpoints
     app.router.add_get('/health', health_check)
     app.router.add_get('/', health_check)
+    
+    # ═══════════════════════════════════════════════════════════════
+    # 🗺️ СТАТИЧНІ ФАЙЛИ (WebApp карта)
+    # ═══════════════════════════════════════════════════════════════
+    # Визначити шлях до webapp папки
+    # main.py знаходиться в app/, webapp/ на рівень вище
+    webapp_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'webapp')
+    
+    if os.path.exists(webapp_dir):
+        # Додати статичний роут для webapp файлів
+        app.router.add_static('/webapp/', webapp_dir, name='webapp')
+        logging.info(f"🗺️ Static files (WebApp) enabled: /webapp/ → {webapp_dir}")
+        logging.info(f"✅ WebApp доступний за адресою: https://your-app.onrender.com/webapp/index.html")
+    else:
+        logging.warning(f"⚠️ WebApp directory not found: {webapp_dir}")
     
     # Webhook endpoint (якщо передано bot і dp)
     if bot and dp:
@@ -292,6 +307,10 @@ async def main() -> None:
             await asyncio.sleep(2)
         except Exception as e:
             logging.warning(f"⚠️ Не вдалося видалити webhook: {e}")
+        
+        # ⭐ Запустити HTTP сервер БЕЗ webhook handler (тільки для статичних файлів)
+        asyncio.create_task(start_webhook_server(bot=None, dp=None))
+        logging.info("🌐 HTTP сервер запущено для статичних файлів (WebApp)")
         
         # Запуск polling з retry при конфлікті
         max_retries = 3
