@@ -31,14 +31,20 @@ logger = logging.getLogger(__name__)
 def create_router(config: AppConfig) -> Router:
     router = Router(name="webapp")
     
+    logger.info("=" * 80)
+    logger.info("🔧 webapp.create_router() called - Router is being created")
+    logger.info(f"🔧 Config webapp_url: {config.webapp_url}")
+    logger.info("=" * 80)
+    
     @router.message(F.web_app_data)
     async def handle_webapp_data(message: Message, state: FSMContext) -> None:
         """
         Обробник даних з WebApp (карти)
         """
-        logger.info("=" * 60)
+        logger.info("=" * 80)
+        logger.info(f"🗺 WEBAPP F.web_app_data HANDLER TRIGGERED!")
         logger.info(f"🗺 WEBAPP DATA RECEIVED from user {message.from_user.id}")
-        logger.info("=" * 60)
+        logger.info("=" * 80)
         logger.info(f"📦 Message object: {message}")
         logger.info(f"📦 Message type: {message.content_type}")
         logger.info(f"📦 Has web_app_data: {hasattr(message, 'web_app_data')}")

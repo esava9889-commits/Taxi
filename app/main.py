@@ -184,7 +184,17 @@ async def main() -> None:
     )
 
     # Include all routers (порядок важливий!)
-    dp.include_router(create_webapp_router(config))  # WebApp ПЕРШИМ (обробляє web_app_data!)
+    logger.info("=" * 80)
+    logger.info("📦 REGISTERING ROUTERS...")
+    logger.info("=" * 80)
+    
+    webapp_router = create_webapp_router(config)
+    logger.info(f"✅ webapp_router created: {webapp_router}")
+    logger.info(f"✅ webapp_router name: {webapp_router.name}")
+    logger.info(f"✅ webapp_router observers count: {len(webapp_router.observers)}")
+    dp.include_router(webapp_router)  # WebApp ПЕРШИМ (обробляє web_app_data!)
+    logger.info("✅ webapp_router registered in dispatcher")
+    
     dp.include_router(create_start_router(config))
     dp.include_router(create_registration_router(config))  # Registration module
     dp.include_router(create_saved_addresses_router(config))  # Збережені адреси - ПЕРЕД order (state має пріоритет!)
