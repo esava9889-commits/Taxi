@@ -195,7 +195,8 @@
             console.error('❌❌❌ CRITICAL ERROR: initData is EMPTY!');
             console.error('❌ This means WebApp was NOT opened through bot button!');
             console.error('❌ tg.sendData() will NOT work without initData!');
-            alert('⚠️ ПОМИЛКА: WebApp відкрито неправильно!\n\nВідкрийте через кнопку в боті, а не прямим посиланням.');
+            // НЕ ВИКОРИСТОВУЄМО alert() - він блокує весь код!
+            console.error('⚠️ WebApp може працювати неправильно - відкрийте через кнопку в боті!');
         } else {
             console.log('✅ initData is present - WebApp opened correctly through bot');
         }
