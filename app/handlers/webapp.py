@@ -151,7 +151,7 @@ def create_router(config: AppConfig) -> Router:
                     # ===== DESTINATION =====
                     # Зберегти адресу призначення (використовуємо ключі як в order.py!)
                     await state.update_data(
-                        destination=address,  # ← ключ як в order.py
+                        destination=address,  # ← ключ як in order.py
                         dest_lat=latitude,
                         dest_lon=longitude,  # ← lon, не lng!
                         waiting_for=None,  # Очистити, щоб не було конфліктів
@@ -166,12 +166,115 @@ def create_router(config: AppConfig) -> Router:
                         f"⏳ Розраховую відстань та вартість поїздки...",
                     )
                     
-                    # Отримати pickup з state
-                    pickup_address = state_data.get('pickup', 'Не вказано')
+                    # ⭐ Перейти до стану car_class - обробник в order.py покаже класи автоматично
+                    # Не можемо викликати show_car_class_selection_with_prices бо вона всередині create_router
+                    # Замість цього - емулюємо callback який викличе показ класів
+                    from app.handlers.order import OrderStates
+                    await state.set_state(OrderStates.car_class)
                     
-                    # Показати вибір класів авто (викликаємо функцію з order.py)
-                    from app.handlers.order import show_car_class_selection_with_prices
-                    await show_car_class_selection_with_prices(message, state)
+                    # Викликаємо callback який показує класи (є в order.py)
+                    # Створюємо фейковий CallbackQuery для виклику show_classes_callback
+                    # АБО просто дублюємо логіку розрахунку тут
+                    
+                    # Отримати дані для розрахунку
+                    data = await state.get_data()
+                    pickup_lat = data.get("pickup_lat")
+                    pickup_lon = data.get("pickup_lon")
+                    dest_lat = data.get("dest_lat")
+                    dest_lon = data.get("dest_lon")
+                    
+                    # Розрахувати відстань
+                    from app.utils.maps import get_distance_and_duration
+                    from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count
+                    from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name, CAR_CLASSES
+                    from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
+                    
+                    distance_km = None
+                    duration_minutes = None
+                    
+                    if pickup_lat and pickup_lon and dest_lat and dest_lon:
+                        logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
+                        result = await get_distance_and_duration("", pickup_lat, pickup_lon, dest_lat, dest_lon)
+                        if result:
+                            distance_m, duration_s = result
+                            distance_km = distance_m / 1000.0
+                            duration_minutes = duration_s / 60.0
+                            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes, distance_m=distance_m, duration_s=duration_s)
+                            logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв")
+                    
+                    if not distance_km:
+                        distance_km = 5.0
+                        duration_minutes = 15
+                        await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+                    
+                    # Отримати тариф
+                    tariff = await get_latest_tariff(config.database_path)
+                    if not tariff:
+                        await message.answer("❌ Помилка: тариф не налаштований. Зверніться до адміністратора.")
+                        return
+                    
+                    # Базовий тариф
+                    base_fare = max(
+                        tariff.minimum,
+                        tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
+                    )
+                    
+                    # Отримати налаштування ціноутворення
+                    pricing = await get_pricing_settings(config.database_path)
+                    if pricing is None:
+                        from app.storage.db import PricingSettings
+                        pricing = PricingSettings()
+                    
+                    custom_multipliers = {
+                        "economy": pricing.economy_multiplier,
+                        "standard": pricing.standard_multiplier,
+                        "comfort": pricing.comfort_multiplier,
+                        "business": pricing.business_multiplier
+                    }
+                    
+                    # Отримати місто клієнта для динамічного ціноутворення
+                    from app.storage.db import get_user_by_id
+                    user = await get_user_by_id(config.database_path, message.from_user.id)
+                    client_city = user.city if user and user.city else None
+                    online_count = await get_online_drivers_count(config.database_path, client_city)
+                    
+                    # Показати класи з цінами
+                    kb_buttons = []
+                    
+                    # Зберегти base_fare один раз
+                    await state.update_data(base_fare=base_fare)
+                    
+                    for car_class_id, car_class_data in CAR_CLASSES.items():
+                        class_fare = calculate_fare_with_class(base_fare, car_class_id, custom_multipliers)
+                        
+                        # calculate_dynamic_price повертає (final_price, explanation, total_multiplier)
+                        final_fare, explanation, surge_mult = await calculate_dynamic_price(class_fare, client_city, online_count, 0)
+                        
+                        surge_emoji = get_surge_emoji(surge_mult)
+                        class_name = get_car_class_name(car_class_id)
+                        
+                        button_text = f"{car_class_data['emoji']} {class_name}: {final_fare:.0f} грн"
+                        if surge_mult != 1.0:
+                            surge_percent = int((surge_mult - 1) * 100)
+                            button_text = f"{car_class_data['emoji']} {class_name}: {final_fare:.0f} грн {surge_emoji}"
+                        
+                        kb_buttons.append([InlineKeyboardButton(
+                            text=button_text,
+                            callback_data=f"select_class:{car_class_id}"
+                        )])
+                    
+                    kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+                    kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+                    
+                    logger.info(f"✅ Відправляю кнопки вибору класу авто (distance: {distance_km:.1f} km)")
+                    
+                    await message.answer(
+                        f"🚗 <b>Оберіть клас автомобіля</b>\n\n"
+                        f"📏 Відстань: {distance_km:.1f} км\n"
+                        f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
+                        f"💡 Виберіть клас авто:",
+                        reply_markup=kb
+                    )
                     
                 else:
                     # Невідомий стан - показати помилку і дані для діагностики
