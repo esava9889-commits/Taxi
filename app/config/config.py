@@ -24,13 +24,15 @@ class AppConfig:
     city_invite_links: dict
     webapp_url: Optional[str]  # URL для WebApp з інтерактивною картою
     
-# Список доступних міст (тільки 5 міст)
+# Список доступних міст (7 міст)
 AVAILABLE_CITIES = [
     "Київ",
     "Дніпро",
     "Кривий Ріг",
     "Харків",
     "Одеса",
+    "Кропивницький",
+    "Миколаїв",
 ]
 
 # Маппінг міста → ID групи водіїв
@@ -41,6 +43,8 @@ CITY_GROUP_CHATS = {
     "Кривий Ріг": None,     # KRYVYI_RIH_GROUP_CHAT_ID
     "Харків": None,         # KHARKIV_GROUP_CHAT_ID
     "Одеса": None,          # ODESA_GROUP_CHAT_ID
+    "Кропивницький": None,  # KROPYVNYTSKYI_GROUP_CHAT_ID
+    "Миколаїв": None,       # MYKOLAIV_GROUP_CHAT_ID
 }
 
 # Маппінг міста → посилання на групу (для запрошення водіїв)
@@ -50,6 +54,8 @@ CITY_GROUP_INVITE_LINKS = {
     "Кривий Ріг": None,
     "Харків": None,
     "Одеса": None,
+    "Кропивницький": None,
+    "Миколаїв": None,
 }
 
 
@@ -118,6 +124,8 @@ def load_config() -> AppConfig:
         "Кривий Ріг": int(os.getenv("KRYVYI_RIH_GROUP_CHAT_ID")) if os.getenv("KRYVYI_RIH_GROUP_CHAT_ID") else None,
         "Харків": int(os.getenv("KHARKIV_GROUP_CHAT_ID")) if os.getenv("KHARKIV_GROUP_CHAT_ID") else None,
         "Одеса": int(os.getenv("ODESA_GROUP_CHAT_ID")) if os.getenv("ODESA_GROUP_CHAT_ID") else None,
+        "Кропивницький": int(os.getenv("KROPYVNYTSKYI_GROUP_CHAT_ID")) if os.getenv("KROPYVNYTSKYI_GROUP_CHAT_ID") else None,
+        "Миколаїв": int(os.getenv("MYKOLAIV_GROUP_CHAT_ID")) if os.getenv("MYKOLAIV_GROUP_CHAT_ID") else None,
     }
     
     # City-specific invite links
@@ -127,6 +135,8 @@ def load_config() -> AppConfig:
         "Кривий Ріг": os.getenv("KRYVYI_RIH_GROUP_INVITE_LINK") or None,
         "Харків": os.getenv("KHARKIV_GROUP_INVITE_LINK") or None,
         "Одеса": os.getenv("ODESA_GROUP_INVITE_LINK") or None,
+        "Кропивницький": os.getenv("KROPYVNYTSKYI_GROUP_INVITE_LINK") or None,
+        "Миколаїв": os.getenv("MYKOLAIV_GROUP_INVITE_LINK") or None,
     }
 
     # WebApp URL для інтерактивної карти (опціонально)
