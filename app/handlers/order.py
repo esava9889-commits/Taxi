@@ -1800,7 +1800,26 @@ def create_router(config: AppConfig) -> Router:
                             successfully_sent = True
                         except Exception as e:
                             err_text = str(e).lower()
-                            logger.error(f"Failed to send order to city group {city_group_id}: {e}")
+                            logger.error(f"Failed to send order to city group {city_group_id} (City: {client_city}): {e}")
+                            
+                            # Повідомити адміну про проблему
+                            for admin_id in config.bot.admin_ids:
+                                try:
+                                    await message.bot.send_message(
+                                        admin_id,
+                                        f"⚠️ <b>ПОМИЛКА ВІДПРАВКИ ЗАМОВЛЕННЯ</b>\n\n"
+                                        f"📍 Місто: {client_city}\n"
+                                        f"🆔 ID групи: <code>{city_group_id}</code>\n"
+                                        f"❌ Помилка: {e}\n\n"
+                                        f"💡 Перевірте налаштування групи:\n"
+                                        f"• Використайте команду /check_groups\n"
+                                        f"• Переконайтесь що бот доданий до групи\n"
+                                        f"• Перевірте ID групи в ENV змінних",
+                                        parse_mode="HTML"
+                                    )
+                                except:
+                                    pass
+                            
                             # Спробувати fallback якщо чат не знайдено/бот не має доступу
                             if ("chat not found" in err_text or "forbidden" in err_text) and config.driver_group_chat_id and config.driver_group_chat_id != city_group_id:
                                 try:
@@ -1813,8 +1832,36 @@ def create_router(config: AppConfig) -> Router:
                                     )
                                     used_group_id = config.driver_group_chat_id
                                     successfully_sent = True
+                                    
+                                    # Повідомити адміну що fallback спрацював
+                                    for admin_id in config.bot.admin_ids:
+                                        try:
+                                            await message.bot.send_message(
+                                                admin_id,
+                                                f"✅ <b>Fallback спрацював</b>\n\n"
+                                                f"Замовлення #{order_id} відправлено в загальну групу\n"
+                                                f"🆔 ID: <code>{config.driver_group_chat_id}</code>",
+                                                parse_mode="HTML"
+                                            )
+                                        except:
+                                            pass
                                 except Exception as e2:
                                     logger.error(f"❌ Fallback також не вдався: {e2}")
+                                    # Повідомити адміну що fallback теж не спрацював
+                                    for admin_id in config.bot.admin_ids:
+                                        try:
+                                            await message.bot.send_message(
+                                                admin_id,
+                                                f"🚨 <b>КРИТИЧНА ПОМИЛКА</b>\n\n"
+                                                f"Замовлення #{order_id} НЕ ВІДПРАВЛЕНО!\n"
+                                                f"❌ Fallback група також недоступна\n\n"
+                                                f"🆔 Fallback ID: <code>{config.driver_group_chat_id}</code>\n"
+                                                f"❌ Помилка: {e2}\n\n"
+                                                f"⚠️ ТЕРМІНОВО перевірте /check_groups",
+                                                parse_mode="HTML"
+                                            )
+                                        except:
+                                            pass
                         
                         if not successfully_sent:
                             raise RuntimeError("Не вдалося надіслати повідомлення у жодну групу")
@@ -1886,10 +1933,18 @@ def create_router(config: AppConfig) -> Router:
                 logger.error(f"Failed to send order to group: {e}")
                 from app.handlers.keyboards import main_menu_keyboard
                 is_admin = message.from_user.id in config.bot.admin_ids if message.from_user else False
+                
+                # Відправити зрозуміле повідомлення користувачу
                 await message.answer(
-                    f"⚠️ Замовлення #{order_id} створено, але виникла помилка при відправці водіям.\n"
-                    "Зверніться до адміністратора.",
-                    reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin)
+                    f"✅ <b>Замовлення #{order_id} створено!</b>\n\n"
+                    f"⚠️ Наразі виникли технічні проблеми з відправкою водіям.\n\n"
+                    f"📞 <b>Що робити:</b>\n"
+                    f"1. Зачекайте кілька хвилин\n"
+                    f"2. Спробуйте створити замовлення ще раз\n"
+                    f"3. Зверніться до адміністратора якщо проблема повторюється\n\n"
+                    f"💡 Адміністратор вже повідомлений про проблему.",
+                    reply_markup=main_menu_keyboard(is_registered=True, is_admin=is_admin),
+                    parse_mode="HTML"
                 )
         else:
             # Якщо група не налаштована
