@@ -192,6 +192,11 @@ async def main() -> None:
     logger.info(f"✅ webapp_router created: {webapp_router}")
     logger.info(f"✅ webapp_router name: {webapp_router.name}")
     logger.info(f"✅ webapp_router observers count: {len(webapp_router.observers)}")
+    logger.info(f"⚙️ WEBAPP_URL config: {config.webapp_url}")
+    if not config.webapp_url:
+        logger.error("❌❌❌ WEBAPP_URL NOT SET! WebApp will NOT work!")
+        logger.error("❌ Set WEBAPP_URL in Render Environment Variables!")
+        logger.error("❌ Example: https://taxi-bot-hciq.onrender.com/webapp/index.html")
     dp.include_router(webapp_router)  # WebApp ПЕРШИМ (обробляє web_app_data!)
     logger.info("✅ webapp_router registered in dispatcher")
     

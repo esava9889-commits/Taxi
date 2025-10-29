@@ -187,6 +187,18 @@
         console.log('🎨 Color scheme:', tg.colorScheme);
         console.log('👤 User:', tg.initDataUnsafe?.user);
         console.log('🔍 initData present:', !!tg.initData);
+        console.log('🔍 initData length:', tg.initData ? tg.initData.length : 0);
+        console.log('🔍 initData (first 100 chars):', tg.initData ? tg.initData.substring(0, 100) : 'EMPTY');
+        
+        // ⚠️ КРИТИЧНА ПЕРЕВІРКА: initData має бути!
+        if (!tg.initData || tg.initData.length === 0) {
+            console.error('❌❌❌ CRITICAL ERROR: initData is EMPTY!');
+            console.error('❌ This means WebApp was NOT opened through bot button!');
+            console.error('❌ tg.sendData() will NOT work without initData!');
+            alert('⚠️ ПОМИЛКА: WebApp відкрито неправильно!\n\nВідкрийте через кнопку в боті, а не прямим посиланням.');
+        } else {
+            console.log('✅ initData is present - WebApp opened correctly through bot');
+        }
         
         // Перевірка API
         console.log('🔍 API methods available:');
