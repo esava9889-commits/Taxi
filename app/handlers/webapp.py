@@ -36,6 +36,25 @@ def create_router(config: AppConfig) -> Router:
     logger.info(f"🔧 Config webapp_url: {config.webapp_url}")
     logger.info("=" * 80)
     
+    # ⭐⭐⭐ ТЕСТОВИЙ ОБРОБНИК - спіймає ВСІ повідомлення в webapp router
+    @router.message()
+    async def test_catch_all(message: Message, state: FSMContext) -> None:
+        """Діагностичний обробник - ловить ВСЕ"""
+        logger.info("=" * 80)
+        logger.info("🚨 WEBAPP ROUTER: Caught a message (any type)!")
+        logger.info(f"  User: {message.from_user.id}")
+        logger.info(f"  Content type: {message.content_type}")
+        logger.info(f"  Has web_app_data attr: {hasattr(message, 'web_app_data')}")
+        
+        if hasattr(message, 'web_app_data') and message.web_app_data:
+            logger.info(f"  ✅ web_app_data IS PRESENT!")
+            logger.info(f"  web_app_data.data: {message.web_app_data.data}")
+        else:
+            logger.info(f"  ❌ web_app_data is None or missing")
+            
+        logger.info(f"  Message model_dump keys: {list(message.model_dump().keys())}")
+        logger.info("=" * 80)
+    
     @router.message(F.web_app_data)
     async def handle_webapp_data(message: Message, state: FSMContext) -> None:
         """
