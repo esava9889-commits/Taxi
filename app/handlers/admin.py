@@ -2306,4 +2306,136 @@ def create_router(config: AppConfig) -> Router:
         get_pricing_settings, upsert_pricing_settings, PricingSettings
     )
     
+    # ═══════════════════════════════════════════════════════════════
+    # 🔍 ДІАГНОСТИКА ГРУП
+    # ═══════════════════════════════════════════════════════════════
+    
+    @router.message(Command("check_groups"))
+    async def check_groups_status(message: Message) -> None:
+        """Перевірити статус бота в групах міст"""
+        if not message.from_user:
+            return
+        
+        # Перевірка чи це адмін
+        if message.from_user.id not in config.bot.admin_ids:
+            await message.answer("❌ Ця команда доступна тільки адміністраторам")
+            return
+        
+        await message.answer("🔍 Перевіряю статус бота в групах...", parse_mode="HTML")
+        
+        results = []
+        results.append("🏙️ <b>СТАТУС БОТА В ГРУПАХ МІСТ</b>\n")
+        results.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+        
+        # Перевірити кожне місто
+        for city in AVAILABLE_CITIES:
+            group_id = config.city_groups.get(city)
+            invite_link = config.city_invite_links.get(city)
+            
+            if not group_id:
+                results.append(f"📍 <b>{city}</b>\n")
+                results.append(f"   ❌ Група не налаштована (ID: None)\n")
+                results.append(f"   💡 Додайте ENV: <code>{city.upper().replace(' ', '_').replace('І', 'I')}_GROUP_CHAT_ID</code>\n\n")
+                continue
+            
+            # Спробувати відправити тестове повідомлення
+            try:
+                # Спробувати отримати інформацію про чат
+                chat = await message.bot.get_chat(group_id)
+                member = await message.bot.get_chat_member(group_id, message.bot.id)
+                
+                status_emoji = "✅" if member.status in ["administrator", "member"] else "⚠️"
+                status_text = {
+                    "administrator": "Адміністратор",
+                    "member": "Учасник",
+                    "left": "Покинув групу",
+                    "kicked": "Видалений з групи"
+                }.get(member.status, member.status)
+                
+                results.append(f"📍 <b>{city}</b>\n")
+                results.append(f"   {status_emoji} ID: <code>{group_id}</code>\n")
+                results.append(f"   👥 Назва: {chat.title}\n")
+                results.append(f"   🤖 Статус бота: {status_text}\n")
+                
+                if member.status == "administrator":
+                    # Перевірити дозволи
+                    can_post = member.can_post_messages or False
+                    can_delete = member.can_delete_messages or False
+                    results.append(f"   📝 Може писати: {'✅' if can_post or chat.type != 'channel' else '❌'}\n")
+                    results.append(f"   🗑 Може видаляти: {'✅' if can_delete else '❌'}\n")
+                
+                if invite_link:
+                    results.append(f"   🔗 Посилання: {invite_link}\n")
+                
+                results.append("\n")
+                
+            except Exception as e:
+                error_text = str(e).lower()
+                results.append(f"📍 <b>{city}</b>\n")
+                results.append(f"   ❌ ID: <code>{group_id}</code>\n")
+                
+                if "chat not found" in error_text:
+                    results.append(f"   ⚠️ <b>Група не знайдена!</b>\n")
+                    results.append(f"   💡 Перевірте ID групи або додайте бота до групи\n")
+                elif "forbidden" in error_text:
+                    results.append(f"   ⚠️ <b>Бот не має доступу!</b>\n")
+                    results.append(f"   💡 Додайте бота до групи як адміністратора\n")
+                else:
+                    results.append(f"   ⚠️ Помилка: {e}\n")
+                
+                results.append("\n")
+        
+        # Загальна група (fallback)
+        results.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+        results.append("🔄 <b>ЗАГАЛЬНА ГРУПА (FALLBACK)</b>\n\n")
+        
+        if config.driver_group_chat_id:
+            try:
+                chat = await message.bot.get_chat(config.driver_group_chat_id)
+                member = await message.bot.get_chat_member(config.driver_group_chat_id, message.bot.id)
+                
+                status_emoji = "✅" if member.status in ["administrator", "member"] else "⚠️"
+                results.append(f"{status_emoji} ID: <code>{config.driver_group_chat_id}</code>\n")
+                results.append(f"👥 Назва: {chat.title}\n")
+                results.append(f"🤖 Статус: {member.status}\n")
+            except Exception as e:
+                results.append(f"❌ ID: <code>{config.driver_group_chat_id}</code>\n")
+                results.append(f"⚠️ Помилка: {e}\n")
+        else:
+            results.append("❌ Не налаштована\n")
+            results.append("💡 Додайте ENV: <code>DRIVER_GROUP_CHAT_ID</code>\n")
+        
+        results.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+        results.append("📖 <b>ЯК НАЛАШТУВАТИ ГРУПИ:</b>\n\n")
+        results.append("1️⃣ Створіть групу в Telegram\n")
+        results.append("2️⃣ Додайте бота до групи як адміністратора\n")
+        results.append("3️⃣ Відправте в групу будь-яке повідомлення\n")
+        results.append("4️⃣ Перешліть повідомлення боту @userinfobot\n")
+        results.append("5️⃣ Скопіюйте Chat ID (починається з -100)\n")
+        results.append("6️⃣ Додайте ENV змінну на Render:\n")
+        results.append("   <code>KYIV_GROUP_CHAT_ID=-1001234567890</code>\n")
+        results.append("7️⃣ Перезапустіть сервіс на Render\n")
+        
+        result_text = "".join(results)
+        
+        # Відправити результат (можливо декількома повідомленнями)
+        max_length = 4000
+        if len(result_text) > max_length:
+            # Розділити на частини
+            parts = []
+            current_part = ""
+            for line in result_text.split("\n"):
+                if len(current_part) + len(line) + 1 > max_length:
+                    parts.append(current_part)
+                    current_part = line + "\n"
+                else:
+                    current_part += line + "\n"
+            if current_part:
+                parts.append(current_part)
+            
+            for part in parts:
+                await message.answer(part, parse_mode="HTML")
+        else:
+            await message.answer(result_text, parse_mode="HTML")
+    
     return router
