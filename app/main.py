@@ -205,8 +205,8 @@ async def main() -> None:
     # dp.include_router(create_driver_analytics_router(config))  # Аналітика водія - ПРИБРАНО
     dp.include_router(create_client_router(config))  # Client останній
 
-    # Start scheduled tasks
-    await start_scheduler(bot, config.database_path, config.payment_card)
+    # Start scheduled tasks (картка адміна береться з БД автоматично)
+    await start_scheduler(bot, config.database_path)
     
     logging.info("🚀 Bot started successfully!")
     
