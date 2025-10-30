@@ -268,6 +268,7 @@
         
         // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
         const geocoder = L.Control.Geocoder.nominatim({
+            serviceUrl: 'http://nominatim.openstreetmap.org',  // HTTP замість HTTPS
             geocodingQueryParams: {
                 countrycodes: 'ua',  // Тільки Україна
                 'accept-language': 'uk',  // Українська мова
