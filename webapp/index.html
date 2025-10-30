@@ -244,6 +244,121 @@
                 stroke-dashoffset: -1000;
             }
         }
+        
+        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ */
+        .leaflet-control-geocoder {
+            border: none !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
+            min-width: 300px !important;
+            max-width: 400px !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        /* Адаптивність для мобільних */
+        @media (max-width: 480px) {
+            .leaflet-control-geocoder {
+                min-width: calc(100vw - 100px) !important;
+                max-width: calc(100vw - 100px) !important;
+            }
+        }
+        
+        .leaflet-control-geocoder-form {
+            background: var(--tg-theme-bg-color, #ffffff) !important;
+            border-radius: 12px !important;
+            padding: 8px !important;
+        }
+        
+        .leaflet-control-geocoder-form input {
+            font-size: 16px !important;
+            padding: 12px 16px !important;
+            border: 2px solid var(--tg-theme-hint-color, #ccc) !important;
+            border-radius: 10px !important;
+            background: var(--tg-theme-bg-color, #ffffff) !important;
+            color: var(--tg-theme-text-color, #000000) !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .leaflet-control-geocoder-form input:focus {
+            border-color: var(--tg-theme-button-color, #3390ec) !important;
+            outline: none !important;
+            box-shadow: 0 0 0 3px rgba(51, 144, 236, 0.1) !important;
+        }
+        
+        .leaflet-control-geocoder-form input::placeholder {
+            color: var(--tg-theme-hint-color, #999) !important;
+            opacity: 0.7 !important;
+        }
+        
+        .leaflet-control-geocoder-form input:disabled {
+            background: var(--tg-theme-section-bg-color, #f0f0f0) !important;
+            color: var(--tg-theme-hint-color, #999) !important;
+            cursor: not-allowed !important;
+            opacity: 0.6 !important;
+        }
+        
+        /* Кнопка пошуку */
+        .leaflet-control-geocoder-icon {
+            background: var(--tg-theme-button-color, #3390ec) !important;
+            border-radius: 8px !important;
+            width: 36px !important;
+            height: 36px !important;
+            margin: 4px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        
+        /* Список результатів */
+        .leaflet-control-geocoder-alternatives {
+            background: var(--tg-theme-bg-color, #ffffff) !important;
+            border: none !important;
+            border-radius: 0 0 12px 12px !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15) !important;
+            max-height: 300px !important;
+            overflow-y: auto !important;
+            margin-top: 8px !important;
+        }
+        
+        .leaflet-control-geocoder-alternatives-minimized {
+            display: none !important;
+        }
+        
+        /* Окремий результат */
+        .leaflet-control-geocoder-alternative {
+            padding: 14px 16px !important;
+            border-bottom: 1px solid var(--tg-theme-section-bg-color, #f0f0f0) !important;
+            color: var(--tg-theme-text-color, #000000) !important;
+            cursor: pointer !important;
+            transition: background 0.2s ease !important;
+            font-size: 15px !important;
+        }
+        
+        .leaflet-control-geocoder-alternative:hover {
+            background: var(--tg-theme-section-bg-color, #f5f5f5) !important;
+        }
+        
+        .leaflet-control-geocoder-alternative:last-child {
+            border-bottom: none !important;
+            border-radius: 0 0 12px 12px !important;
+        }
+        
+        .leaflet-control-geocoder-alternative-first {
+            background: var(--tg-theme-section-bg-color, #f0f0f0) !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Індикатор завантаження пошуку */
+        .leaflet-control-geocoder-throbber {
+            animation: spin 1s linear infinite !important;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -440,6 +555,26 @@
             }
             
             panel.innerHTML = `${icon} ${text}`;
+            
+            // Оновити placeholder в пошуку
+            updateSearchPlaceholder(state);
+        }
+        
+        // Функція оновлення placeholder в пошуку
+        function updateSearchPlaceholder(state) {
+            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            if (!searchInput) return;
+            
+            if (state === 'pickup') {
+                searchInput.placeholder = '📍 Звідки їдемо? (наприклад: Київ, Хрещатик 1)';
+            } else if (state === 'destination') {
+                searchInput.placeholder = '🎯 Куди їдемо? (наприклад: Львів, пл. Ринок)';
+            } else if (state === 'confirm') {
+                searchInput.placeholder = '✅ Підтвердіть замовлення';
+                searchInput.disabled = true;  // Вимкнути пошук на етапі підтвердження
+            } else {
+                searchInput.disabled = false;
+            }
         }
         
         // Функція оновлення інформації про маршрут
@@ -486,6 +621,13 @@
                 routeInfo.style.display = 'none';
             }
             
+            // Очистити поле пошуку
+            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.disabled = false;
+            }
+            
             // Центрувати на Україну
             map.setView([48.3794, 31.1656], 6);
             
@@ -494,24 +636,27 @@
         
         // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
         const geocoder = L.Control.Geocoder.nominatim({
-            serviceUrl: 'https://nominatim.openstreetmap.org',  // HTTPS
+            serviceUrl: 'https://nominatim.openstreetmap.org',
             geocodingQueryParams: {
                 countrycodes: 'ua',  // Тільки Україна
                 'accept-language': 'uk',  // Українська мова
-                addressdetails: 1,  // Детальна інформація про адресу
-                limit: 10  // Показувати до 10 варіантів
+                addressdetails: 1,
+                limit: 8,
+                dedupe: 1  // Видалити дублікати
             }
         });
         
         const geocoderControl = L.Control.geocoder({
             geocoder: geocoder,
-            defaultMarkGeocode: false,  // Ми самі контролюємо маркер
+            defaultMarkGeocode: false,
             position: 'topright',
-            placeholder: '🔍 Введіть адресу або місце...',
-            errorMessage: '❌ Адресу не знайдено',
-            collapsed: false,  // Завжди показувати поле пошуку
-            suggestMinLength: 3,  // Починати пошук з 3 символів
-            suggestTimeout: 250  // Затримка перед пошуком (мс)
+            placeholder: '📍 Звідки їдемо? (наприклад: Київ, Хрещатик 1)',
+            errorMessage: '❌ Нічого не знайдено. Спробуйте інший запит',
+            collapsed: false,
+            expand: 'click',
+            suggestMinLength: 3,
+            suggestTimeout: 300,
+            queryMinLength: 3
         }).on('markgeocode', function(e) {
             const latlng = e.geocode.center;
             
