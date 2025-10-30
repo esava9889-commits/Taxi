@@ -143,8 +143,9 @@ async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]
     # Затримка для Nominatim
     await _wait_for_nominatim()
     
+    # Використовуємо HTTP замість HTTPS для обходу SSL проблем на Render
     url = (
-        f"https://nominatim.openstreetmap.org/reverse?"
+        f"http://nominatim.openstreetmap.org/reverse?"
         f"lat={lat}&lon={lon}&format=json&addressdetails=1&accept-language=uk"
     )
     
@@ -153,9 +154,7 @@ async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]
     }
     
     try:
-        # Створити connector з SSL verification відключеним (для Render)
-        connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=15) as resp:
                 if resp.status != 200:
                     logger.error(f"Nominatim Reverse Geocoding HTTP error: {resp.status}")

@@ -319,10 +319,7 @@
                 // Зберегти координати
                 destinationCoords = { lat: latlng.lat, lng: latlng.lng };
                 
-                // Показати маршрут
-                if (pickupCoords) {
-                    loadAndShowRoute(pickupCoords.lat, pickupCoords.lng, latlng.lat, latlng.lng);
-                }
+                // НЕ малювати маршрут тут - тільки після підтвердження!
                 
                 // Показати кнопку
                 tg.MainButton.show();
@@ -372,10 +369,8 @@
                 // Зберегти координати destination
                 destinationCoords = { lat, lng };
                 
-                // Показати маршрут
-                if (pickupCoords) {
-                    loadAndShowRoute(pickupCoords.lat, pickupCoords.lng, lat, lng);
-                }
+                // НЕ малювати маршрут тут - тільки після підтвердження!
+                // Маршрут буде намальовано після натискання кнопки
                 
                 // Показати кнопку
                 tg.MainButton.show();
@@ -405,8 +400,17 @@
                 }
                 
             } else if (currentState === 'destination') {
-                // СТАН 2: Підтверджуємо destination → показуємо маршрут і кнопку "Підтвердити"
+                // СТАН 2: Підтверджуємо destination → малюємо маршрут
                 if (!destinationCoords) return;
+                
+                // Намалювати маршрут
+                if (pickupCoords && destinationCoords) {
+                    console.log('🗺️ Малюю маршрут від pickup до destination...');
+                    await loadAndShowRoute(
+                        pickupCoords.lat, pickupCoords.lng,
+                        destinationCoords.lat, destinationCoords.lng
+                    );
+                }
                 
                 currentState = 'confirm';
                 tg.MainButton.setText('✅ Підтвердити');
@@ -482,29 +486,33 @@
                     (position) => {
                         const { latitude, longitude } = position.coords;
                         
+                        loading.style.display = 'none';
+                        
                         // Перемістити карту до поточної локації
                         map.setView([latitude, longitude], 15);
                         
-                        // Додати маркер
-                        if (selectedMarker) {
-                            map.removeLayer(selectedMarker);
+                        // Додати маркер залежно від стану
+                        if (currentState === 'pickup') {
+                            if (pickupMarker) {
+                                map.removeLayer(pickupMarker);
+                            }
+                            pickupMarker = L.marker([latitude, longitude], {
+                                icon: createMarkerIcon(true)
+                            }).addTo(map);
+                            pickupCoords = { lat: latitude, lng: longitude };
+                            
+                        } else if (currentState === 'destination') {
+                            if (destinationMarker) {
+                                map.removeLayer(destinationMarker);
+                            }
+                            destinationMarker = L.marker([latitude, longitude], {
+                                icon: createMarkerIcon(false)
+                            }).addTo(map);
+                            destinationCoords = { lat: latitude, lng: longitude };
                         }
-                        
-                        selectedMarker = L.marker([latitude, longitude], {
-                            icon: createMarkerIcon()
-                        }).addTo(map);
-                        
-                        selectedCoords = { lat: latitude, lng: longitude };
-                        
-                        // Показати координати
-                        document.getElementById('coords-text').textContent = 
-                            `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-                        document.getElementById('coordinates').style.display = 'block';
                         
                         // Показати кнопку
                         tg.MainButton.show();
-                        
-                        loading.style.display = 'none';
                         
                         if (tg.HapticFeedback) {
                             tg.HapticFeedback.notificationOccurred('success');
@@ -512,7 +520,7 @@
                     },
                     (error) => {
                         loading.style.display = 'none';
-                        alert('❌ Не вдалося отримати геолокацію. Оберіть місце на карті вручну.');
+                        console.error('❌ Геолокація помилка:', error);
                         
                         if (tg.HapticFeedback) {
                             tg.HapticFeedback.notificationOccurred('error');
@@ -526,7 +534,7 @@
                 );
             } else {
                 loading.style.display = 'none';
-                alert('❌ Ваш браузер не підтримує геолокацію');
+                console.error('❌ Геолокація не підтримується');
             }
         });
         
