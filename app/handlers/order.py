@@ -465,7 +465,7 @@ def create_router(config: AppConfig) -> Router:
         # Видалити попереднє повідомлення
         try:
             await call.message.delete()
-        except:
+        except Exception as e:
             pass
         
         # Показати нове з ReplyKeyboard
@@ -746,7 +746,7 @@ def create_router(config: AppConfig) -> Router:
         
         try:
             await call.message.delete()
-        except:
+        except Exception as e:
             pass
         
         msg = await call.message.answer(
@@ -908,7 +908,7 @@ def create_router(config: AppConfig) -> Router:
                 "💡 Оберіть спосіб:",
                 reply_markup=kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 "📍 <b>Куди їдемо?</b>\n\n"
                 "Надішліть адресу призначення текстом\n"
@@ -955,7 +955,7 @@ def create_router(config: AppConfig) -> Router:
                 "Або натисніть '⏩ Без коментаря'",
                 reply_markup=comment_kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 f"✅ <b>Обрано:</b> {class_name}\n"
                 f"💰 <b>Вартість:</b> {estimated_fare:.0f} грн\n\n"
@@ -1045,7 +1045,7 @@ def create_router(config: AppConfig) -> Router:
                 "Або натисніть '⏩ Без коментаря'",
                 reply_markup=comment_kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 f"✅ <b>Обрано:</b> {class_name}\n"
                 f"💰 <b>Вартість:</b> {final_price:.0f} грн\n\n"
@@ -1274,7 +1274,7 @@ def create_router(config: AppConfig) -> Router:
                 "💳 <b>Картка</b> - переказ на картку водія (реквізити одразу після прийняття)",
                 reply_markup=kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 "💰 <b>Оберіть спосіб оплати:</b>\n\n"
                 "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
@@ -1370,7 +1370,7 @@ def create_router(config: AppConfig) -> Router:
         
         try:
             await call.message.edit_text(payment_text)
-        except:
+        except Exception as e:
             pass
         
         # Перейти до підтвердження
@@ -1546,7 +1546,7 @@ def create_router(config: AppConfig) -> Router:
                 "💳 <b>Картка</b> - переказ на картку водія",
                 reply_markup=kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 "💰 <b>Оберіть спосіб оплати:</b>\n\n"
                 "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
@@ -1910,7 +1910,7 @@ def create_router(config: AppConfig) -> Router:
                                         f"• Перевірте ID групи в ENV змінних",
                                         parse_mode="HTML"
                                     )
-                                except:
+                                except Exception as e:
                                     pass
                             
                             # Спробувати fallback якщо чат не знайдено/бот не має доступу
@@ -1936,7 +1936,7 @@ def create_router(config: AppConfig) -> Router:
                                                 f"🆔 ID: <code>{config.driver_group_chat_id}</code>",
                                                 parse_mode="HTML"
                                             )
-                                        except:
+                                        except Exception as e:
                                             pass
                                 except Exception as e2:
                                     logger.error(f"❌ Fallback також не вдався: {e2}")
@@ -1953,7 +1953,7 @@ def create_router(config: AppConfig) -> Router:
                                                 f"⚠️ ТЕРМІНОВО перевірте /check_groups",
                                                 parse_mode="HTML"
                                             )
-                                        except:
+                                        except Exception as e:
                                             pass
                         
                         if not successfully_sent:
@@ -2093,7 +2093,7 @@ def create_router(config: AppConfig) -> Router:
                 "Ви можете створити нове замовлення будь-коли.",
                 reply_markup=None
             )
-        except:
+        except Exception as e:
             pass
         
         await call.message.answer(
@@ -2255,7 +2255,7 @@ def create_router(config: AppConfig) -> Router:
             # Видалити повідомлення з пропозицією
             try:
                 await call.message.delete()
-            except:
+            except Exception as e:
                 pass
             return
         
@@ -2444,7 +2444,7 @@ def create_router(config: AppConfig) -> Router:
             # Видалити повідомлення з пропозицією
             try:
                 await call.message.delete()
-            except:
+            except Exception as e:
                 pass
             
             # Повідомити в групу
@@ -2540,7 +2540,7 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("✅ Водій вже прийняв замовлення!", show_alert=True)
             try:
                 await call.message.delete()
-            except:
+            except Exception as e:
                 pass
             return
         
