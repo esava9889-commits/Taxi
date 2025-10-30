@@ -186,7 +186,12 @@
         const locationType = urlParams.get('type') || 'pickup'; // За замовчуванням pickup
         console.log('📍 Location type:', locationType);
         
-        tg.MainButton.setText('✅ Підтвердити місце');
+        // Налаштувати текст кнопки залежно від типу
+        const buttonText = locationType === 'pickup' 
+            ? '✅ Підтвердити місце посадки' 
+            : '✅ Підтвердити місце призначення';
+        
+        tg.MainButton.setText(buttonText);
         tg.MainButton.color = tg.themeParams.button_color || '#3390ec';
         tg.MainButton.textColor = tg.themeParams.button_text_color || '#ffffff';
         tg.MainButton.hide(); // Спочатку сховати
