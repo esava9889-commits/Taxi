@@ -389,7 +389,7 @@
         // ⚠️ ВАЖЛИВО: Очистити попередні обробники
         tg.MainButton.offClick();
         
-        tg.MainButton.onClick(() => {
+        tg.MainButton.onClick(async () => {  // ← додано async!
             console.log('='.repeat(60));
             console.log('🔘 MAINBUTTON CLICK EVENT:', new Date().toISOString());
             console.log('='.repeat(60));
