@@ -1437,26 +1437,43 @@ def create_router(config: AppConfig) -> Router:
         dest_lon = data.get('dest_lon')
         
         if pickup_lat and pickup_lon:
-            # Перевірити чи це координати (містить числа з крапкою)
-            if '.' in str(pickup_display) and any(char.isdigit() for char in str(pickup_display)):
+            # Перевірити чи pickup_display містить координати замість адреси
+            # Формат координат: "📍 12.345678, 67.890123" або просто числа з комою
+            pickup_str = str(pickup_display)
+            is_coordinates = (
+                '📍 Координати:' in pickup_str or 
+                (pickup_str.count('.') >= 2 and pickup_str.count(',') == 1 and len(pickup_str) < 40)
+            )
+            
+            if is_coordinates:
                 logger.info(f"🔄 Координати виявлені в pickup, геокодую: {pickup_display}")
                 try:
                     readable_address = await reverse_geocode("", float(pickup_lat), float(pickup_lon))
                     if readable_address:
                         pickup_display = readable_address
-                        logger.info(f"✅ Pickup геокодовано: {pickup_display}")
+                        # ЗБЕРЕГТИ В STATE!
+                        await state.update_data(pickup=readable_address)
+                        logger.info(f"✅ Pickup геокодовано і збережено: {pickup_display}")
                 except Exception as e:
                     logger.error(f"❌ Помилка геокодування pickup: {e}")
         
         if dest_lat and dest_lon:
-            # Перевірити чи це координати
-            if '.' in str(destination_display) and any(char.isdigit() for char in str(destination_display)):
+            # Перевірити чи destination_display містить координати замість адреси
+            dest_str = str(destination_display)
+            is_coordinates = (
+                '📍 Координати:' in dest_str or 
+                (dest_str.count('.') >= 2 and dest_str.count(',') == 1 and len(dest_str) < 40)
+            )
+            
+            if is_coordinates:
                 logger.info(f"🔄 Координати виявлені в destination, геокодую: {destination_display}")
                 try:
                     readable_address = await reverse_geocode("", float(dest_lat), float(dest_lon))
                     if readable_address:
                         destination_display = readable_address
-                        logger.info(f"✅ Destination геокодовано: {destination_display}")
+                        # ЗБЕРЕГТИ В STATE!
+                        await state.update_data(destination=readable_address)
+                        logger.info(f"✅ Destination геокодовано і збережено: {destination_display}")
                 except Exception as e:
                     logger.error(f"❌ Помилка геокодування destination: {e}")
         

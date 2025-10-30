@@ -275,6 +275,11 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 client_city = user.city if user and user.city else None
                 online_count = await get_online_drivers_count(request.app['config'].database_path, client_city)
                 
+                # Отримати кількість pending orders для розрахунку попиту
+                from app.storage.db import get_pending_orders
+                pending_orders = await get_pending_orders(request.app['config'].database_path, client_city)
+                pending_count = len(pending_orders)
+                
                 # Показати класи з цінами
                 from app.handlers.order import OrderStates
                 await state.set_state(OrderStates.car_class)
@@ -283,7 +288,16 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 kb_buttons = []
                 for car_class_id, car_class_data in CAR_CLASSES.items():
                     class_fare = calculate_fare_with_class(base_fare, car_class_id, custom_multipliers)
-                    final_fare, explanation, surge_mult = await calculate_dynamic_price(class_fare, client_city, online_count, 0)
+                    
+                    # ПРАВИЛЬНИЙ розрахунок з усіма параметрами (як після вибору класу!)
+                    final_fare, explanation, surge_mult = await calculate_dynamic_price(
+                        class_fare, client_city, online_count, pending_count,
+                        pricing.night_percent, pricing.weather_percent,
+                        pricing.peak_hours_percent, pricing.weekend_percent,
+                        pricing.monday_morning_percent, pricing.no_drivers_percent,
+                        pricing.demand_very_high_percent, pricing.demand_high_percent,
+                        pricing.demand_medium_percent, pricing.demand_low_discount_percent
+                    )
                     
                     surge_emoji = get_surge_emoji(surge_mult)
                     class_name = get_car_class_name(car_class_id)  # Вже містить емоджі + назву

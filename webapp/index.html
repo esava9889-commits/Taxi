@@ -320,7 +320,14 @@
                 // Зберегти координати
                 destinationCoords = { lat: latlng.lat, lng: latlng.lng };
                 
-                // НЕ малювати маршрут тут - тільки після підтвердження!
+                // МАЛЮВАТИ маршрут відразу після вибору destination!
+                if (pickupCoords && destinationCoords) {
+                    console.log('🗺️ Малюю маршрут після geocoder...');
+                    loadAndShowRoute(
+                        pickupCoords.lat, pickupCoords.lng,
+                        destinationCoords.lat, destinationCoords.lng
+                    );
+                }
                 
                 // Показати кнопку
                 tg.MainButton.show();
@@ -370,8 +377,14 @@
                 // Зберегти координати destination
                 destinationCoords = { lat, lng };
                 
-                // НЕ малювати маршрут тут - тільки після підтвердження!
-                // Маршрут буде намальовано після натискання кнопки
+                // МАЛЮВАТИ маршрут відразу після вибору destination!
+                if (pickupCoords && destinationCoords) {
+                    console.log('🗺️ Малюю маршрут після кліку на карту...');
+                    loadAndShowRoute(
+                        pickupCoords.lat, pickupCoords.lng,
+                        destinationCoords.lat, destinationCoords.lng
+                    );
+                }
                 
                 // Показати кнопку
                 tg.MainButton.show();
@@ -401,22 +414,14 @@
                 }
                 
             } else if (currentState === 'destination') {
-                // СТАН 2: Підтверджуємо destination → малюємо маршрут
+                // СТАН 2: Підтверджуємо destination (маршрут вже намальовано!)
                 if (!destinationCoords) return;
                 
-                // Намалювати маршрут
-                if (pickupCoords && destinationCoords) {
-                    console.log('🗺️ Малюю маршрут від pickup до destination...');
-                    await loadAndShowRoute(
-                        pickupCoords.lat, pickupCoords.lng,
-                        destinationCoords.lat, destinationCoords.lng
-                    );
-                }
-                
+                // Маршрут вже намальовано при виборі точки, просто переходимо до confirm
                 currentState = 'confirm';
-                tg.MainButton.setText('✅ Підтвердити');
+                tg.MainButton.setText('✅ Підтвердити замовлення');
                 
-                console.log('✅ Destination збережено, маршрут побудовано');
+                console.log('✅ Destination підтверджено, переходжу до confirm');
                 console.log('📍 Pickup:', pickupCoords);
                 console.log('📍 Destination:', destinationCoords);
                 
@@ -483,11 +488,23 @@
             loading.style.display = 'block';
             
             if (navigator.geolocation) {
+                // Таймаут для гарантованого приховування loading
+                const timeoutId = setTimeout(() => {
+                    loading.style.display = 'none';
+                    console.error('⏱️ Геолокація: timeout');
+                    if (tg.HapticFeedback) {
+                        tg.HapticFeedback.notificationOccurred('error');
+                    }
+                }, 15000); // 15 секунд максимум
+                
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
+                        clearTimeout(timeoutId);
                         const { latitude, longitude } = position.coords;
                         
                         loading.style.display = 'none';
+                        
+                        console.log('✅ Геолокація отримана:', latitude, longitude);
                         
                         // Перемістити карту до поточної локації
                         map.setView([latitude, longitude], 15);
@@ -510,6 +527,15 @@
                                 icon: createMarkerIcon(false)
                             }).addTo(map);
                             destinationCoords = { lat: latitude, lng: longitude };
+                            
+                            // МАЛЮВАТИ маршрут відразу після вибору destination!
+                            if (pickupCoords && destinationCoords) {
+                                console.log('🗺️ Малюю маршрут після геолокації...');
+                                loadAndShowRoute(
+                                    pickupCoords.lat, pickupCoords.lng,
+                                    destinationCoords.lat, destinationCoords.lng
+                                );
+                            }
                         }
                         
                         // Показати кнопку
@@ -520,8 +546,14 @@
                         }
                     },
                     (error) => {
+                        clearTimeout(timeoutId);
                         loading.style.display = 'none';
                         console.error('❌ Геолокація помилка:', error);
+                        console.error('  - code:', error.code);
+                        console.error('  - message:', error.message);
+                        
+                        // Показати повідомлення про помилку
+                        alert('❌ Не вдалося отримати геолокацію.\nДозвольте доступ до геолокації в налаштуваннях браузера.');
                         
                         if (tg.HapticFeedback) {
                             tg.HapticFeedback.notificationOccurred('error');
@@ -529,13 +561,14 @@
                     },
                     {
                         enableHighAccuracy: true,
-                        timeout: 10000,
+                        timeout: 12000,  // 12 секунд
                         maximumAge: 0
                     }
                 );
             } else {
                 loading.style.display = 'none';
                 console.error('❌ Геолокація не підтримується');
+                alert('❌ Ваш браузер не підтримує геолокацію.');
             }
         });
         
