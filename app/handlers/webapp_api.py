@@ -103,6 +103,10 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
         
         # Відправити повідомлення користувачу
         try:
+            # Отримати last_message_id з state
+            data = await state.get_data()
+            last_message_id = data.get('last_message_id')
+            
             if location_type == 'pickup':
                 from app.handlers.order import OrderStates
                 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -135,24 +139,73 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 
                 kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
                 
-                await bot.send_message(
-                    user_id,
-                    f"✅ <b>Місце подачі:</b>\n📍 {address}\n\n"
-                    f"📍 <b>Куди їдемо?</b>\n\n"
-                    f"🗺 <b>Карта з пошуком</b> - знайдіть або оберіть точку\n"
-                    f"📌 <b>Збережені</b> - швидкий вибір\n\n"
-                    f"💡 Оберіть спосіб:",
-                    reply_markup=kb,
-                    parse_mode="HTML"
-                )
+                # РЕДАГУВАТИ повідомлення замість створення нового
+                if last_message_id:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=last_message_id,
+                            text=f"✅ <b>Місце подачі:</b>\n📍 {address}\n\n"
+                                f"📍 <b>Куди їдемо?</b>\n\n"
+                                f"🗺 <b>Карта з пошуком</b> - знайдіть або оберіть точку\n"
+                                f"📌 <b>Збережені</b> - швидкий вибір\n\n"
+                                f"💡 Оберіть спосіб:",
+                            reply_markup=kb,
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        # Якщо редагування не вдалося, створити нове
+                        logger.warning(f"⚠️ Не вдалося редагувати повідомлення: {e}")
+                        msg = await bot.send_message(
+                            user_id,
+                            f"✅ <b>Місце подачі:</b>\n📍 {address}\n\n"
+                            f"📍 <b>Куди їдемо?</b>\n\n"
+                            f"💡 Оберіть спосіб:",
+                            reply_markup=kb,
+                            parse_mode="HTML"
+                        )
+                        await state.update_data(last_message_id=msg.message_id)
+                else:
+                    # Якщо немає last_message_id, створити нове
+                    msg = await bot.send_message(
+                        user_id,
+                        f"✅ <b>Місце подачі:</b>\n📍 {address}\n\n"
+                        f"📍 <b>Куди їдемо?</b>\n\n"
+                        f"💡 Оберіть спосіб:",
+                        reply_markup=kb,
+                        parse_mode="HTML"
+                    )
+                    await state.update_data(last_message_id=msg.message_id)
             else:  # destination
-                # Розрахувати вартість і показати класи авто
-                await bot.send_message(
-                    user_id,
-                    f"✅ <b>Місце призначення:</b>\n📍 {address}\n\n"
-                    f"⏳ Розраховую вартість поїздки...",
-                    parse_mode="HTML"
-                )
+                # РЕДАГУВАТИ повідомлення для destination
+                if last_message_id:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=last_message_id,
+                            text=f"✅ <b>Місце призначення:</b>\n📍 {address}\n\n"
+                                f"⏳ Розраховую вартість поїздки...",
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не вдалося редагувати повідомлення: {e}")
+                        msg = await bot.send_message(
+                            user_id,
+                            f"✅ <b>Місце призначення:</b>\n📍 {address}\n\n"
+                            f"⏳ Розраховую вартість поїздки...",
+                            parse_mode="HTML"
+                        )
+                        last_message_id = msg.message_id
+                        await state.update_data(last_message_id=last_message_id)
+                else:
+                    msg = await bot.send_message(
+                        user_id,
+                        f"✅ <b>Місце призначення:</b>\n📍 {address}\n\n"
+                        f"⏳ Розраховую вартість поїздки...",
+                        parse_mode="HTML"
+                    )
+                    last_message_id = msg.message_id
+                    await state.update_data(last_message_id=last_message_id)
                 
                 # Імпортувати необхідні функції для розрахунку
                 from app.utils.maps import get_distance_and_duration
@@ -226,11 +279,11 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                     final_fare, explanation, surge_mult = await calculate_dynamic_price(class_fare, client_city, online_count, 0)
                     
                     surge_emoji = get_surge_emoji(surge_mult)
-                    class_name = get_car_class_name(car_class_id)
+                    class_name = get_car_class_name(car_class_id)  # Вже містить емоджі + назву
                     
-                    button_text = f"{car_class_data['emoji']} {class_name}: {final_fare:.0f} грн"
+                    button_text = f"{class_name}: {final_fare:.0f} грн"
                     if surge_mult != 1.0:
-                        button_text = f"{car_class_data['emoji']} {class_name}: {final_fare:.0f} грн {surge_emoji}"
+                        button_text = f"{class_name}: {final_fare:.0f} грн {surge_emoji}"
                     
                     kb_buttons.append([InlineKeyboardButton(
                         text=button_text,
@@ -240,15 +293,44 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
                 kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
                 
-                await bot.send_message(
-                    user_id,
-                    f"🚗 <b>Оберіть клас автомобіля</b>\n\n"
-                    f"📏 Відстань: {distance_km:.1f} км\n"
-                    f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
-                    f"💡 Виберіть клас авто:",
-                    reply_markup=kb,
-                    parse_mode="HTML"
-                )
+                # РЕДАГУВАТИ повідомлення з класами
+                pickup_address = data.get('pickup', '📍 Не вказано')
+                if last_message_id:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=last_message_id,
+                            text=f"✅ <b>Місце подачі:</b> {pickup_address}\n"
+                                f"✅ <b>Призначення:</b> {address}\n\n"
+                                f"📏 Відстань: {distance_km:.1f} км\n"
+                                f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
+                                f"🚗 <b>Оберіть клас автомобіля:</b>",
+                            reply_markup=kb,
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не вдалося редагувати повідомлення: {e}")
+                        await bot.send_message(
+                            user_id,
+                            f"✅ <b>Місце подачі:</b> {pickup_address}\n"
+                            f"✅ <b>Призначення:</b> {address}\n\n"
+                            f"📏 Відстань: {distance_km:.1f} км\n"
+                            f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
+                            f"🚗 <b>Оберіть клас автомобіля:</b>",
+                            reply_markup=kb,
+                            parse_mode="HTML"
+                        )
+                else:
+                    await bot.send_message(
+                        user_id,
+                        f"✅ <b>Місце подачі:</b> {pickup_address}\n"
+                        f"✅ <b>Призначення:</b> {address}\n\n"
+                        f"📏 Відстань: {distance_km:.1f} км\n"
+                        f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
+                        f"🚗 <b>Оберіть клас автомобіля:</b>",
+                        reply_markup=kb,
+                        parse_mode="HTML"
+                    )
                 
             logger.info(f"✅ API: Повідомлення відправлено користувачу {user_id}")
         except Exception as e:
