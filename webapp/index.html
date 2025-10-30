@@ -149,53 +149,11 @@
             display: none;
         }
         
-        /* 🔍 DEBUG ПАНЕЛЬ - показує статус для діагностики */
-        .debug-panel {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: rgba(0, 0, 0, 0.9);
-            color: #00ff00;
-            font-family: monospace;
-            font-size: 11px;
-            padding: 8px;
-            z-index: 9999;
-            max-height: 150px;
-            overflow-y: auto;
-            border-top: 2px solid #00ff00;
-        }
-        
-        .debug-panel .debug-line {
-            margin: 2px 0;
-            padding: 2px 4px;
-        }
-        
-        .debug-panel .debug-success {
-            color: #00ff00;
-        }
-        
-        .debug-panel .debug-error {
-            color: #ff0000;
-            font-weight: bold;
-        }
-        
-        .debug-panel .debug-warning {
-            color: #ffaa00;
-        }
-        
-        .debug-panel .debug-info {
-            color: #00aaff;
-        }
+        /* DEBUG панель видалено для чистоти інтерфейсу */
     </style>
 </head>
 <body>
     <div id="map"></div>
-    
-    <div class="info-panel">
-        <h3>🗺 Оберіть місце на карті</h3>
-        <p>Натисніть на карту, щоб встановити точку</p>
-    </div>
     
     <div class="coordinates" id="coordinates">
         <strong>📍 Обрано:</strong> <span id="coords-text"></span>
@@ -209,11 +167,6 @@
         <p>⏳ Завантаження...</p>
     </div>
     
-    <!-- 🔍 DEBUG ПАНЕЛЬ - показує статус операцій -->
-    <div class="debug-panel" id="debug-panel">
-        <div class="debug-line debug-info">🔍 DEBUG MODE: Показує статус операцій</div>
-    </div>
-    
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     
@@ -224,75 +177,14 @@
     <script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"></script>
     
     <script>
-        // ===== ФУНКЦІЯ ДЛЯ DEBUG ПАНЕЛІ =====
-        function addDebugLog(message, type = 'info') {
-            const debugPanel = document.getElementById('debug-panel');
-            const line = document.createElement('div');
-            line.className = `debug-line debug-${type}`;
-            const time = new Date().toLocaleTimeString('uk-UA');
-            line.textContent = `[${time}] ${message}`;
-            debugPanel.appendChild(line);
-            
-            // Автоматичний scroll вниз
-            debugPanel.scrollTop = debugPanel.scrollHeight;
-            
-            // Також в console
-            console.log(`[DEBUG] ${message}`);
-        }
-        
-        // ===== ДЕТАЛЬНЕ ЛОГУВАННЯ =====
-        console.log('='.repeat(60));
-        console.log('🚀 WEBAPP START:', new Date().toISOString());
-        console.log('='.repeat(60));
-        
-        addDebugLog('🚀 WebApp запущено', 'success');
-        
         // Ініціалізація Telegram WebApp
         const tg = window.Telegram.WebApp;
-        console.log('✅ Telegram WebApp initialized:', tg);
-        addDebugLog('✅ Telegram WebApp ініціалізовано', 'success');
-        
-        console.log('📱 Version:', tg.version);
-        console.log('📱 Platform:', tg.platform);
-        addDebugLog(`📱 Platform: ${tg.platform}, v${tg.version}`, 'info');
-        
-        console.log('🎨 Color scheme:', tg.colorScheme);
-        console.log('👤 User:', tg.initDataUnsafe?.user);
-        console.log('🔍 initData present:', !!tg.initData);
-        console.log('🔍 initData length:', tg.initData ? tg.initData.length : 0);
-        console.log('🔍 initData (first 100 chars):', tg.initData ? tg.initData.substring(0, 100) : 'EMPTY');
-        
-        // ⚠️ КРИТИЧНА ПЕРЕВІРКА: initData має бути!
-        if (!tg.initData || tg.initData.length === 0) {
-            console.error('❌❌❌ CRITICAL ERROR: initData is EMPTY!');
-            console.error('❌ This means WebApp was NOT opened through bot button!');
-            console.error('❌ tg.sendData() will NOT work without initData!');
-            addDebugLog('❌ initData ПОРОЖНЄ! WebApp відкрито неправильно!', 'error');
-            addDebugLog('⚠️ Відкрийте через кнопку в боті!', 'warning');
-        } else {
-            console.log('✅ initData is present - WebApp opened correctly through bot');
-            addDebugLog(`✅ initData присутнє (${tg.initData.length} символів)`, 'success');
-        }
-        
-        // Перевірка API
-        console.log('🔍 API methods available:');
-        console.log('  - MainButton:', typeof tg.MainButton);
-        console.log('  - sendData:', typeof tg.sendData);
-        console.log('  - close:', typeof tg.close);
-        console.log('  - expand:', typeof tg.expand);
-        
-        tg.expand(); // Розгорнути на весь екран
-        console.log('✅ WebApp expanded');
+        tg.expand();
         
         tg.MainButton.setText('✅ Підтвердити місце');
         tg.MainButton.color = tg.themeParams.button_color || '#3390ec';
         tg.MainButton.textColor = tg.themeParams.button_text_color || '#ffffff';
         tg.MainButton.hide(); // Спочатку сховати
-        
-        console.log('🔘 MainButton configured');
-        console.log('  - Text:', tg.MainButton.text);
-        console.log('  - isVisible:', tg.MainButton.isVisible);
-        console.log('='.repeat(60));
         
         // Застосувати тему Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
@@ -302,15 +194,13 @@
             zoomControl: false, // Прибрати стандартний zoom control
         }).setView([48.3794, 31.1656], 6); // Україна
         
-        // 🌙 ТЕМНА КАРТА (як Uber/Apple Maps Dark)
-        // Dark Matter - справді темна карта з чорним фоном!
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        // ☀️ СВІТЛА КАРТА (як Google Maps)
+        // CartoDB Positron - світла, чиста карта схожа на Google Maps
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© CARTO © OpenStreetMap',
             maxZoom: 19,
             subdomains: 'abcd'
         }).addTo(map);
-        
-        console.log('🌙 Dark Matter map theme loaded (true dark mode)');
         
         // Додати zoom control в інше місце
         L.control.zoom({
@@ -331,8 +221,7 @@
             });
         };
         
-        // 🔍 ДОДАТИ ПОШУК АДРЕС (Geocoder)
-        console.log('🔍 Налаштовую Geocoder...');
+        // 🔍 ПОШУК АДРЕС (Geocoder)
         const geocoder = L.Control.Geocoder.nominatim({
             geocodingQueryParams: {
                 countrycodes: 'ua',  // Тільки Україна
@@ -349,11 +238,6 @@
             collapsed: false  // Завжди показувати поле пошуку
         }).on('markgeocode', function(e) {
             const latlng = e.geocode.center;
-            const address = e.geocode.name;
-            
-            console.log('🔍 Знайдено адресу:', address);
-            console.log('📍 Координати:', latlng);
-            addDebugLog(`🔍 Знайдено: ${address.substring(0, 40)}...`, 'success');
             
             // Видалити попередній маркер
             if (selectedMarker) {
@@ -378,7 +262,6 @@
             
             // Показати кнопку підтвердження
             tg.MainButton.show();
-            addDebugLog('🔘 Кнопка "Підтвердити" показана', 'success');
             
             // Вібрація
             if (tg.HapticFeedback) {
@@ -386,59 +269,29 @@
             }
         }).addTo(map);
         
-        console.log('🔍 Geocoder (пошук адрес) додано до карти');
-        addDebugLog('🔍 Пошук адрес активовано', 'success');
-        
         // Обробник кліку по карті
         map.on('click', (e) => {
             const { lat, lng } = e.latlng;
-            console.log('='.repeat(60));
-            console.log('🗺 MAP CLICKED:', new Date().toISOString());
-            console.log('='.repeat(60));
-            console.log('📍 Click position:', lat, lng);
-            console.log('📍 e.latlng object:', e.latlng);
-            
-            addDebugLog(`🗺 Клік на карту: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, 'info');
-            
-            // 🔔 ДІАГНОСТИКА: Alert при кліку на карту
-            // (Закоментовано щоб не заважало, розкоментуйте якщо потрібно)
-            // alert('🗺 Клік по карті!\nLat: ' + lat.toFixed(4) + '\nLng: ' + lng.toFixed(4));
-            
             // Видалити попередній маркер
             if (selectedMarker) {
-                console.log('🗑 Removing previous marker');
                 map.removeLayer(selectedMarker);
             }
             
             // Додати новий маркер
-            console.log('📌 Adding new marker...');
             selectedMarker = L.marker([lat, lng], {
                 icon: createMarkerIcon()
             }).addTo(map);
-            console.log('✅ Marker added to map');
             
             // Зберегти координати
             selectedCoords = { lat, lng };
-            console.log('💾 Coordinates saved to selectedCoords:', selectedCoords);
-            console.log('🔍 Type of selectedCoords:', typeof selectedCoords);
-            console.log('🔍 selectedCoords.lat:', selectedCoords.lat);
-            console.log('🔍 selectedCoords.lng:', selectedCoords.lng);
             
             // Показати координати
             const coordsText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
             document.getElementById('coords-text').textContent = coordsText;
             document.getElementById('coordinates').style.display = 'block';
-            console.log('✅ Coordinates displayed:', coordsText);
             
             // Показати кнопку підтвердження
-            console.log('🔘 Showing MainButton...');
-            console.log('  - BEFORE show(): isVisible =', tg.MainButton.isVisible);
             tg.MainButton.show();
-            console.log('  - AFTER show(): isVisible =', tg.MainButton.isVisible);
-            console.log('✅ MainButton.show() executed');
-            console.log('='.repeat(60));
-            
-            addDebugLog('🔘 Кнопка "Підтвердити" показана', 'success');
             
             // Легка вібрація (якщо доступна)
             if (tg.HapticFeedback) {
@@ -447,73 +300,31 @@
         });
         
         // Обробник кнопки "Підтвердити"
-        console.log('🔧 Registering MainButton.onClick handler...');
-        addDebugLog('🔧 Обробник кнопки зареєстровано', 'info');
-        
-        // ⚠️ ВАЖЛИВО: Очистити попередні обробники
+        // Очистити попередні обробники
         tg.MainButton.offClick();
         
-        tg.MainButton.onClick(async () => {  // ← додано async!
-            console.log('='.repeat(60));
-            console.log('🔘 MAINBUTTON CLICK EVENT:', new Date().toISOString());
-            console.log('='.repeat(60));
-            console.log('📍 Selected coords:', selectedCoords);
-            console.log('🔍 Type of selectedCoords:', typeof selectedCoords);
-            console.log('🔍 selectedCoords value:', JSON.stringify(selectedCoords));
-            
-            addDebugLog('🔘 Натиснуто "Підтвердити місце"', 'warning');
-
+        tg.MainButton.onClick(async () => {
             if (selectedCoords) {
-                console.log('✅ Coordinates are valid, preparing data...');
-                addDebugLog('✅ Координати валідні, готуємо дані...', 'success');
                 
-                const dataToSend = {
-                    type: 'location',
-                    latitude: selectedCoords.lat,
-                    longitude: selectedCoords.lng
-                };
-
-                console.log('📤 Data to send:', dataToSend);
-                console.log('  - type:', dataToSend.type);
-                console.log('  - latitude:', dataToSend.latitude);
-                console.log('  - longitude:', dataToSend.longitude);
-
                 try {
-                    // Відправити дані в бота
-                    const jsonData = JSON.stringify(dataToSend);
-                    console.log('📦 JSON string:', jsonData);
-                    console.log('📦 JSON length:', jsonData.length);
-                    addDebugLog(`📦 JSON: ${jsonData.substring(0, 50)}...`, 'info');
-
-                    // 🌐 НОВИЙ ПІДХІД: Відправка через API замість tg.sendData()
-                    console.log('🌐 Відправляю дані через API...');
-                    addDebugLog('🌐 Відправляю через API...', 'warning');
-                    
                     // Отримати user_id з Telegram
                     const userId = tg.initDataUnsafe?.user?.id;
-                    console.log('👤 User ID:', userId);
                     
                     if (!userId) {
                         console.error('❌ User ID не знайдено!');
-                        addDebugLog('❌ User ID не знайдено!', 'error');
-                        addDebugLog('⚠️ Неможливо відправити дані', 'warning');
                         return;
                     }
                     
                     // Визначити тип локації (pickup або destination)
-                    // Можна отримати зі state або URL параметрів
                     const locationType = 'pickup'; // TODO: визначити динамічно
                     
-                    // Відправити через fetch API
+                    // Відправити через API
                     const apiData = {
                         user_id: userId,
                         latitude: selectedCoords.lat,
                         longitude: selectedCoords.lng,
                         type: locationType
                     };
-                    
-                    console.log('📤 Відправляю на API:', apiData);
-                    addDebugLog(`📤 API: user=${userId}, type=${locationType}`, 'info');
                     
                     try {
                         const response = await fetch('/api/webapp/location', {
@@ -525,13 +336,8 @@
                         });
                         
                         const result = await response.json();
-                        console.log('✅ API відповідь:', result);
                         
                         if (result.success) {
-                            addDebugLog('✅ Дані відправлено успішно!', 'success');
-                            addDebugLog(`📍 Адреса: ${result.address.substring(0, 30)}...`, 'info');
-                            addDebugLog('🔙 Закрийте карту і перевірте бота!', 'success');
-                            
                             // Вібрація успіху
                             if (tg.HapticFeedback) {
                                 tg.HapticFeedback.notificationOccurred('success');
@@ -541,37 +347,17 @@
                             setTimeout(() => {
                                 tg.close();
                             }, 1000);
-                            
-                        } else {
-                            addDebugLog(`❌ Помилка API: ${result.error}`, 'error');
                         }
                         
                     } catch (error) {
-                        console.error('❌ Помилка fetch:', error);
-                        addDebugLog(`❌ Помилка відправки: ${error.message}`, 'error');
+                        console.error('❌ Помилка відправки:', error);
                     }
 
                 } catch (error) {
-                    console.error('='.repeat(60));
-                    console.error('❌ ERROR in try block:', new Date().toISOString());
-                    console.error('='.repeat(60));
-                    console.error('Error type:', error.constructor.name);
-                    console.error('Error message:', error.message);
-                    console.error('Error stack:', error.stack);
-                    console.error('='.repeat(60));
-                    
-                    addDebugLog(`❌ ПОМИЛКА: ${error.message}`, 'error');
+                    console.error('❌ Помилка:', error);
                 }
-            } else {
-                console.warn('='.repeat(60));
-                console.warn('⚠️ NO COORDINATES SELECTED!');
-                console.warn('='.repeat(60));
-                console.warn('selectedCoords is:', selectedCoords);
-                
-                addDebugLog('⚠️ Координати не обрано!', 'warning');
             }
         });
-        console.log('✅ MainButton.onClick handler registered');
         
         // Кнопка "Моя геолокація"
         document.getElementById('locate-btn').addEventListener('click', () => {
