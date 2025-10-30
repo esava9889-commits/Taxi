@@ -390,6 +390,39 @@
         <p>⏳ Завантаження...</p>
     </div>
     
+    <!-- 🐛 DEBUG ПАНЕЛЬ (тимчасово для тестування) -->
+    <div id="debug-panel" style="
+        position: fixed;
+        bottom: 90px;
+        right: 10px;
+        width: 350px;
+        max-height: 400px;
+        overflow-y: auto;
+        background: rgba(0, 0, 0, 0.9);
+        color: #00ff00;
+        padding: 15px;
+        border-radius: 10px;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        z-index: 10000;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        border: 2px solid #00ff00;
+    ">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #00ff00; padding-bottom: 5px;">
+            <strong style="color: #00ff00; font-size: 13px;">🐛 DEBUG CONSOLE</strong>
+            <button onclick="document.getElementById('debug-panel').style.display='none'" style="
+                background: #ff0000;
+                color: white;
+                border: none;
+                padding: 3px 8px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 10px;
+            ">✕</button>
+        </div>
+        <div id="debug-log" style="line-height: 1.5;"></div>
+    </div>
+    
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     
@@ -423,6 +456,52 @@
         
         // Оновити панель стану при старті
         updateStatePanel('pickup');
+        
+        // 🐛 DEBUG функції
+        function debugLog(message, type = 'info') {
+            const debugPanel = document.getElementById('debug-log');
+            if (!debugPanel) return;
+            
+            const timestamp = new Date().toLocaleTimeString('uk-UA');
+            let color = '#00ff00';
+            let icon = 'ℹ️';
+            
+            if (type === 'error') {
+                color = '#ff0000';
+                icon = '❌';
+            } else if (type === 'success') {
+                color = '#00ff00';
+                icon = '✅';
+            } else if (type === 'warning') {
+                color = '#ffaa00';
+                icon = '⚠️';
+            } else if (type === 'search') {
+                color = '#00aaff';
+                icon = '🔍';
+            }
+            
+            const logEntry = document.createElement('div');
+            logEntry.style.marginBottom = '8px';
+            logEntry.style.padding = '5px';
+            logEntry.style.borderLeft = `3px solid ${color}`;
+            logEntry.style.paddingLeft = '8px';
+            logEntry.innerHTML = `
+                <span style="color: #888;">[${timestamp}]</span>
+                <span style="color: ${color};">${icon} ${message}</span>
+            `;
+            
+            debugPanel.insertBefore(logEntry, debugPanel.firstChild);
+            
+            // Обмежити до 50 записів
+            while (debugPanel.children.length > 50) {
+                debugPanel.removeChild(debugPanel.lastChild);
+            }
+        }
+        
+        // Початкове повідомлення
+        debugLog('Debug панель ініціалізована', 'success');
+        debugLog(`Користувач: ${tg.initDataUnsafe?.user?.id || 'невідомий'}`, 'info');
+        debugLog(`Поточний стан: ${currentState}`, 'info');
         
         // Ініціалізація карти (центр України)
         const map = L.map('map', {
@@ -634,16 +713,69 @@
             console.log('🔄 Карту скинуто');
         }
         
-        // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
-        const geocoder = L.Control.Geocoder.nominatim({
-            serviceUrl: 'https://nominatim.openstreetmap.org',
-            geocodingQueryParams: {
-                countrycodes: 'ua',  // Тільки Україна
-                'accept-language': 'uk',  // Українська мова
-                addressdetails: 1,
-                limit: 8,
-                dedupe: 1  // Видалити дублікати
+        // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями та DEBUG
+        const originalNominatim = L.Control.Geocoder.Nominatim;
+        
+        // Обгортка для логування
+        L.Control.Geocoder.NominatimDebug = originalNominatim.extend({
+            geocode: function(query, cb, context) {
+                debugLog(`🔍 ПОШУК: "${query}"`, 'search');
+                debugLog(`📍 Стан: ${currentState}`, 'info');
+                
+                const url = this.options.serviceUrl + '/search';
+                const params = {
+                    q: query,
+                    format: 'json',
+                    addressdetails: 1,
+                    limit: 8,
+                    countrycodes: 'ua',
+                    'accept-language': 'uk',
+                    dedupe: 1
+                };
+                
+                const queryString = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+                const fullUrl = url + '?' + queryString;
+                
+                debugLog(`🌐 URL: ${fullUrl}`, 'info');
+                
+                fetch(fullUrl)
+                    .then(response => {
+                        debugLog(`📡 Статус відповіді: ${response.status}`, response.ok ? 'success' : 'error');
+                        return response.json();
+                    })
+                    .then(data => {
+                        debugLog(`📦 Отримано результатів: ${data.length}`, data.length > 0 ? 'success' : 'warning');
+                        
+                        if (data.length > 0) {
+                            data.forEach((result, index) => {
+                                debugLog(`  ${index + 1}. ${result.display_name}`, 'info');
+                            });
+                        } else {
+                            debugLog('⚠️ Nominatim не знайшов результатів!', 'warning');
+                            debugLog('Спробуйте інший запит', 'warning');
+                        }
+                        
+                        const results = data.map(result => ({
+                            name: result.display_name,
+                            center: L.latLng(result.lat, result.lon),
+                            bbox: result.boundingbox ? L.latLngBounds(
+                                [result.boundingbox[0], result.boundingbox[2]],
+                                [result.boundingbox[1], result.boundingbox[3]]
+                            ) : null
+                        }));
+                        
+                        cb.call(context, results);
+                    })
+                    .catch(error => {
+                        debugLog(`❌ ПОМИЛКА: ${error.message}`, 'error');
+                        console.error('Geocoding error:', error);
+                        cb.call(context, []);
+                    });
             }
+        });
+        
+        const geocoder = new L.Control.Geocoder.NominatimDebug({
+            serviceUrl: 'https://nominatim.openstreetmap.org'
         });
         
         const geocoderControl = L.Control.geocoder({
@@ -660,6 +792,9 @@
         }).on('markgeocode', function(e) {
             const latlng = e.geocode.center;
             
+            debugLog(`✅ ВИБРАНО: ${e.geocode.name}`, 'success');
+            debugLog(`📍 Координати: ${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`, 'info');
+            
             if (currentState === 'pickup') {
                 // Видалити старий маркер pickup
                 if (pickupMarker) {
@@ -673,6 +808,8 @@
                 
                 // Зберегти координати
                 pickupCoords = { lat: latlng.lat, lng: latlng.lng };
+                
+                debugLog(`🟢 Pickup збережено`, 'success');
                 
                 // Показати кнопку
                 tg.MainButton.show();
@@ -691,9 +828,11 @@
                 // Зберегти координати
                 destinationCoords = { lat: latlng.lat, lng: latlng.lng };
                 
+                debugLog(`🔵 Destination збережено`, 'success');
+                
                 // МАЛЮВАТИ маршрут відразу після вибору destination!
                 if (pickupCoords && destinationCoords) {
-                    console.log('🗺️ Малюю маршрут після geocoder...');
+                    debugLog('🗺️ Будую маршрут...', 'info');
                     loadAndShowRoute(
                         pickupCoords.lat, pickupCoords.lng,
                         destinationCoords.lat, destinationCoords.lng
@@ -748,9 +887,11 @@
                 // Зберегти координати destination
                 destinationCoords = { lat, lng };
                 
+                debugLog(`🔵 Destination (клік) збережено`, 'success');
+                
                 // МАЛЮВАТИ маршрут відразу після вибору destination!
                 if (pickupCoords && destinationCoords) {
-                    console.log('🗺️ Малюю маршрут після кліку на карту...');
+                    debugLog('🗺️ Будую маршрут після кліку...', 'info');
                     loadAndShowRoute(
                         pickupCoords.lat, pickupCoords.lng,
                         destinationCoords.lat, destinationCoords.lng
@@ -774,14 +915,14 @@
                 // СТАН 1: Підтверджуємо pickup → переходимо до destination
                 if (!pickupCoords) return;
                 
+                debugLog('➡️ Перехід: pickup → destination', 'info');
+                
                 currentState = 'destination';
                 tg.MainButton.setText('✅ Підтвердити місце призначення');
                 tg.MainButton.hide();  // Сховати поки не обере destination
                 
                 // Оновити панель стану
                 updateStatePanel('destination');
-                
-                console.log('✅ Pickup збережено, очікую destination');
                 
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.impactOccurred('medium');
@@ -791,16 +932,16 @@
                 // СТАН 2: Підтверджуємо destination (маршрут вже намальовано!)
                 if (!destinationCoords) return;
                 
+                debugLog('➡️ Перехід: destination → confirm', 'info');
+                debugLog(`📍 Pickup: ${pickupCoords.lat.toFixed(6)}, ${pickupCoords.lng.toFixed(6)}`, 'info');
+                debugLog(`📍 Destination: ${destinationCoords.lat.toFixed(6)}, ${destinationCoords.lng.toFixed(6)}`, 'info');
+                
                 // Маршрут вже намальовано при виборі точки, просто переходимо до confirm
                 currentState = 'confirm';
                 tg.MainButton.setText('✅ Підтвердити замовлення');
                 
                 // Оновити панель стану
                 updateStatePanel('confirm');
-                
-                console.log('✅ Destination підтверджено, переходжу до confirm');
-                console.log('📍 Pickup:', pickupCoords);
-                console.log('📍 Destination:', destinationCoords);
                 
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.impactOccurred('medium');
@@ -812,9 +953,12 @@
                     const userId = tg.initDataUnsafe?.user?.id;
                     
                     if (!userId) {
-                        console.error('❌ User ID не знайдено!');
+                        debugLog('❌ Помилка: не вдалося отримати ID користувача', 'error');
                         return;
                     }
+                    
+                    debugLog('📤 Відправляю замовлення на сервер...', 'info');
+                    debugLog(`  User ID: ${userId}`, 'info');
                     
                     // Відправити ОБИДВІ координати одразу
                     const apiData = {
@@ -824,6 +968,8 @@
                         dest_lat: destinationCoords.lat,
                         dest_lon: destinationCoords.lng
                     };
+                    
+                    debugLog(`  API Data: ${JSON.stringify(apiData)}`, 'info');
                     
                     console.log('📤 Відправляю обидві точки:', apiData);
                     
@@ -881,7 +1027,7 @@
                         
                         loading.style.display = 'none';
                         
-                        console.log('✅ Геолокація отримана:', latitude, longitude);
+                        debugLog(`✅ Геолокація отримана: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`, 'success');
                         
                         // Перемістити карту до поточної локації
                         map.setView([latitude, longitude], 15);
@@ -896,6 +1042,8 @@
                             }).addTo(map);
                             pickupCoords = { lat: latitude, lng: longitude };
                             
+                            debugLog(`🟢 Pickup (геолокація) збережено`, 'success');
+                            
                         } else if (currentState === 'destination') {
                             if (destinationMarker) {
                                 map.removeLayer(destinationMarker);
@@ -905,9 +1053,11 @@
                             }).addTo(map);
                             destinationCoords = { lat: latitude, lng: longitude };
                             
+                            debugLog(`🔵 Destination (геолокація) збережено`, 'success');
+                            
                             // МАЛЮВАТИ маршрут відразу після вибору destination!
                             if (pickupCoords && destinationCoords) {
-                                console.log('🗺️ Малюю маршрут після геолокації...');
+                                debugLog('🗺️ Будую маршрут після геолокації...', 'info');
                                 loadAndShowRoute(
                                     pickupCoords.lat, pickupCoords.lng,
                                     destinationCoords.lat, destinationCoords.lng
@@ -925,9 +1075,8 @@
                     (error) => {
                         clearTimeout(timeoutId);
                         loading.style.display = 'none';
-                        console.error('❌ Геолокація помилка:', error);
-                        console.error('  - code:', error.code);
-                        console.error('  - message:', error.message);
+                        
+                        debugLog(`❌ Помилка геолокації: ${error.message} (код: ${error.code})`, 'error');
                         
                         // Показати повідомлення про помилку
                         alert('❌ Не вдалося отримати геолокацію.\nДозвольте доступ до геолокації в налаштуваннях браузера.');
@@ -953,7 +1102,9 @@
         document.getElementById('reset-btn').addEventListener('click', () => {
             // Підтвердження
             if (confirm('🔄 Почати спочатку?\n\nВсі обрані точки будуть скинуті.')) {
+                debugLog('🔄 RESET: Скидання карти...', 'warning');
                 resetMap();
+                debugLog('✅ Карту скинуто до початкового стану', 'success');
                 
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.impactOccurred('medium');
