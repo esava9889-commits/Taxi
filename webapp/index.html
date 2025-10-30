@@ -421,45 +421,71 @@
                     console.log('📦 JSON length:', jsonData.length);
                     addDebugLog(`📦 JSON: ${jsonData.substring(0, 50)}...`, 'info');
 
-                    console.log('📡 Calling tg.sendData()...');
-                    addDebugLog('📡 Викликаємо tg.sendData()...', 'warning');
+                    // 🌐 НОВИЙ ПІДХІД: Відправка через API замість tg.sendData()
+                    console.log('🌐 Відправляю дані через API...');
+                    addDebugLog('🌐 Відправляю через API...', 'warning');
                     
-                    tg.sendData(jsonData);
+                    // Отримати user_id з Telegram
+                    const userId = tg.initDataUnsafe?.user?.id;
+                    console.log('👤 User ID:', userId);
                     
-                    console.log('✅ tg.sendData() called successfully!');
-                    addDebugLog('✅ tg.sendData() викликано успішно!', 'success');
-
-                    // Вібрація успіху
-                    if (tg.HapticFeedback) {
-                        console.log('📳 Triggering success haptic');
-                        tg.HapticFeedback.notificationOccurred('success');
+                    if (!userId) {
+                        console.error('❌ User ID не знайдено!');
+                        addDebugLog('❌ User ID не знайдено!', 'error');
+                        addDebugLog('⚠️ Неможливо відправити дані', 'warning');
+                        return;
                     }
-
-                    // 🧪 ТЕСТОВИЙ РЕЖИМ: tg.close() ВИМКНЕНО!
-                    // Перевіряємо чи дані передаються БЕЗ автоматичного закриття WebApp
-                    console.log('🧪 TEST MODE: tg.close() is DISABLED');
-                    addDebugLog('🧪 ТЕСТ: tg.close() ВИМКНЕНО', 'warning');
-                    addDebugLog('📱 Карта НЕ закриється автоматично', 'info');
-                    addDebugLog('✅ Перевірте чи дані прийшли в бота!', 'success');
-                    addDebugLog('🔙 Закрийте карту ВРУЧНУ (кнопка Назад)', 'info');
                     
-                    // ⏰ ЗАТРИМКА: дати Telegram час обробити sendData()
-                    // Без затримки tg.close() може закрити WebApp ДО відправки даних!
-                    // console.log('⏰ Waiting 300ms before closing...');
-                    // addDebugLog('⏰ Чекаємо 300ms перед закриттям...', 'info');
+                    // Визначити тип локації (pickup або destination)
+                    // Можна отримати зі state або URL параметрів
+                    const locationType = 'pickup'; // TODO: визначити динамічно
                     
-                    // setTimeout(() => {
-                    //     console.log('🚪 CALLING tg.close() after delay');
-                    //     console.log('⏰ Time before close:', new Date().toISOString());
-                    //     addDebugLog('🚪 Викликаємо tg.close() після затримки...', 'warning');
-                    //     
-                    //     tg.close();
-                    //     
-                    //     console.log('✅ tg.close() called!');
-                    //     console.log('⏰ Time after close:', new Date().toISOString());
-                    //     console.log('='.repeat(60));
-                    //     addDebugLog('✅ tg.close() викликано! Карта має закритись...', 'success');
-                    // }, 300); // 300ms затримка
+                    // Відправити через fetch API
+                    const apiData = {
+                        user_id: userId,
+                        latitude: selectedCoords.lat,
+                        longitude: selectedCoords.lng,
+                        type: locationType
+                    };
+                    
+                    console.log('📤 Відправляю на API:', apiData);
+                    addDebugLog(`📤 API: user=${userId}, type=${locationType}`, 'info');
+                    
+                    try {
+                        const response = await fetch('/api/webapp/location', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(apiData)
+                        });
+                        
+                        const result = await response.json();
+                        console.log('✅ API відповідь:', result);
+                        
+                        if (result.success) {
+                            addDebugLog('✅ Дані відправлено успішно!', 'success');
+                            addDebugLog(`📍 Адреса: ${result.address.substring(0, 30)}...`, 'info');
+                            addDebugLog('🔙 Закрийте карту і перевірте бота!', 'success');
+                            
+                            // Вібрація успіху
+                            if (tg.HapticFeedback) {
+                                tg.HapticFeedback.notificationOccurred('success');
+                            }
+                            
+                            // Закрити WebApp після успішної відправки
+                            setTimeout(() => {
+                                tg.close();
+                            }, 1000);
+                            
+                        } else {
+                            addDebugLog(`❌ Помилка API: ${result.error}`, 'error');
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ Помилка fetch:', error);
+                        addDebugLog(`❌ Помилка відправки: ${error.message}`, 'error');
+                    }
 
                 } catch (error) {
                     console.error('='.repeat(60));

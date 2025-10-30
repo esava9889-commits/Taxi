@@ -80,19 +80,26 @@ async def telegram_webhook_handler(request, bot, dp):
         return web.Response(status=500)
 
 
-async def start_webhook_server(bot=None, dp=None):
+async def start_webhook_server(bot=None, dp=None, config=None):
     """
     Запустити HTTP сервер для Webhook, health checks та статичних файлів
     
     Args:
         bot: Bot instance (для webhook)
         dp: Dispatcher instance (для webhook)
+        config: AppConfig instance (для API)
     """
     app = web.Application()
     
     # Health check endpoints
     app.router.add_get('/health', health_check)
     app.router.add_get('/', health_check)
+    
+    # 🌐 WebApp API endpoints (якщо є bot)
+    if bot and config:
+        from app.handlers.webapp_api import setup_webapp_api
+        setup_webapp_api(app, bot, config)
+        logging.info("🌐 WebApp API endpoints enabled")
     
     # ═══════════════════════════════════════════════════════════════
     # 🗺️ СТАТИЧНІ ФАЙЛИ (WebApp карта)
@@ -284,8 +291,8 @@ async def main() -> None:
             use_webhook = False
         
         if use_webhook:
-            # Запустити HTTP сервер з webhook handler
-            await start_webhook_server(bot, dp)
+            # Запустити HTTP сервер з webhook handler і API
+            await start_webhook_server(bot, dp, config)
             
             logging.info("🎯 Webhook сервер запущено!")
             logging.info("⚡ Бот отримуватиме оновлення МИТТЄВО")
@@ -323,9 +330,9 @@ async def main() -> None:
         except Exception as e:
             logging.warning(f"⚠️ Не вдалося видалити webhook: {e}")
         
-        # ⭐ Запустити HTTP сервер БЕЗ webhook handler (тільки для статичних файлів)
-        asyncio.create_task(start_webhook_server(bot=None, dp=None))
-        logging.info("🌐 HTTP сервер запущено для статичних файлів (WebApp)")
+        # ⭐ Запустити HTTP сервер БЕЗ webhook handler (для статичних файлів і API)
+        asyncio.create_task(start_webhook_server(bot=bot, dp=None, config=config))
+        logging.info("🌐 HTTP сервер запущено для статичних файлів та API (WebApp)")
         
         # Запуск polling з retry при конфлікті
         max_retries = 3
