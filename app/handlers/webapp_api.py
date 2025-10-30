@@ -772,8 +772,11 @@ async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
             }, status=400)
         
         # Імпорти
-        from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count, get_user_by_id
-        from app.handlers.car_classes import calculate_base_fare
+        from app.storage.db import (
+            get_latest_tariff, get_pricing_settings, get_online_drivers_count, 
+            get_user_by_id, get_pending_orders, PricingSettings
+        )
+        from app.handlers.car_classes import calculate_base_fare, calculate_fare_with_class
         from app.handlers.dynamic_pricing import calculate_dynamic_price
         
         # Отримати тариф
@@ -784,13 +787,12 @@ async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
                 "error": "Tariff not configured"
             }, status=500)
         
-        # Базова ціна
+        # Базова ціна (без класу авто та динаміки)
         base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
         
-        # Налаштування ціноутворення
+        # Налаштування ціноутворення (тут зберігаються всі актуальні відсотки з адмін-панелі)
         pricing = await get_pricing_settings(request.app['config'].database_path)
         if pricing is None:
-            from app.storage.db import PricingSettings
             pricing = PricingSettings()
         
         # Місто користувача
@@ -798,17 +800,31 @@ async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
         client_city = user.city if user and user.city else None
         online_count = await get_online_drivers_count(request.app['config'].database_path, client_city)
         
-        # Кількість очікуючих замовлень (спрощено - можна додати реальний підрахунок)
-        pending_orders_count = 0
+        # Отримати РЕАЛЬНУ кількість pending orders (так само як у боті)
+        pending_orders = await get_pending_orders(request.app['config'].database_path, client_city)
+        pending_orders_count = len(pending_orders)
         
-        # Розрахувати динамічну ціну
+        # Створити словник множників класів для передачі в calculate_fare_with_class
+        custom_multipliers = {
+            "economy": pricing.economy_multiplier,
+            "standard": pricing.standard_multiplier,
+            "comfort": pricing.comfort_multiplier,
+            "business": pricing.business_multiplier
+        }
+        
+        # Розрахувати ціну для Economy класу (стандартний клас на карті)
+        # ТОЧНО ТАК САМО ЯК У БОТІ (order.py рядки 195-203)
+        economy_fare = calculate_fare_with_class(base_fare, "economy", custom_multipliers)
+        
+        # Розрахувати динамічну ціну з ПРАВИЛЬНИМИ параметрами з pricing (не з tariff!)
         final_price, explanation, total_multiplier = await calculate_dynamic_price(
-            base_fare,
+            economy_fare,  # Ціна з урахуванням economy класу
             city=client_city or "Київ",
             online_drivers=online_count,
             pending_orders=pending_orders_count,
-            night_percent=tariff.night_tariff_percent,
-            weather_percent=tariff.weather_percent,
+            # ✅ ВИПРАВЛЕНО: Використовуємо pricing.night_percent замість tariff.night_tariff_percent
+            night_percent=pricing.night_percent,  # З адмін панелі (45%, а не 50%)
+            weather_percent=pricing.weather_percent,  # З адмін панелі
             peak_hours_percent=pricing.peak_hours_percent,
             weekend_percent=pricing.weekend_percent,
             monday_morning_percent=pricing.monday_morning_percent,
@@ -819,14 +835,16 @@ async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
             demand_low_discount_percent=pricing.demand_low_discount_percent
         )
         
-        logger.info(f"💰 Price calculated for user {user_id}: base={base_fare:.2f}, final={final_price:.2f}, multiplier={total_multiplier:.2f}")
+        logger.info(f"💰 Price calculated for user {user_id}: base={base_fare:.2f}, economy={economy_fare:.2f}, final={final_price:.2f}, multiplier={total_multiplier:.2f}")
         
         return web.json_response({
             "success": True,
             "price": round(final_price, 2),
             "base_fare": round(base_fare, 2),
+            "economy_fare": round(economy_fare, 2),
             "multiplier": round(total_multiplier, 2),
-            "explanation": explanation
+            "explanation": explanation,
+            "car_class": "economy"  # Вказуємо клас авто для якого розрахована ціна
         })
         
     except Exception as e:
