@@ -248,105 +248,111 @@
         /* 🔍 СТИЛІ ДЛЯ ПОШУКУ */
         .leaflet-control-geocoder {
             border: none !important;
-            border-radius: 12px !important;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
-            min-width: 300px !important;
-            max-width: 400px !important;
+            border-radius: 18px !important;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(238, 245, 255, 0.92)) !important;
+            box-shadow: 0 14px 38px rgba(40, 65, 120, 0.18) !important;
+            min-width: 320px !important;
+            max-width: 420px !important;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(51, 109, 255, 0.12) !important;
         }
-        
+
         /* Адаптивність для мобільних */
         @media (max-width: 480px) {
             .leaflet-control-geocoder {
-                min-width: calc(100vw - 100px) !important;
-                max-width: calc(100vw - 100px) !important;
+                min-width: calc(100vw - 80px) !important;
+                max-width: calc(100vw - 80px) !important;
             }
         }
-        
+
         .leaflet-control-geocoder-form {
-            background: var(--tg-theme-bg-color, #ffffff) !important;
-            border-radius: 12px !important;
-            padding: 8px !important;
+            background: transparent !important;
+            border-radius: 16px !important;
+            padding: 12px 14px !important;
         }
-        
+
         .leaflet-control-geocoder-form input {
             font-size: 16px !important;
-            padding: 12px 16px !important;
-            border: 2px solid var(--tg-theme-hint-color, #ccc) !important;
-            border-radius: 10px !important;
-            background: var(--tg-theme-bg-color, #ffffff) !important;
-            color: var(--tg-theme-text-color, #000000) !important;
+            padding: 14px 18px !important;
+            border: 1px solid rgba(51, 109, 255, 0.25) !important;
+            border-radius: 14px !important;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(245, 248, 255, 0.88)) !important;
+            color: var(--tg-theme-text-color, #0f172a) !important;
             width: 100% !important;
             box-sizing: border-box !important;
-            transition: all 0.2s ease !important;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
         }
-        
+
         .leaflet-control-geocoder-form input:focus {
-            border-color: var(--tg-theme-button-color, #3390ec) !important;
+            border-color: var(--tg-theme-button-color, #336dff) !important;
             outline: none !important;
-            box-shadow: 0 0 0 3px rgba(51, 144, 236, 0.1) !important;
+            box-shadow: 0 12px 28px rgba(51, 109, 255, 0.2) !important;
         }
-        
+
         .leaflet-control-geocoder-form input::placeholder {
-            color: var(--tg-theme-hint-color, #999) !important;
+            color: rgba(15, 23, 42, 0.45) !important;
             opacity: 0.7 !important;
         }
-        
+
         .leaflet-control-geocoder-form input:disabled {
-            background: var(--tg-theme-section-bg-color, #f0f0f0) !important;
-            color: var(--tg-theme-hint-color, #999) !important;
+            background: rgba(248, 250, 255, 0.75) !important;
+            color: rgba(15, 23, 42, 0.35) !important;
             cursor: not-allowed !important;
-            opacity: 0.6 !important;
+            opacity: 0.7 !important;
         }
-        
+
         /* Кнопка пошуку */
         .leaflet-control-geocoder-icon {
-            background: var(--tg-theme-button-color, #3390ec) !important;
-            border-radius: 8px !important;
-            width: 36px !important;
-            height: 36px !important;
-            margin: 4px !important;
+            background: linear-gradient(135deg, var(--tg-theme-button-color, #336dff), rgba(51, 109, 255, 0.78)) !important;
+            border-radius: 12px !important;
+            width: 40px !important;
+            height: 40px !important;
+            margin: 6px !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
+            box-shadow: 0 10px 22px rgba(51, 109, 255, 0.25) !important;
         }
-        
+
         /* Список результатів */
         .leaflet-control-geocoder-alternatives {
-            background: var(--tg-theme-bg-color, #ffffff) !important;
+            background: rgba(255, 255, 255, 0.94) !important;
             border: none !important;
-            border-radius: 0 0 12px 12px !important;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.15) !important;
-            max-height: 300px !important;
+            border-radius: 0 0 18px 18px !important;
+            box-shadow: 0 18px 32px rgba(15, 23, 42, 0.15) !important;
+            max-height: 320px !important;
             overflow-y: auto !important;
-            margin-top: 8px !important;
+            margin-top: 10px !important;
+            backdrop-filter: blur(14px);
         }
-        
+
         .leaflet-control-geocoder-alternatives-minimized {
             display: none !important;
         }
-        
+
         /* Окремий результат */
         .leaflet-control-geocoder-alternative {
-            padding: 14px 16px !important;
-            border-bottom: 1px solid var(--tg-theme-section-bg-color, #f0f0f0) !important;
-            color: var(--tg-theme-text-color, #000000) !important;
+            padding: 16px 18px !important;
+            border-bottom: 1px solid rgba(51, 109, 255, 0.08) !important;
+            color: rgba(15, 23, 42, 0.92) !important;
             cursor: pointer !important;
-            transition: background 0.2s ease !important;
+            transition: background 0.2s ease, transform 0.2s ease !important;
             font-size: 15px !important;
         }
-        
+
         .leaflet-control-geocoder-alternative:hover {
-            background: var(--tg-theme-section-bg-color, #f5f5f5) !important;
+            background: rgba(51, 109, 255, 0.08) !important;
+            transform: translateY(-1px);
         }
-        
+
         .leaflet-control-geocoder-alternative:last-child {
             border-bottom: none !important;
-            border-radius: 0 0 12px 12px !important;
+            border-radius: 0 0 18px 18px !important;
         }
-        
+
         .leaflet-control-geocoder-alternative-first {
-            background: var(--tg-theme-section-bg-color, #f0f0f0) !important;
+            background: rgba(51, 109, 255, 0.12) !important;
             font-weight: 600 !important;
         }
         
@@ -390,39 +396,6 @@
         <p>⏳ Завантаження...</p>
     </div>
     
-    <!-- 🐛 DEBUG ПАНЕЛЬ (тимчасово для тестування) -->
-    <div id="debug-panel" style="
-        position: fixed;
-        bottom: 90px;
-        right: 10px;
-        width: 350px;
-        max-height: 400px;
-        overflow-y: auto;
-        background: rgba(0, 0, 0, 0.9);
-        color: #00ff00;
-        padding: 15px;
-        border-radius: 10px;
-        font-family: 'Courier New', monospace;
-        font-size: 11px;
-        z-index: 10000;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        border: 2px solid #00ff00;
-    ">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #00ff00; padding-bottom: 5px;">
-            <strong style="color: #00ff00; font-size: 13px;">🐛 DEBUG CONSOLE</strong>
-            <button onclick="document.getElementById('debug-panel').style.display='none'" style="
-                background: #ff0000;
-                color: white;
-                border: none;
-                padding: 3px 8px;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 10px;
-            ">✕</button>
-        </div>
-        <div id="debug-log" style="line-height: 1.5;"></div>
-    </div>
-    
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     
@@ -457,49 +430,31 @@
         // Оновити панель стану при старті
         updateStatePanel('pickup');
         
-        // 🐛 DEBUG функції
+        // 🐛 DEBUG функції (перенаправлені у консоль)
         function debugLog(message, type = 'info') {
-            const debugPanel = document.getElementById('debug-log');
-            if (!debugPanel) return;
-            
             const timestamp = new Date().toLocaleTimeString('uk-UA');
-            let color = '#00ff00';
             let icon = 'ℹ️';
-            
+            let logFn = console.log;
+
             if (type === 'error') {
-                color = '#ff0000';
                 icon = '❌';
+                logFn = console.error;
             } else if (type === 'success') {
-                color = '#00ff00';
                 icon = '✅';
+                logFn = console.log;
             } else if (type === 'warning') {
-                color = '#ffaa00';
                 icon = '⚠️';
+                logFn = console.warn;
             } else if (type === 'search') {
-                color = '#00aaff';
                 icon = '🔍';
+                logFn = console.log;
             }
-            
-            const logEntry = document.createElement('div');
-            logEntry.style.marginBottom = '8px';
-            logEntry.style.padding = '5px';
-            logEntry.style.borderLeft = `3px solid ${color}`;
-            logEntry.style.paddingLeft = '8px';
-            logEntry.innerHTML = `
-                <span style="color: #888;">[${timestamp}]</span>
-                <span style="color: ${color};">${icon} ${message}</span>
-            `;
-            
-            debugPanel.insertBefore(logEntry, debugPanel.firstChild);
-            
-            // Обмежити до 50 записів
-            while (debugPanel.children.length > 50) {
-                debugPanel.removeChild(debugPanel.lastChild);
-            }
+
+            logFn(`[${timestamp}] ${icon} ${message}`);
         }
         
         // Початкове повідомлення
-        debugLog('Debug панель ініціалізована', 'success');
+        debugLog('WebApp ініціалізовано', 'success');
         debugLog(`Користувач: ${tg.initDataUnsafe?.user?.id || 'невідомий'}`, 'info');
         debugLog(`Поточний стан: ${currentState}`, 'info');
         
@@ -510,11 +465,17 @@
         
         // ☀️ СВІТЛА КАРТА (як Google Maps)
         // CartoDB Positron - світла, чиста карта схожа на Google Maps
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© CARTO © OpenStreetMap',
             maxZoom: 19,
             subdomains: 'abcd'
         }).addTo(map);
+
+        // М'яке тонування карти для кращої відповідності новому оформленню
+        const tilePane = map.getPane('tilePane');
+        if (tilePane) {
+            tilePane.style.filter = 'saturate(1.05) brightness(0.96) hue-rotate(-4deg)';
+        }
         
         // Додати zoom control в інше місце
         L.control.zoom({
