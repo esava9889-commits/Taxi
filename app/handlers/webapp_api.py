@@ -359,6 +359,187 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
         )
 
 
+async def webapp_order_handler(request: web.Request) -> web.Response:
+    """
+    НОВИЙ API: Приймає обидві координати одразу (pickup + destination)
+    Розраховує відстань і показує класи авто
+    """
+    try:
+        bot = request.app['bot']
+        config = request.app['config']
+        storage = request.app['storage']
+        
+        # Отримати дані
+        data = await request.json()
+        user_id = data.get('user_id')
+        pickup_lat = data.get('pickup_lat')
+        pickup_lon = data.get('pickup_lon')
+        dest_lat = data.get('dest_lat')
+        dest_lon = data.get('dest_lon')
+        
+        logger.info("=" * 80)
+        logger.info("🌐 API ORDER: Отримано обидві координати")
+        logger.info(f"  - user_id: {user_id}")
+        logger.info(f"  - pickup: {pickup_lat}, {pickup_lon}")
+        logger.info(f"  - destination: {dest_lat}, {dest_lon}")
+        logger.info("=" * 80)
+        
+        # Отримати FSM context
+        from aiogram.fsm.context import FSMContext
+        from aiogram.fsm.storage.base import StorageKey
+        
+        storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        state = FSMContext(storage=storage, key=storage_key)
+        
+        # Reverse geocoding для обох точок
+        from app.utils.maps import reverse_geocode
+        logger.info("🌍 API: Виконую reverse geocoding...")
+        
+        pickup_address = await reverse_geocode("", pickup_lat, pickup_lon)
+        if not pickup_address:
+            pickup_address = f"📍 Координати: {pickup_lat:.6f}, {pickup_lon:.6f}"
+        
+        dest_address = await reverse_geocode("", dest_lat, dest_lon)
+        if not dest_address:
+            dest_address = f"📍 Координати: {dest_lat:.6f}, {dest_lon:.6f}"
+        
+        logger.info(f"✅ Pickup: {pickup_address}")
+        logger.info(f"✅ Destination: {dest_address}")
+        
+        # Зберегти в state
+        from app.handlers.order import OrderStates
+        await state.set_state(OrderStates.car_class)
+        await state.update_data(
+            pickup=pickup_address,
+            pickup_lat=pickup_lat,
+            pickup_lon=pickup_lon,
+            destination=dest_address,
+            dest_lat=dest_lat,
+            dest_lon=dest_lon,
+            waiting_for=None
+        )
+        
+        # Розрахувати відстань ПРАВИЛЬНО (тут!)
+        from app.utils.maps import get_distance_and_duration
+        distance_km = None
+        duration_minutes = None
+        
+        logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
+        result = await get_distance_and_duration("", pickup_lat, pickup_lon, dest_lat, dest_lon)
+        if result:
+            distance_m, duration_s = result
+            distance_km = distance_m / 1000.0
+            duration_minutes = duration_s / 60.0
+            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+            logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв")
+        
+        if not distance_km:
+            distance_km = 5.0
+            duration_minutes = 15
+            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+        
+        # Отримати тариф та розрахувати ціни для класів
+        from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count, get_user_by_id
+        from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name, CAR_CLASSES
+        from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        tariff = await get_latest_tariff(config.database_path)
+        if not tariff:
+            await bot.send_message(user_id, "❌ Помилка: тариф не налаштований.", parse_mode="HTML")
+            return web.json_response({"success": False, "error": "Tariff not configured"}, status=500)
+        
+        # Базовий тариф
+        base_fare = max(
+            tariff.minimum,
+            tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
+        )
+        
+        # Налаштування ціноутворення
+        pricing = await get_pricing_settings(config.database_path)
+        if pricing is None:
+            from app.storage.db import PricingSettings
+            pricing = PricingSettings()
+        
+        custom_multipliers = {
+            "economy": pricing.economy_multiplier,
+            "standard": pricing.standard_multiplier,
+            "comfort": pricing.comfort_multiplier,
+            "business": pricing.business_multiplier
+        }
+        
+        # Місто клієнта
+        user = await get_user_by_id(config.database_path, user_id)
+        client_city = user.city if user and user.city else None
+        online_count = await get_online_drivers_count(config.database_path, client_city)
+        
+        # Зберегти base_fare
+        await state.update_data(base_fare=base_fare)
+        
+        # Створити кнопки з класами
+        kb_buttons = []
+        for car_class_id, car_class_data in CAR_CLASSES.items():
+            class_fare = calculate_fare_with_class(base_fare, car_class_id, custom_multipliers)
+            final_fare, explanation, surge_mult = await calculate_dynamic_price(class_fare, client_city, online_count, 0)
+            
+            surge_emoji = get_surge_emoji(surge_mult)
+            class_name = get_car_class_name(car_class_id)
+            
+            button_text = f"{class_name}: {final_fare:.0f} грн"
+            if surge_mult != 1.0:
+                button_text = f"{class_name}: {final_fare:.0f} грн {surge_emoji}"
+            
+            kb_buttons.append([InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"select_class:{car_class_id}"
+            )])
+        
+        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        
+        # Отримати last_message_id і редагувати повідомлення
+        data_state = await state.get_data()
+        last_message_id = data_state.get('last_message_id')
+        
+        msg_text = (
+            f"✅ <b>Місце подачі:</b>\n📍 {pickup_address}\n\n"
+            f"✅ <b>Призначення:</b>\n📍 {dest_address}\n\n"
+            f"📏 Відстань: {distance_km:.1f} км\n"
+            f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
+            f"🚗 <b>Оберіть клас автомобіля:</b>"
+        )
+        
+        if last_message_id:
+            try:
+                await bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=last_message_id,
+                    text=msg_text,
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Не вдалося редагувати: {e}")
+                await bot.send_message(user_id, msg_text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await bot.send_message(user_id, msg_text, reply_markup=kb, parse_mode="HTML")
+        
+        logger.info("✅ API ORDER: Повідомлення відправлено")
+        
+        return web.json_response({
+            "success": True,
+            "pickup_address": pickup_address,
+            "dest_address": dest_address,
+            "distance_km": distance_km,
+            "duration_minutes": int(duration_minutes)
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ API ORDER: Критична помилка: {e}")
+        logger.error(f"📜 Traceback:", exc_info=True)
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
     Налаштувати API endpoints для WebApp
@@ -368,7 +549,8 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     app['config'] = config
     app['storage'] = storage
     
-    # Додати route
-    app.router.add_post('/api/webapp/location', webapp_location_handler)
+    # Додати routes
+    app.router.add_post('/api/webapp/location', webapp_location_handler)  # Старий
+    app.router.add_post('/api/webapp/order', webapp_order_handler)  # Новий
     
-    logger.info("🌐 API endpoint registered: POST /api/webapp/location")
+    logger.info("🌐 API endpoints registered: POST /api/webapp/location, POST /api/webapp/order")

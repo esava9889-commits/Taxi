@@ -347,14 +347,13 @@ def create_router(config: AppConfig) -> Router:
         # 🗺️ СПРОЩЕНІ КНОПКИ: карта + збережені + скасувати
         kb_buttons = []
         
-        # 1. Кнопка карти (з пошуком адрес)
+        # 1. Кнопка карти (НОВА ЛОГІКА: обирає обидві точки одразу)
         if config.webapp_url:
             from aiogram.types import WebAppInfo
-            await state.update_data(waiting_for='pickup')  # Встановити що чекаємо pickup
             kb_buttons.append([
                 InlineKeyboardButton(
-                    text="🗺 Обрати на карті (з пошуком)",
-                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=pickup")
+                    text="🗺 Обрати на карті (pickup + destination)",
+                    web_app=WebAppInfo(url=config.webapp_url)
                 )
             ])
         
