@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from aiogram import F, Router
@@ -1876,7 +1876,7 @@ def create_router(config: AppConfig) -> Router:
                             f"🔴 {clean_destination}{route_link}\n\n"
                             f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
                             f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
-                            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
+                            f"⏰ {(datetime.now(timezone.utc) + timedelta(hours=2)).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
                             f"ℹ️ <i>Повний номер після прийняття</i>"
                         )
                         
@@ -2378,7 +2378,7 @@ def create_router(config: AppConfig) -> Router:
                             f"🔴 {clean_destination}{route_link}\n\n"
                             f"👤 {order.name} • 📱 <code>{masked_phone}</code> 🔒\n"
                             f"💬 {order.comment or 'Без коментарів'}\n\n"
-                            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or 'Не вказано'}\n\n"
+                            f"⏰ {(datetime.now(timezone.utc) + timedelta(hours=2)).strftime('%H:%M')} • 🏙 {client_city or 'Не вказано'}\n\n"
                             f"⚠️ <b>Клієнт готовий платити більше!</b>\n"
                             f"ℹ️ <i>Повний номер після прийняття</i>"
                         ),
