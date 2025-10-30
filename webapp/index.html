@@ -199,14 +199,20 @@
             position: absolute;
             bottom: 80px;
             left: 10px;
-            background: var(--tg-theme-bg-color, #ffffff);
-            padding: 12px 16px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            right: 10px;
+            background: linear-gradient(135deg, #ffffff, #f8f9fa);
+            padding: 14px 18px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.18);
             z-index: 1000;
-            font-size: 13px;
-            color: var(--tg-theme-text-color, #000000);
+            font-size: 14px;
+            color: #000000;
             display: none;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+        
+        .route-info strong {
+            color: #1a1a1a;
         }
         
         /* Кнопка скидання */
@@ -277,8 +283,8 @@
             padding: 14px 18px !important;
             border: 1px solid rgba(51, 109, 255, 0.25) !important;
             border-radius: 14px !important;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(245, 248, 255, 0.88)) !important;
-            color: var(--tg-theme-text-color, #0f172a) !important;
+            background: #ffffff !important;
+            color: #000000 !important;
             width: 100% !important;
             box-sizing: border-box !important;
             transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
@@ -291,8 +297,8 @@
         }
 
         .leaflet-control-geocoder-form input::placeholder {
-            color: rgba(15, 23, 42, 0.45) !important;
-            opacity: 0.7 !important;
+            color: #666666 !important;
+            opacity: 1 !important;
         }
 
         .leaflet-control-geocoder-form input:disabled {
@@ -463,18 +469,18 @@
             zoomControl: false, // Прибрати стандартний zoom control
         }).setView([48.3794, 31.1656], 6); // Україна
         
-        // ☀️ СВІТЛА КАРТА (як Google Maps)
-        // CartoDB Positron - світла, чиста карта схожа на Google Maps
-        const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© CARTO © OpenStreetMap',
+        // ☀️ КОНТРАСТНА КАРТА з чіткими вулицями та дорогами
+        // OpenStreetMap Standard - класична карта з високою контрастністю
+        const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
             maxZoom: 19,
-            subdomains: 'abcd'
+            subdomains: 'abc'
         }).addTo(map);
 
-        // М'яке тонування карти для кращої відповідності новому оформленню
+        // Підвищена контрастність: вулиці чіткіші, трава зеленіша, вода синіша
         const tilePane = map.getPane('tilePane');
         if (tilePane) {
-            tilePane.style.filter = 'saturate(1.05) brightness(0.96) hue-rotate(-4deg)';
+            tilePane.style.filter = 'contrast(1.15) saturate(1.25) brightness(0.98)';
         }
         
         // Додати zoom control в інше місце
@@ -553,7 +559,45 @@
                     const distance = (route.distance / 1000).toFixed(1);
                     const duration = Math.round(route.duration / 60);
                     
-                    updateRouteInfo(distance, duration);
+                    // Розрахувати ціну через backend
+                    loading.querySelector('p').textContent = '💰 Розраховую ціну...';
+                    
+                    try {
+                        const userId = tg.initDataUnsafe?.user?.id;
+                        if (userId) {
+                            const priceResponse = await fetch('/api/webapp/calculate-price', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    user_id: userId,
+                                    distance_km: parseFloat(distance),
+                                    duration_minutes: duration
+                                })
+                            });
+                            
+                            if (priceResponse.ok) {
+                                const priceData = await priceResponse.json();
+                                if (priceData.success) {
+                                    debugLog(`💰 Ціна розрахована: ${priceData.price} грн`, 'success');
+                                    updateRouteInfo(distance, duration, priceData.price, priceData.explanation);
+                                } else {
+                                    debugLog(`⚠️ Помилка розрахунку ціни: ${priceData.error}`, 'warning');
+                                    updateRouteInfo(distance, duration);
+                                }
+                            } else {
+                                debugLog('⚠️ Не вдалося розрахувати ціну (HTTP error)', 'warning');
+                                updateRouteInfo(distance, duration);
+                            }
+                        } else {
+                            debugLog('⚠️ User ID не знайдено, пропускаю розрахунок ціни', 'warning');
+                            updateRouteInfo(distance, duration);
+                        }
+                    } catch (priceError) {
+                        debugLog(`⚠️ Помилка розрахунку ціни: ${priceError.message}`, 'warning');
+                        updateRouteInfo(distance, duration);
+                    }
                     
                     console.log(`✅ Маршрут завантажено: ${distance} км, ${duration} хв`);
                     
@@ -618,14 +662,24 @@
         }
         
         // Функція оновлення інформації про маршрут
-        function updateRouteInfo(distance, duration) {
+        function updateRouteInfo(distance, duration, price = null, explanation = null) {
             const routeInfo = document.getElementById('route-info');
             if (routeInfo) {
-                routeInfo.innerHTML = `
+                let html = `
                     <strong>📏 Маршрут:</strong><br>
                     Відстань: ${distance} км<br>
                     Час: ~${duration} хв
                 `;
+                
+                if (price !== null) {
+                    html += `<br><strong>💰 Ціна: ${price} грн</strong>`;
+                    if (explanation) {
+                        // Додаємо підказку з поясненням
+                        html += `<br><small style="color: #666; font-size: 11px;">${explanation.replace(/\n/g, '<br>')}</small>`;
+                    }
+                }
+                
+                routeInfo.innerHTML = html;
                 routeInfo.style.display = 'block';
             }
         }

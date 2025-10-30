@@ -740,6 +740,103 @@ async def webapp_geocode_proxy(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
+    """
+    API endpoint для розрахунку ціни на карті
+    
+    POST /api/webapp/calculate-price
+    Body: {
+        "user_id": 123456,
+        "distance_km": 5.2,
+        "duration_minutes": 15
+    }
+    
+    Returns: {
+        "success": true,
+        "price": 120.50,
+        "base_fare": 100.00,
+        "multiplier": 1.205,
+        "explanation": "• Піковий час: +30%\n• Високий попит: +25%"
+    }
+    """
+    try:
+        data = await request.json()
+        user_id = data.get("user_id")
+        distance_km = data.get("distance_km")
+        duration_minutes = data.get("duration_minutes")
+        
+        if not user_id or distance_km is None or duration_minutes is None:
+            return web.json_response({
+                "success": False,
+                "error": "Missing required fields: user_id, distance_km, duration_minutes"
+            }, status=400)
+        
+        # Імпорти
+        from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count, get_user_by_id
+        from app.handlers.car_classes import calculate_base_fare
+        from app.handlers.dynamic_pricing import calculate_dynamic_price
+        
+        # Отримати тариф
+        tariff = await get_latest_tariff(request.app['config'].database_path)
+        if not tariff:
+            return web.json_response({
+                "success": False,
+                "error": "Tariff not configured"
+            }, status=500)
+        
+        # Базова ціна
+        base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
+        
+        # Налаштування ціноутворення
+        pricing = await get_pricing_settings(request.app['config'].database_path)
+        if pricing is None:
+            from app.storage.db import PricingSettings
+            pricing = PricingSettings()
+        
+        # Місто користувача
+        user = await get_user_by_id(request.app['config'].database_path, user_id)
+        client_city = user.city if user and user.city else None
+        online_count = await get_online_drivers_count(request.app['config'].database_path, client_city)
+        
+        # Кількість очікуючих замовлень (спрощено - можна додати реальний підрахунок)
+        pending_orders_count = 0
+        
+        # Розрахувати динамічну ціну
+        final_price, explanation, total_multiplier = await calculate_dynamic_price(
+            base_fare,
+            city=client_city or "Київ",
+            online_drivers=online_count,
+            pending_orders=pending_orders_count,
+            night_percent=tariff.night_tariff_percent,
+            weather_percent=tariff.weather_percent,
+            peak_hours_percent=pricing.peak_hours_percent,
+            weekend_percent=pricing.weekend_percent,
+            monday_morning_percent=pricing.monday_morning_percent,
+            no_drivers_percent=pricing.no_drivers_percent,
+            demand_very_high_percent=pricing.demand_very_high_percent,
+            demand_high_percent=pricing.demand_high_percent,
+            demand_medium_percent=pricing.demand_medium_percent,
+            demand_low_discount_percent=pricing.demand_low_discount_percent
+        )
+        
+        logger.info(f"💰 Price calculated for user {user_id}: base={base_fare:.2f}, final={final_price:.2f}, multiplier={total_multiplier:.2f}")
+        
+        return web.json_response({
+            "success": True,
+            "price": round(final_price, 2),
+            "base_fare": round(base_fare, 2),
+            "multiplier": round(total_multiplier, 2),
+            "explanation": explanation
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error calculating price: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
     Налаштувати API endpoints для WebApp
@@ -754,6 +851,8 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     app.router.add_post('/api/webapp/order', webapp_order_handler)
     app.router.add_get('/api/webapp/geocode', webapp_geocode_proxy)
     app.router.add_post('/api/webapp/geocode', webapp_geocode_proxy)
+    app.router.add_post('/api/webapp/calculate-price', webapp_calculate_price_handler)
     
     logger.info("🌐 API endpoint registered: POST /api/webapp/order")
     logger.info("🌐 API endpoint registered: GET/POST /api/webapp/geocode")
+    logger.info("🌐 API endpoint registered: POST /api/webapp/calculate-price")
