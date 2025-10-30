@@ -713,69 +713,16 @@
             console.log('🔄 Карту скинуто');
         }
         
-        // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями та DEBUG
-        const originalNominatim = L.Control.Geocoder.Nominatim;
-        
-        // Обгортка для логування
-        L.Control.Geocoder.NominatimDebug = originalNominatim.extend({
-            geocode: function(query, cb, context) {
-                debugLog(`🔍 ПОШУК: "${query}"`, 'search');
-                debugLog(`📍 Стан: ${currentState}`, 'info');
-                
-                const url = this.options.serviceUrl + '/search';
-                const params = {
-                    q: query,
-                    format: 'json',
-                    addressdetails: 1,
-                    limit: 8,
-                    countrycodes: 'ua',
-                    'accept-language': 'uk',
-                    dedupe: 1
-                };
-                
-                const queryString = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
-                const fullUrl = url + '?' + queryString;
-                
-                debugLog(`🌐 URL: ${fullUrl}`, 'info');
-                
-                fetch(fullUrl)
-                    .then(response => {
-                        debugLog(`📡 Статус відповіді: ${response.status}`, response.ok ? 'success' : 'error');
-                        return response.json();
-                    })
-                    .then(data => {
-                        debugLog(`📦 Отримано результатів: ${data.length}`, data.length > 0 ? 'success' : 'warning');
-                        
-                        if (data.length > 0) {
-                            data.forEach((result, index) => {
-                                debugLog(`  ${index + 1}. ${result.display_name}`, 'info');
-                            });
-                        } else {
-                            debugLog('⚠️ Nominatim не знайшов результатів!', 'warning');
-                            debugLog('Спробуйте інший запит', 'warning');
-                        }
-                        
-                        const results = data.map(result => ({
-                            name: result.display_name,
-                            center: L.latLng(result.lat, result.lon),
-                            bbox: result.boundingbox ? L.latLngBounds(
-                                [result.boundingbox[0], result.boundingbox[2]],
-                                [result.boundingbox[1], result.boundingbox[3]]
-                            ) : null
-                        }));
-                        
-                        cb.call(context, results);
-                    })
-                    .catch(error => {
-                        debugLog(`❌ ПОМИЛКА: ${error.message}`, 'error');
-                        console.error('Geocoding error:', error);
-                        cb.call(context, []);
-                    });
+        // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
+        const geocoder = L.Control.Geocoder.nominatim({
+            serviceUrl: 'https://nominatim.openstreetmap.org',
+            geocodingQueryParams: {
+                countrycodes: 'ua',  // Тільки Україна
+                'accept-language': 'uk',  // Українська мова
+                addressdetails: 1,
+                limit: 8,
+                dedupe: 1  // Видалити дублікати
             }
-        });
-        
-        const geocoder = new L.Control.Geocoder.NominatimDebug({
-            serviceUrl: 'https://nominatim.openstreetmap.org'
         });
         
         const geocoderControl = L.Control.geocoder({
@@ -789,7 +736,29 @@
             suggestMinLength: 3,
             suggestTimeout: 300,
             queryMinLength: 3
-        }).on('markgeocode', function(e) {
+        })
+        .on('startgeocode', function(e) {
+            debugLog(`🔍 ПОШУК: "${e.input}"`, 'search');
+            debugLog(`📍 Стан: ${currentState}`, 'info');
+        })
+        .on('finishgeocode', function(e) {
+            const count = e.results ? e.results.length : 0;
+            debugLog(`📦 Отримано результатів: ${count}`, count > 0 ? 'success' : 'warning');
+            
+            if (count > 0) {
+                e.results.forEach((result, index) => {
+                    if (index < 5) { // Показати перші 5
+                        debugLog(`  ${index + 1}. ${result.name}`, 'info');
+                    }
+                });
+                if (count > 5) {
+                    debugLog(`  ... та ще ${count - 5}`, 'info');
+                }
+            } else {
+                debugLog('⚠️ Nominatim не знайшов результатів!', 'warning');
+            }
+        })
+        .on('markgeocode', function(e) {
             const latlng = e.geocode.center;
             
             debugLog(`✅ ВИБРАНО: ${e.geocode.name}`, 'success');
