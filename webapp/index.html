@@ -718,10 +718,9 @@
             serviceUrl: 'https://nominatim.openstreetmap.org',
             geocodingQueryParams: {
                 countrycodes: 'ua',  // Тільки Україна
-                'accept-language': 'uk',  // Українська мова
                 addressdetails: 1,
-                limit: 8,
-                dedupe: 1  // Видалити дублікати
+                limit: 8
+                // Прибрав 'accept-language' та 'dedupe' - вони ламають пошук!
             }
         });
         
