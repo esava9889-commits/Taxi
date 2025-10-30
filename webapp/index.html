@@ -321,6 +321,16 @@
         let selectedMarker = null;
         let selectedCoords = null;
         
+        // Функція створення кастомного маркера (потрібна для Geocoder)
+        const createMarkerIcon = () => {
+            return L.divIcon({
+                className: 'marker-icon',
+                html: '<div class="pulse"></div>',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+        };
+        
         // 🔍 ДОДАТИ ПОШУК АДРЕС (Geocoder)
         console.log('🔍 Налаштовую Geocoder...');
         const geocoder = L.Control.Geocoder.nominatim({
@@ -378,16 +388,6 @@
         
         console.log('🔍 Geocoder (пошук адрес) додано до карти');
         addDebugLog('🔍 Пошук адрес активовано', 'success');
-        
-        // Створення кастомного маркера
-        const createMarkerIcon = () => {
-            return L.divIcon({
-                className: 'marker-icon',
-                html: '<div class="pulse"></div>',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15]
-            });
-        };
         
         // Обробник кліку по карті
         map.on('click', (e) => {
