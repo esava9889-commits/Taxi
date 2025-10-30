@@ -200,13 +200,12 @@ async def calculate_dynamic_price(
 
 
 def get_surge_emoji(multiplier: float) -> str:
-    """Отримати емодзі для відображення попиту"""
+    """Отримати емодзі для відображення попиту (тільки при націнках)"""
     if multiplier >= 1.5:
         return "🔥🔥🔥"
     elif multiplier >= 1.3:
         return "🔥🔥"
     elif multiplier >= 1.15:
         return "🔥"
-    elif multiplier < 1.0:
-        return "💚"  # Знижка
+    # Знижки без емодзі
     return ""

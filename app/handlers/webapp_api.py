@@ -119,13 +119,20 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 
                 kb_buttons = []
                 
-                # Кнопка карти
+                # Кнопка карти з передачею pickup координат
                 if request.app['config'].webapp_url:
                     await state.update_data(waiting_for='destination')
+                    # Передати pickup координати для відображення маршруту
+                    data = await state.get_data()
+                    pickup_lat = data.get('pickup_lat')
+                    pickup_lon = data.get('pickup_lon')
+                    url = f"{request.app['config'].webapp_url}?type=destination"
+                    if pickup_lat and pickup_lon:
+                        url += f"&pickup_lat={pickup_lat}&pickup_lon={pickup_lon}"
                     kb_buttons.append([
                         InlineKeyboardButton(
                             text="🗺 Обрати на карті (з пошуком)",
-                            web_app=WebAppInfo(url=f"{request.app['config'].webapp_url}?type=destination")
+                            web_app=WebAppInfo(url=url)
                         )
                     ])
                 

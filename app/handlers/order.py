@@ -551,14 +551,21 @@ def create_router(config: AppConfig) -> Router:
         # 🗺️ СПРОЩЕНІ КНОПКИ для destination
         kb_buttons = []
         
-        # 1. Кнопка карти
+        # 1. Кнопка карти з передачею pickup координат
         if config.webapp_url:
             from aiogram.types import WebAppInfo
             await state.update_data(waiting_for='destination')
+            # Передати pickup координати для відображення маршруту
+            data = await state.get_data()
+            pickup_lat = data.get('pickup_lat')
+            pickup_lon = data.get('pickup_lon')
+            url = f"{config.webapp_url}?type=destination"
+            if pickup_lat and pickup_lon:
+                url += f"&pickup_lat={pickup_lat}&pickup_lon={pickup_lon}"
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на карті (з пошуком)",
-                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=destination")
+                    web_app=WebAppInfo(url=url)
                 )
             ])
         
@@ -665,13 +672,20 @@ def create_router(config: AppConfig) -> Router:
         # Створити інлайн кнопки з вибором
         kb_buttons = []
         
-        # Додати кнопку карти, якщо WEBAPP_URL налаштовано
+        # Додати кнопку карти з pickup координатами
         if config.webapp_url:
             from aiogram.types import WebAppInfo
+            # Передати pickup координати для відображення маршруту
+            data = await state.get_data()
+            pickup_lat = data.get('pickup_lat')
+            pickup_lon = data.get('pickup_lon')
+            url = f"{config.webapp_url}?type=destination"
+            if pickup_lat and pickup_lon:
+                url += f"&pickup_lat={pickup_lat}&pickup_lon={pickup_lon}"
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на інтерактивній карті",
-                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=destination")
+                    web_app=WebAppInfo(url=url)
                 )
             ])
         
@@ -941,9 +955,9 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=comment_kb
             )
     
-    @router.callback_query(F.data.startswith("select_car_class:"))
+    @router.callback_query(F.data.startswith("select_car_class:") | F.data.startswith("select_class:"))
     async def select_car_class_handler(call: CallbackQuery, state: FSMContext) -> None:
-        """Вибір класу авто після перегляду цін"""
+        """Вибір класу авто після перегляду цін (обробляє select_car_class: та select_class:)"""
         car_class = call.data.split(":", 1)[1]
         await state.update_data(car_class=car_class)
         await call.answer()
