@@ -317,6 +317,64 @@
             position: 'bottomleft'
         }).addTo(map);
         
+        // 🔍 ДОДАТИ ПОШУК АДРЕС (Geocoder)
+        console.log('🔍 Налаштовую Geocoder...');
+        const geocoder = L.Control.Geocoder.nominatim({
+            geocodingQueryParams: {
+                countrycodes: 'ua',  // Тільки Україна
+                'accept-language': 'uk'  // Українська мова
+            }
+        });
+        
+        const geocoderControl = L.Control.geocoder({
+            geocoder: geocoder,
+            defaultMarkGeocode: false,  // Ми самі контролюємо маркер
+            position: 'topright',
+            placeholder: '🔍 Введіть адресу...',
+            errorMessage: 'Адресу не знайдено',
+            collapsed: false  // Завжди показувати поле пошуку
+        }).on('markgeocode', function(e) {
+            const latlng = e.geocode.center;
+            const address = e.geocode.name;
+            
+            console.log('🔍 Знайдено адресу:', address);
+            console.log('📍 Координати:', latlng);
+            addDebugLog(`🔍 Знайдено: ${address.substring(0, 40)}...`, 'success');
+            
+            // Видалити попередній маркер
+            if (selectedMarker) {
+                map.removeLayer(selectedMarker);
+            }
+            
+            // Додати маркер на знайдену адресу
+            selectedMarker = L.marker(latlng, {
+                icon: createMarkerIcon()
+            }).addTo(map);
+            
+            // Зберегти координати
+            selectedCoords = { lat: latlng.lat, lng: latlng.lng };
+            
+            // Показати координати
+            const coordsText = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+            document.getElementById('coords-text').textContent = coordsText;
+            document.getElementById('coordinates').style.display = 'block';
+            
+            // Центрувати карту на знайденій адресі
+            map.setView(latlng, 16);
+            
+            // Показати кнопку підтвердження
+            tg.MainButton.show();
+            addDebugLog('🔘 Кнопка "Підтвердити" показана', 'success');
+            
+            // Вібрація
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('medium');
+            }
+        }).addTo(map);
+        
+        console.log('🔍 Geocoder (пошук адрес) додано до карти');
+        addDebugLog('🔍 Пошук адрес активовано', 'success');
+        
         // Змінні для зберігання маркера та координат
         let selectedMarker = null;
         let selectedCoords = null;
