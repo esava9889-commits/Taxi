@@ -344,15 +344,36 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db import get_user_saved_addresses
         saved_addresses = await get_user_saved_addresses(config.database_path, message.from_user.id)
         
-        kb_buttons = [
-            [InlineKeyboardButton(text="📍 Надіслати мою геолокацію", callback_data="order:pickup:send_location")],
-            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:pickup:text")],
-        ]
+        # 🗺️ СПРОЩЕНІ КНОПКИ: карта + збережені + скасувати
+        kb_buttons = []
         
+        # 1. Кнопка карти (з пошуком адрес)
+        if config.webapp_url:
+            from aiogram.types import WebAppInfo
+            await state.update_data(waiting_for='pickup')  # Встановити що чекаємо pickup
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺 Обрати на карті (з пошуком)",
+                    web_app=WebAppInfo(url=config.webapp_url)
+                )
+            ])
+        
+        # 2. Збережені адреси (якщо є)
         if saved_addresses:
-            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:pickup:saved")])
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="📌 Вибрати зі збережених", 
+                    callback_data="order:pickup:saved"
+                )
+            ])
         
-        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
+        # 3. Скасувати замовлення
+        kb_buttons.append([
+            InlineKeyboardButton(
+                text="❌ Скасувати замовлення", 
+                callback_data="cancel_order"
+            )
+        ])
         
         kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
         
