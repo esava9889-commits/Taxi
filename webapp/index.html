@@ -79,13 +79,26 @@
         }
         
         .pulse {
-            width: 30px;
-            height: 30px;
-            border: 5px solid var(--tg-theme-button-color, #3390ec);
+            width: 35px;
+            height: 35px;
+            border: 6px solid var(--tg-theme-button-color, #3390ec);
             border-radius: 50%;
             background: var(--tg-theme-button-color, #3390ec);
-            opacity: 0.8;
+            opacity: 0.9;
             position: relative;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .pulse::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background: white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
         }
         
         .pulse::after {
@@ -93,12 +106,12 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 40px;
-            height: 40px;
-            border: 2px solid var(--tg-theme-button-color, #3390ec);
+            width: 45px;
+            height: 45px;
+            border: 3px solid var(--tg-theme-button-color, #3390ec);
             border-radius: 50%;
             transform: translate(-50%, -50%);
-            animation: pulse 1.5s ease-out infinite;
+            animation: pulse 2s ease-out infinite;
             opacity: 0;
         }
         
@@ -108,8 +121,24 @@
                 opacity: 1;
             }
             100% {
-                transform: translate(-50%, -50%) scale(1.5);
+                transform: translate(-50%, -50%) scale(1.8);
                 opacity: 0;
+            }
+        }
+        
+        /* Плавна поява елементів */
+        .state-panel, .route-info {
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
             }
         }
         
@@ -149,16 +178,95 @@
             display: none;
         }
         
-        /* DEBUG панель видалено для чистоти інтерфейсу */
+        /* Інформаційна панель про стан */
+        .state-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: var(--tg-theme-bg-color, #ffffff);
+            padding: 12px 16px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            z-index: 1000;
+            color: var(--tg-theme-text-color, #000000);
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        /* Інфо про маршрут */
+        .route-info {
+            position: absolute;
+            bottom: 80px;
+            left: 10px;
+            background: var(--tg-theme-bg-color, #ffffff);
+            padding: 12px 16px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            z-index: 1000;
+            font-size: 13px;
+            color: var(--tg-theme-text-color, #000000);
+            display: none;
+        }
+        
+        /* Кнопка скидання */
+        .reset-button {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border: none;
+            border-radius: 50%;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            cursor: pointer;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--tg-theme-text-color, #000000);
+            font-size: 24px;
+        }
+        
+        .reset-button:active {
+            transform: scale(0.95);
+        }
+        
+        /* Анімація для маршруту */
+        .route-line {
+            stroke-dasharray: 10, 5;
+            animation: dash 20s linear infinite;
+        }
+        
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -1000;
+            }
+        }
     </style>
 </head>
 <body>
     <div id="map"></div>
     
-    <div class="coordinates" id="coordinates">
-        <strong>📍 Обрано:</strong> <span id="coords-text"></span>
+    <!-- Інформаційна панель про поточний стан -->
+    <div class="state-panel" id="state-panel">
+        📍 <strong>Крок 1/3:</strong> Оберіть місце посадки
     </div>
     
+    <!-- Інформація про маршрут -->
+    <div class="route-info" id="route-info" style="display: none;">
+        <strong>📏 Маршрут:</strong><br>
+        Відстань: 0 км<br>
+        Час: ~0 хв
+    </div>
+    
+    <!-- Кнопка скидання -->
+    <button class="reset-button" id="reset-btn" title="Почати спочатку">
+        🔄
+    </button>
+    
+    <!-- Кнопка геолокації -->
     <button class="locate-button" id="locate-btn" title="Моя геолокація">
         📍
     </button>
@@ -198,6 +306,9 @@
         // Застосувати тему Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
         
+        // Оновити панель стану при старті
+        updateStatePanel('pickup');
+        
         // Ініціалізація карти (центр України)
         const map = L.map('map', {
             zoomControl: false, // Прибрати стандартний zoom control
@@ -224,51 +335,166 @@
         // Функція створення кастомного маркера
         const createMarkerIcon = (isPickup = false) => {
             const color = isPickup ? '#4CAF50' : '#2196F3';  // Зелений для pickup, синій для destination
+            const label = isPickup ? 'A' : 'B';
             return L.divIcon({
                 className: 'marker-icon',
-                html: `<div class="pulse" style="background: ${color}; border-color: ${color};"></div>`,
-                iconSize: [30, 30],
-                iconAnchor: [15, 15]
+                html: `
+                    <div class="pulse" style="background: ${color}; border-color: ${color};">
+                        <div style="
+                            position: absolute;
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            color: white;
+                            font-weight: bold;
+                            font-size: 14px;
+                        ">${label}</div>
+                    </div>
+                `,
+                iconSize: [35, 35],
+                iconAnchor: [17, 17]
             });
         };
         
         // Функція завантаження та відображення маршруту
         async function loadAndShowRoute(fromLat, fromLon, toLat, toLon) {
             try {
+                // Показати індикатор завантаження
+                const loading = document.getElementById('loading');
+                loading.querySelector('p').textContent = '🗺️ Будую маршрут...';
+                loading.style.display = 'block';
+                
                 // Видалити попередній маршрут
                 if (routePolyline) {
                     map.removeLayer(routePolyline);
                 }
                 
-                // Завантажити маршрут з OSRM
-                const url = `http://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
-                const response = await fetch(url);
+                // Завантажити маршрут з OSRM (HTTPS)
+                const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
+                const response = await fetch(url, { timeout: 10000 });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
                     const route = data.routes[0];
                     const coords = route.geometry.coordinates.map(c => [c[1], c[0]]); // [lng, lat] → [lat, lng]
                     
-                    // Відобразити маршрут
+                    // Відобразити маршрут з градієнтом
                     routePolyline = L.polyline(coords, {
                         color: '#2196F3',
-                        weight: 4,
-                        opacity: 0.7
+                        weight: 5,
+                        opacity: 0.8,
+                        className: 'route-line'
                     }).addTo(map);
                     
                     // Центрувати карту на маршрут
                     map.fitBounds(routePolyline.getBounds(), { padding: [50, 50] });
                     
-                    console.log('✅ Маршрут завантажено:', (route.distance / 1000).toFixed(1), 'км');
+                    // Відобразити відстань та час
+                    const distance = (route.distance / 1000).toFixed(1);
+                    const duration = Math.round(route.duration / 60);
+                    
+                    updateRouteInfo(distance, duration);
+                    
+                    console.log(`✅ Маршрут завантажено: ${distance} км, ${duration} хв`);
+                    
+                    loading.style.display = 'none';
+                } else {
+                    throw new Error('Маршрут не знайдено');
                 }
             } catch (error) {
                 console.error('❌ Помилка завантаження маршруту:', error);
+                const loading = document.getElementById('loading');
+                loading.style.display = 'none';
+                
+                // Показати помилку користувачу
+                alert('⚠️ Не вдалося побудувати маршрут.\nСпробуйте обрати інші точки.');
+                
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('error');
+                }
             }
+        }
+        
+        // Функція оновлення інформаційної панелі
+        function updateStatePanel(state) {
+            const panel = document.getElementById('state-panel');
+            if (!panel) return;
+            
+            let text = '';
+            let icon = '';
+            
+            if (state === 'pickup') {
+                icon = '📍';
+                text = '<strong>Крок 1/3:</strong> Оберіть місце посадки';
+            } else if (state === 'destination') {
+                icon = '🎯';
+                text = '<strong>Крок 2/3:</strong> Оберіть пункт призначення';
+            } else if (state === 'confirm') {
+                icon = '✅';
+                text = '<strong>Крок 3/3:</strong> Підтвердіть замовлення';
+            }
+            
+            panel.innerHTML = `${icon} ${text}`;
+        }
+        
+        // Функція оновлення інформації про маршрут
+        function updateRouteInfo(distance, duration) {
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                routeInfo.innerHTML = `
+                    <strong>📏 Маршрут:</strong><br>
+                    Відстань: ${distance} км<br>
+                    Час: ~${duration} хв
+                `;
+                routeInfo.style.display = 'block';
+            }
+        }
+        
+        // Функція очищення всього
+        function resetMap() {
+            // Видалити маркери
+            if (pickupMarker) {
+                map.removeLayer(pickupMarker);
+                pickupMarker = null;
+            }
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+                destinationMarker = null;
+            }
+            if (routePolyline) {
+                map.removeLayer(routePolyline);
+                routePolyline = null;
+            }
+            
+            // Скинути стан
+            currentState = 'pickup';
+            pickupCoords = null;
+            destinationCoords = null;
+            
+            // Оновити UI
+            tg.MainButton.setText('✅ Підтвердити місце посадки');
+            tg.MainButton.hide();
+            updateStatePanel('pickup');
+            
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                routeInfo.style.display = 'none';
+            }
+            
+            // Центрувати на Україну
+            map.setView([48.3794, 31.1656], 6);
+            
+            console.log('🔄 Карту скинуто');
         }
         
         // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
         const geocoder = L.Control.Geocoder.nominatim({
-            serviceUrl: 'http://nominatim.openstreetmap.org',  // HTTP замість HTTPS
+            serviceUrl: 'https://nominatim.openstreetmap.org',  // HTTPS
             geocodingQueryParams: {
                 countrycodes: 'ua',  // Тільки Україна
                 'accept-language': 'uk',  // Українська мова
@@ -407,6 +633,9 @@
                 tg.MainButton.setText('✅ Підтвердити місце призначення');
                 tg.MainButton.hide();  // Сховати поки не обере destination
                 
+                // Оновити панель стану
+                updateStatePanel('destination');
+                
                 console.log('✅ Pickup збережено, очікую destination');
                 
                 if (tg.HapticFeedback) {
@@ -420,6 +649,9 @@
                 // Маршрут вже намальовано при виборі точки, просто переходимо до confirm
                 currentState = 'confirm';
                 tg.MainButton.setText('✅ Підтвердити замовлення');
+                
+                // Оновити панель стану
+                updateStatePanel('confirm');
                 
                 console.log('✅ Destination підтверджено, переходжу до confirm');
                 console.log('📍 Pickup:', pickupCoords);
@@ -569,6 +801,18 @@
                 loading.style.display = 'none';
                 console.error('❌ Геолокація не підтримується');
                 alert('❌ Ваш браузер не підтримує геолокацію.');
+            }
+        });
+        
+        // Кнопка "Почати спочатку"
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            // Підтвердження
+            if (confirm('🔄 Почати спочатку?\n\nВсі обрані точки будуть скинуті.')) {
+                resetMap();
+                
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.impactOccurred('medium');
+                }
             }
         });
         
