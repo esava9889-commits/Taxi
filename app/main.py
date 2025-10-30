@@ -98,7 +98,9 @@ async def start_webhook_server(bot=None, dp=None, config=None):
     # 🌐 WebApp API endpoints (якщо є bot)
     if bot and config:
         from app.handlers.webapp_api import setup_webapp_api
-        setup_webapp_api(app, bot, config)
+        # Отримати storage з dp якщо є
+        storage = dp.storage if dp else None
+        setup_webapp_api(app, bot, config, storage)
         logging.info("🌐 WebApp API endpoints enabled")
     
     # ═══════════════════════════════════════════════════════════════

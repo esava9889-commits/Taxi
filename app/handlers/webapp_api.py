@@ -71,7 +71,7 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
         
         # Отримати доступ до bot і storage
         bot: Bot = request.app['bot']
-        storage = bot.fsm.storage
+        storage = request.app['storage']  # storage передається окремо
         
         # Створити storage key для користувача
         storage_key = StorageKey(
@@ -145,13 +145,14 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
         )
 
 
-def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig) -> None:
+def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
     Налаштувати API endpoints для WebApp
     """
-    # Зберегти bot в app для доступу в handlers
+    # Зберегти bot, storage і config в app для доступу в handlers
     app['bot'] = bot
     app['config'] = config
+    app['storage'] = storage
     
     # Додати route
     app.router.add_post('/api/webapp/location', webapp_location_handler)
