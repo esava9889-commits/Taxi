@@ -217,7 +217,7 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 # Імпортувати необхідні функції для розрахунку
                 from app.utils.maps import get_distance_and_duration
                 from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count, get_user_by_id
-                from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name, CAR_CLASSES
+                from app.handlers.car_classes import calculate_base_fare, calculate_fare_with_class, get_car_class_name, CAR_CLASSES
                 from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
                 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
                 
@@ -241,9 +241,22 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                         logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв")
                 
                 if not distance_km:
-                    distance_km = 5.0
-                    duration_minutes = 15
-                    await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+                    # КРИТИЧНА ПОМИЛКА: не вдалося розрахувати відстань
+                    logger.error(f"❌ OSRM не зміг розрахувати відстань для user {user_id}: ({pickup_lat},{pickup_lon}) → ({latitude},{longitude})")
+                    await bot.send_message(
+                        user_id,
+                        "❌ <b>Не вдалося розрахувати відстань</b>\n\n"
+                        "⚠️ Будь ласка, спробуйте:\n"
+                        "• Обрати інші точки на карті\n"
+                        "• Перевірити інтернет-з'єднання\n"
+                        "• Звернутися до підтримки\n\n"
+                        "Натисніть /order щоб спробувати знову",
+                        parse_mode="HTML"
+                    )
+                    return web.json_response(
+                        {"success": False, "error": "Could not calculate distance between points"},
+                        status=400
+                    )
                 
                 # Отримати тариф
                 tariff = await get_latest_tariff(request.app['config'].database_path)
@@ -251,11 +264,8 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                     await bot.send_message(user_id, "❌ Помилка: тариф не налаштований.", parse_mode="HTML")
                     return web.json_response({"success": False, "error": "Tariff not configured"}, status=500)
                 
-                # Базовий тариф
-                base_fare = max(
-                    tariff.minimum,
-                    tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-                )
+                # Базовий тариф (використовуємо helper функцію)
+                base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
                 
                 # Налаштування ціноутворення
                 pricing = await get_pricing_settings(request.app['config'].database_path)
@@ -448,13 +458,26 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
             logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв")
         
         if not distance_km:
-            distance_km = 5.0
-            duration_minutes = 15
-            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+            # КРИТИЧНА ПОМИЛКА: не вдалося розрахувати відстань
+            logger.error(f"❌ OSRM не зміг розрахувати відстань для user {user_id}: ({pickup_lat},{pickup_lon}) → ({dest_lat},{dest_lon})")
+            await bot.send_message(
+                user_id,
+                "❌ <b>Не вдалося розрахувати відстань</b>\n\n"
+                "⚠️ Будь ласка, спробуйте:\n"
+                "• Обрати інші точки на карті\n"
+                "• Перевірити інтернет-з'єднання\n"
+                "• Звернутися до підтримки\n\n"
+                "Натисніть /order щоб спробувати знову",
+                parse_mode="HTML"
+            )
+            return web.json_response(
+                {"success": False, "error": "Could not calculate distance between points"},
+                status=400
+            )
         
         # Отримати тариф та розрахувати ціни для класів
         from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count, get_user_by_id
-        from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name, CAR_CLASSES
+        from app.handlers.car_classes import calculate_base_fare, calculate_fare_with_class, get_car_class_name, CAR_CLASSES
         from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
         
@@ -463,11 +486,8 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
             await bot.send_message(user_id, "❌ Помилка: тариф не налаштований.", parse_mode="HTML")
             return web.json_response({"success": False, "error": "Tariff not configured"}, status=500)
         
-        # Базовий тариф
-        base_fare = max(
-            tariff.minimum,
-            tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-        )
+        # Базовий тариф (використовуємо helper функцію)
+        base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
         
         # Налаштування ціноутворення
         pricing = await get_pricing_settings(config.database_path)

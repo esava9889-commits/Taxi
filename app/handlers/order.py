@@ -137,12 +137,20 @@ def create_router(config: AppConfig) -> Router:
             else:
                 logger.warning("⚠️ Не вдалося розрахувати відстань через Google Maps API")
         
-        # Якщо не вдалося розрахувати - беремо приблизну відстань
+        # Якщо не вдалося розрахувати - ПОМИЛКА (не використовуємо fallback!)
         if distance_km is None:
-            distance_km = 5.0  # Приблизна відстань за замовчуванням
-            duration_minutes = 15
-            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
-            logger.warning(f"⚠️ Використовую приблизну відстань: {distance_km} км")
+            logger.error(f"❌ Не вдалося розрахувати відстань для user {call.from_user.id if call.from_user else 'unknown'}")
+            await call.message.answer(
+                "❌ <b>Не вдалося розрахувати відстань</b>\n\n"
+                "⚠️ Будь ласка, спробуйте:\n"
+                "• Обрати інші точки\n"
+                "• Ввести адреси текстом\n"
+                "• Звернутися до підтримки\n\n"
+                "Натисніть /order щоб спробувати знову",
+                parse_mode="HTML"
+            )
+            await state.clear()
+            return
         
         # Отримати тариф
         tariff = await get_latest_tariff(config.database_path)
@@ -151,10 +159,9 @@ def create_router(config: AppConfig) -> Router:
             await state.clear()
             return
         
-        # Розрахувати базову ціну (для економ класу)
-        base_fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-        if base_fare < tariff.minimum:
-            base_fare = tariff.minimum
+        # Розрахувати базову ціну (використовуємо helper функцію)
+        from app.handlers.car_classes import calculate_base_fare
+        base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
         
         # Розрахувати ЦІНУ З УРАХУВАННЯМ ДИНАМІКИ для КОЖНОГО класу
         car_class_prices = {}
@@ -976,9 +983,9 @@ def create_router(config: AppConfig) -> Router:
         tariff = await get_latest_tariff(config.database_path)
         distance_km = data.get("distance_km", 5.0)
         duration_minutes = data.get("duration_minutes", 15.0)
-        base_fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-        if base_fare < tariff.minimum:
-            base_fare = tariff.minimum
+        # Використовуємо helper функцію
+        from app.handlers.car_classes import calculate_base_fare
+        base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
         from app.handlers.dynamic_pricing import calculate_dynamic_price
         from app.storage.db import get_online_drivers_count, get_pricing_settings, get_pending_orders
         city = data.get('city', 'Київ') or 'Київ'
@@ -1687,11 +1694,9 @@ def create_router(config: AppConfig) -> Router:
                     # Розрахунок з ТІЄЮ Ж ЛОГІКОЮ що і для клієнта
                     tariff = await get_latest_tariff(config.database_path)
                     if tariff:
-                        # Базовий тариф
-                        base_fare = max(
-                            tariff.minimum,
-                            tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
-                        )
+                        # Базовий тариф (використовуємо helper функцію)
+                        from app.handlers.car_classes import calculate_base_fare
+                        base_fare = calculate_base_fare(tariff, km, minutes)
                         
                         # Застосувати клас авто (ТАК ЯК ДЛЯ КЛІЄНТА!)
                         from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
