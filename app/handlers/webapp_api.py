@@ -36,9 +36,14 @@ def validate_coordinates(lat: float, lon: float) -> bool:
 
 async def webapp_location_handler(request: web.Request) -> web.Response:
     """
-    API endpoint для отримання координат з WebApp карти
+    ⚠️ DEPRECATED: Цей endpoint більше не використовується!
     
-    POST /api/webapp/location
+    Замість нього використовуйте webapp_order_handler (/api/webapp/order),
+    який приймає обидві координати одразу (pickup + destination).
+    
+    Старий API endpoint для отримання координат поетапно.
+    
+    POST /api/webapp/location (DEPRECATED)
     Body: {
         "user_id": 123456,
         "latitude": 50.4501,
@@ -642,7 +647,7 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     app['storage'] = storage
     
     # Додати routes
-    app.router.add_post('/api/webapp/location', webapp_location_handler)  # Старий
-    app.router.add_post('/api/webapp/order', webapp_order_handler)  # Новий
+    # webapp_location_handler ВИДАЛЕНО - використовується тільки webapp_order_handler
+    app.router.add_post('/api/webapp/order', webapp_order_handler)
     
-    logger.info("🌐 API endpoints registered: POST /api/webapp/location, POST /api/webapp/order")
+    logger.info("🌐 API endpoint registered: POST /api/webapp/order")
