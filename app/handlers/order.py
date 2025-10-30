@@ -354,7 +354,7 @@ def create_router(config: AppConfig) -> Router:
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на карті (з пошуком)",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=pickup")
                 )
             ])
         
@@ -407,7 +407,7 @@ def create_router(config: AppConfig) -> Router:
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на інтерактивній карті",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=pickup")
                 )
             ])
         
@@ -558,7 +558,7 @@ def create_router(config: AppConfig) -> Router:
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на карті (з пошуком)",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=destination")
                 )
             ])
         
@@ -600,7 +600,7 @@ def create_router(config: AppConfig) -> Router:
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на карті (з пошуком)",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=pickup")
                 )
             ])
         
@@ -671,7 +671,7 @@ def create_router(config: AppConfig) -> Router:
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на інтерактивній карті",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=destination")
                 )
             ])
         

@@ -181,6 +181,11 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
+        // 🔍 ЗЧИТАТИ ТИП ЛОКАЦІЇ З URL (pickup або destination)
+        const urlParams = new URLSearchParams(window.location.search);
+        const locationType = urlParams.get('type') || 'pickup'; // За замовчуванням pickup
+        console.log('📍 Location type:', locationType);
+        
         tg.MainButton.setText('✅ Підтвердити місце');
         tg.MainButton.color = tg.themeParams.button_color || '#3390ec';
         tg.MainButton.textColor = tg.themeParams.button_text_color || '#ffffff';
@@ -221,11 +226,13 @@
             });
         };
         
-        // 🔍 ПОШУК АДРЕС (Geocoder)
+        // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
         const geocoder = L.Control.Geocoder.nominatim({
             geocodingQueryParams: {
                 countrycodes: 'ua',  // Тільки Україна
-                'accept-language': 'uk'  // Українська мова
+                'accept-language': 'uk',  // Українська мова
+                addressdetails: 1,  // Детальна інформація про адресу
+                limit: 10  // Показувати до 10 варіантів
             }
         });
         
@@ -233,9 +240,11 @@
             geocoder: geocoder,
             defaultMarkGeocode: false,  // Ми самі контролюємо маркер
             position: 'topright',
-            placeholder: '🔍 Введіть адресу...',
-            errorMessage: 'Адресу не знайдено',
-            collapsed: false  // Завжди показувати поле пошуку
+            placeholder: '🔍 Введіть адресу або місце...',
+            errorMessage: '❌ Адресу не знайдено',
+            collapsed: false,  // Завжди показувати поле пошуку
+            suggestMinLength: 3,  // Починати пошук з 3 символів
+            suggestTimeout: 250  // Затримка перед пошуком (мс)
         }).on('markgeocode', function(e) {
             const latlng = e.geocode.center;
             
@@ -315,8 +324,8 @@
                         return;
                     }
                     
-                    // Визначити тип локації (pickup або destination)
-                    const locationType = 'pickup'; // TODO: визначити динамічно
+                    // Тип локації вже зчитано з URL на початку скрипта
+                    console.log('📤 Відправляю тип:', locationType);
                     
                     // Відправити через API
                     const apiData = {

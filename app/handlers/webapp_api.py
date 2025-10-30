@@ -121,7 +121,7 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                     kb_buttons.append([
                         InlineKeyboardButton(
                             text="🗺 Обрати на карті (з пошуком)",
-                            web_app=WebAppInfo(url=request.app['config'].webapp_url)
+                            web_app=WebAppInfo(url=f"{request.app['config'].webapp_url}?type=destination")
                         )
                     ])
                 
