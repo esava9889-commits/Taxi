@@ -7,13 +7,15 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+import json
+import aiohttp
 from aiohttp import web
 from aiogram import Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 
 from app.config.config import AppConfig
-from app.utils.maps import reverse_geocode
+from app.utils.maps import reverse_geocode, _wait_for_nominatim
 
 logger = logging.getLogger(__name__)
 
@@ -636,6 +638,107 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         logger.error(f"📜 Traceback:", exc_info=True)
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_USER_AGENT = "TaxiBot WebApp/1.0 (support@taxi-bot.example)"
+
+
+async def webapp_geocode_proxy(request: web.Request) -> web.Response:
+    """Proxy запитів до Nominatim з серверного боку (із User-Agent та rate limit)."""
+    try:
+        # Зібрати параметри з query string
+        params = dict(request.rel_url.query)
+
+        # Якщо надіслано JSON тіло (POST), об'єднати з параметрами
+        if request.can_read_body and request.method in {"POST", "PUT", "PATCH"}:
+            try:
+                payload = await request.json()
+                if isinstance(payload, dict):
+                    for key, value in payload.items():
+                        if value is not None and value != "":
+                            params[str(key)] = str(value)
+            except json.JSONDecodeError:
+                logger.warning("⚠️ Proxy geocode: не вдалося розпарсити JSON тіло")
+
+        query = params.get("q") or params.get("query")
+        if not query or not str(query).strip():
+            return web.json_response({"error": "Missing required parameter 'q'"}, status=400)
+
+        query = str(query).strip()
+        proxy_params = {
+            "q": query,
+            "format": "json",
+            "addressdetails": params.get("addressdetails", "1"),
+            "limit": params.get("limit", "8"),
+        }
+
+        if params.get("countrycodes"):
+            proxy_params["countrycodes"] = params["countrycodes"]
+
+        # Бажано повертати українською
+        proxy_params["accept-language"] = params.get("accept-language", "uk")
+
+        debug_info = {
+            "query": query,
+            "params": proxy_params
+        }
+        logger.info(f"🛰️ Proxy geocode: {debug_info}")
+
+        # Поважаємо rate limit Nominatim (1 запит/сек)
+        await _wait_for_nominatim()
+
+        headers = {
+            "User-Agent": NOMINATIM_USER_AGENT,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(NOMINATIM_SEARCH_URL, params=proxy_params, headers=headers, timeout=15) as resp:
+                body_text = await resp.text()
+
+                if resp.status != 200:
+                    logger.warning(
+                        "⚠️ Proxy geocode: Nominatim status %s, body: %s",
+                        resp.status,
+                        body_text[:200]
+                    )
+                    return web.json_response(
+                        {
+                            "error": "Nominatim request failed",
+                            "status": resp.status,
+                            "body": body_text[:500]
+                        },
+                        status=resp.status
+                    )
+
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception as e:  # noqa: BLE001
+                    logger.error("❌ Proxy geocode: JSON decode error %s", e)
+                    logger.debug("❌ Proxy geocode body: %s", body_text[:500])
+                    return web.json_response(
+                        {
+                            "error": "Invalid JSON from Nominatim",
+                            "status": resp.status
+                        },
+                        status=502
+                    )
+
+        if not isinstance(data, list):
+            logger.warning("⚠️ Proxy geocode: unexpected response type: %s", type(data))
+            return web.json_response(
+                {
+                    "error": "Unexpected response format",
+                    "status": 502
+                },
+                status=502
+            )
+
+        logger.info(f"✅ Proxy geocode: '{query}' → {len(data)} результат(и)")
+        return web.json_response(data)
+
+    except Exception as e:  # noqa: BLE001
+        logger.error("❌ Proxy geocode: critical error: %s", e, exc_info=True)
+        return web.json_response({"error": str(e)}, status=500)
+
 
 def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
@@ -649,5 +752,8 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     # Додати routes
     # webapp_location_handler ВИДАЛЕНО - використовується тільки webapp_order_handler
     app.router.add_post('/api/webapp/order', webapp_order_handler)
+    app.router.add_get('/api/webapp/geocode', webapp_geocode_proxy)
+    app.router.add_post('/api/webapp/geocode', webapp_geocode_proxy)
     
     logger.info("🌐 API endpoint registered: POST /api/webapp/order")
+    logger.info("🌐 API endpoint registered: GET/POST /api/webapp/geocode")
