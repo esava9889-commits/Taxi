@@ -724,8 +724,10 @@
             }
         });
         
-        // 🐛 DEBUG + fallback: обгортка для логування і автоматичного повторного пошуку
+        // 🐛 DEBUG + fallback: обгортка для логування, throttle та повторного пошуку
         const originalGeocode = geocoder.geocode.bind(geocoder);
+        const NOMINATIM_MIN_INTERVAL_MS = 1100; // офіційне обмеження: не більше 1 запиту/секунду
+        let lastNominatimRequestAt = 0;
         geocoder.geocode = function(query, callback, context) {
             const normalizedQuery = (query || '').trim().replace(/\s+/g, ' ');
             const paramsSnapshot = this.options.geocodingQueryParams ? { ...this.options.geocodingQueryParams } : {};
@@ -760,31 +762,56 @@
 
             const runWithParams = (paramsObject, stage) => {
                 const stageLabel = stage === 'fallback' ? '🔁' : '🌐';
-                const previousParams = this.options.geocodingQueryParams;
-                this.options.geocodingQueryParams = paramsObject;
-                logRequest(paramsObject, stageLabel);
+                const waitMs = Math.max(0, NOMINATIM_MIN_INTERVAL_MS - (Date.now() - lastNominatimRequestAt));
 
-                originalGeocode(normalizedQuery, (results) => {
-                    if (stage === 'primary' && Array.isArray(results) && results.length === 0 && paramsSnapshot.countrycodes) {
-                        debugLog('⚠️ Основний пошук (з countrycodes) нічого не знайшов. Пробую без обмеження країни...', 'warning');
-                        const fallbackParams = { ...paramsSnapshot };
-                        delete fallbackParams.countrycodes;
-                        runWithParams(fallbackParams, 'fallback');
-                        return;
-                    }
+                if (waitMs > 0) {
+                    debugLog(`⏳ Очікую ${waitMs} мс перед наступним запитом (політика Nominatim).`, 'info');
+                }
 
-                    if (stage === 'fallback' && Array.isArray(results) && results.length > 0) {
-                        debugLog(`✅ Fallback без countrycodes знайшов ${results.length} результат(и).`, 'success');
-                    } else if (stage === 'fallback') {
-                        debugLog('⚠️ Навіть fallback без countrycodes не дав результатів.', 'warning');
-                    }
+                setTimeout(() => {
+                    lastNominatimRequestAt = Date.now();
+                    const previousParams = this.options.geocodingQueryParams;
+                    this.options.geocodingQueryParams = paramsObject;
+                    logRequest(paramsObject, stageLabel);
 
-                    if (typeof callback === 'function') {
-                        callback.call(context || this, results);
-                    }
-                }, context);
+                    originalGeocode(normalizedQuery, (rawResults) => {
+                        let results = rawResults;
 
-                this.options.geocodingQueryParams = previousParams;
+                        // Відновити параметри незалежно від результату
+                        this.options.geocodingQueryParams = previousParams;
+
+                        if (!Array.isArray(results)) {
+                            if (results && typeof results === 'object' && results.error) {
+                                debugLog(`❌ Помилка Nominatim: ${results.error}`, 'error');
+                            } else if (typeof results === 'string' && results.trim() !== '') {
+                                debugLog(`⚠️ Nominatim повернув не JSON (можливо 429 / HTML): ${results.slice(0, 120)}...`, 'warning');
+                            } else {
+                                debugLog('⚠️ Nominatim повернув порожню/неочікувану відповідь.', 'warning');
+                            }
+                            results = [];
+                        }
+
+                        if (stage === 'primary' && results.length === 0 && paramsSnapshot.countrycodes) {
+                            debugLog('⚠️ Основний пошук (з countrycodes) нічого не знайшов. Пробую без обмеження країни...', 'warning');
+                            const fallbackParams = { ...paramsSnapshot };
+                            delete fallbackParams.countrycodes;
+                            runWithParams(fallbackParams, 'fallback');
+                            return;
+                        }
+
+                        if (stage === 'fallback') {
+                            if (results.length > 0) {
+                                debugLog(`✅ Fallback без countrycodes знайшов ${results.length} результат(и).`, 'success');
+                            } else {
+                                debugLog('⚠️ Навіть fallback без countrycodes не дав результатів.', 'warning');
+                            }
+                        }
+
+                        if (typeof callback === 'function') {
+                            callback.call(context || this, results);
+                        }
+                    }, context);
+                }, waitMs);
             };
 
             runWithParams(paramsSnapshot, 'primary');
