@@ -279,6 +279,8 @@
         console.log('✅ WebApp expanded');
         
         tg.MainButton.setText('✅ Підтвердити місце');
+        tg.MainButton.color = tg.themeParams.button_color || '#3390ec';
+        tg.MainButton.textColor = tg.themeParams.button_text_color || '#ffffff';
         tg.MainButton.hide(); // Спочатку сховати
         
         console.log('🔘 MainButton configured');
@@ -383,6 +385,9 @@
         // Обробник кнопки "Підтвердити"
         console.log('🔧 Registering MainButton.onClick handler...');
         addDebugLog('🔧 Обробник кнопки зареєстровано', 'info');
+        
+        // ⚠️ ВАЖЛИВО: Очистити попередні обробники
+        tg.MainButton.offClick();
         
         tg.MainButton.onClick(() => {
             console.log('='.repeat(60));
