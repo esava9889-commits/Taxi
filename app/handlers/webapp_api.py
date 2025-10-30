@@ -105,16 +105,48 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
         try:
             if location_type == 'pickup':
                 from app.handlers.order import OrderStates
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+                
                 await state.set_state(OrderStates.destination)
+                
+                # Показати кнопки для вибору destination
+                from app.storage.db import get_user_saved_addresses
+                saved_addresses = await get_user_saved_addresses(request.app['config'].database_path, user_id)
+                
+                kb_buttons = []
+                
+                # Кнопка карти
+                if request.app['config'].webapp_url:
+                    await state.update_data(waiting_for='destination')
+                    kb_buttons.append([
+                        InlineKeyboardButton(
+                            text="🗺 Обрати на карті (з пошуком)",
+                            web_app=WebAppInfo(url=request.app['config'].webapp_url)
+                        )
+                    ])
+                
+                # Збережені
+                if saved_addresses:
+                    kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:dest:saved")])
+                
+                # Назад + Скасувати
+                kb_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup")])
+                kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+                
+                kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
                 
                 await bot.send_message(
                     user_id,
                     f"✅ <b>Місце подачі:</b>\n📍 {address}\n\n"
                     f"📍 <b>Куди їдемо?</b>\n\n"
+                    f"🗺 <b>Карта з пошуком</b> - знайдіть або оберіть точку\n"
+                    f"📌 <b>Збережені</b> - швидкий вибір\n\n"
                     f"💡 Оберіть спосіб:",
+                    reply_markup=kb,
                     parse_mode="HTML"
                 )
             else:  # destination
+                # Розрахувати вартість і показати класи авто
                 await bot.send_message(
                     user_id,
                     f"✅ <b>Місце призначення:</b>\n📍 {address}\n\n"
@@ -122,8 +154,101 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                     parse_mode="HTML"
                 )
                 
-                # Викликати функцію розрахунку вартості
-                # (це буде зроблено в наступному кроці)
+                # Імпортувати необхідні функції для розрахунку
+                from app.utils.maps import get_distance_and_duration
+                from app.storage.db import get_latest_tariff, get_pricing_settings, get_online_drivers_count, get_user_by_id
+                from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name, CAR_CLASSES
+                from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+                
+                # Отримати pickup з state
+                data = await state.get_data()
+                pickup_lat = data.get("pickup_lat")
+                pickup_lon = data.get("pickup_lon")
+                
+                # Розрахувати відстань
+                distance_km = None
+                duration_minutes = None
+                
+                if pickup_lat and pickup_lon and latitude and longitude:
+                    logger.info(f"📏 Розраховую відстань: ({pickup_lat},{pickup_lon}) → ({latitude},{longitude})")
+                    result = await get_distance_and_duration("", pickup_lat, pickup_lon, latitude, longitude)
+                    if result:
+                        distance_m, duration_s = result
+                        distance_km = distance_m / 1000.0
+                        duration_minutes = duration_s / 60.0
+                        await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+                        logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв")
+                
+                if not distance_km:
+                    distance_km = 5.0
+                    duration_minutes = 15
+                    await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+                
+                # Отримати тариф
+                tariff = await get_latest_tariff(request.app['config'].database_path)
+                if not tariff:
+                    await bot.send_message(user_id, "❌ Помилка: тариф не налаштований.", parse_mode="HTML")
+                    return web.json_response({"success": False, "error": "Tariff not configured"}, status=500)
+                
+                # Базовий тариф
+                base_fare = max(
+                    tariff.minimum,
+                    tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
+                )
+                
+                # Налаштування ціноутворення
+                pricing = await get_pricing_settings(request.app['config'].database_path)
+                if pricing is None:
+                    from app.storage.db import PricingSettings
+                    pricing = PricingSettings()
+                
+                custom_multipliers = {
+                    "economy": pricing.economy_multiplier,
+                    "standard": pricing.standard_multiplier,
+                    "comfort": pricing.comfort_multiplier,
+                    "business": pricing.business_multiplier
+                }
+                
+                # Місто клієнта
+                user = await get_user_by_id(request.app['config'].database_path, user_id)
+                client_city = user.city if user and user.city else None
+                online_count = await get_online_drivers_count(request.app['config'].database_path, client_city)
+                
+                # Показати класи з цінами
+                from app.handlers.order import OrderStates
+                await state.set_state(OrderStates.car_class)
+                await state.update_data(base_fare=base_fare)
+                
+                kb_buttons = []
+                for car_class_id, car_class_data in CAR_CLASSES.items():
+                    class_fare = calculate_fare_with_class(base_fare, car_class_id, custom_multipliers)
+                    final_fare, explanation, surge_mult = await calculate_dynamic_price(class_fare, client_city, online_count, 0)
+                    
+                    surge_emoji = get_surge_emoji(surge_mult)
+                    class_name = get_car_class_name(car_class_id)
+                    
+                    button_text = f"{car_class_data['emoji']} {class_name}: {final_fare:.0f} грн"
+                    if surge_mult != 1.0:
+                        button_text = f"{car_class_data['emoji']} {class_name}: {final_fare:.0f} грн {surge_emoji}"
+                    
+                    kb_buttons.append([InlineKeyboardButton(
+                        text=button_text,
+                        callback_data=f"select_class:{car_class_id}"
+                    )])
+                
+                kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
+                kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+                
+                await bot.send_message(
+                    user_id,
+                    f"🚗 <b>Оберіть клас автомобіля</b>\n\n"
+                    f"📏 Відстань: {distance_km:.1f} км\n"
+                    f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
+                    f"💡 Виберіть клас авто:",
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
                 
             logger.info(f"✅ API: Повідомлення відправлено користувачу {user_id}")
         except Exception as e:
