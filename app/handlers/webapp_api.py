@@ -476,11 +476,25 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         # Зберегти base_fare
         await state.update_data(base_fare=base_fare)
         
+        # Отримати кількість pending orders для розрахунку попиту
+        from app.storage.db import get_pending_orders
+        pending_orders = await get_pending_orders(config.database_path, client_city)
+        pending_count = len(pending_orders)
+        
         # Створити кнопки з класами
         kb_buttons = []
         for car_class_id, car_class_data in CAR_CLASSES.items():
             class_fare = calculate_fare_with_class(base_fare, car_class_id, custom_multipliers)
-            final_fare, explanation, surge_mult = await calculate_dynamic_price(class_fare, client_city, online_count, 0)
+            
+            # ПРАВИЛЬНИЙ розрахунок з усіма параметрами
+            final_fare, explanation, surge_mult = await calculate_dynamic_price(
+                class_fare, client_city, online_count, pending_count,
+                pricing.night_percent, pricing.weather_percent,
+                pricing.peak_hours_percent, pricing.weekend_percent,
+                pricing.monday_morning_percent, pricing.no_drivers_percent,
+                pricing.demand_very_high_percent, pricing.demand_high_percent,
+                pricing.demand_medium_percent, pricing.demand_low_discount_percent
+            )
             
             surge_emoji = get_surge_emoji(surge_mult)
             class_name = get_car_class_name(car_class_id)
