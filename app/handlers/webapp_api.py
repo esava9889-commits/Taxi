@@ -18,6 +18,22 @@ from app.utils.maps import reverse_geocode
 logger = logging.getLogger(__name__)
 
 
+def validate_coordinates(lat: float, lon: float) -> bool:
+    """
+    Валідувати координати
+    
+    Args:
+        lat: Широта
+        lon: Довгота
+    
+    Returns:
+        True якщо координати валідні, False інакше
+    """
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return False
+    return -90 <= lat <= 90 and -180 <= lon <= 180
+
+
 async def webapp_location_handler(request: web.Request) -> web.Response:
     """
     API endpoint для отримання координат з WebApp карти
@@ -48,7 +64,7 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
         logger.info("=" * 80)
         
         # Валідація
-        if not user_id or not latitude or not longitude or not location_type:
+        if not user_id or latitude is None or longitude is None or not location_type:
             logger.error("❌ API: Відсутні обов'язкові параметри")
             return web.json_response(
                 {"success": False, "error": "Missing required parameters"},
@@ -59,6 +75,14 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
             logger.error(f"❌ API: Невірний тип локації: {location_type}")
             return web.json_response(
                 {"success": False, "error": "Invalid location type"},
+                status=400
+            )
+        
+        # Валідація координат
+        if not validate_coordinates(latitude, longitude):
+            logger.error(f"❌ API: Невалідні координати: lat={latitude}, lon={longitude}")
+            return web.json_response(
+                {"success": False, "error": "Invalid coordinates (must be -90<=lat<=90, -180<=lon<=180)"},
                 status=400
             )
         
@@ -407,6 +431,21 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         logger.info(f"  - pickup: {pickup_lat}, {pickup_lon}")
         logger.info(f"  - destination: {dest_lat}, {dest_lon}")
         logger.info("=" * 80)
+        
+        # Валідація координат
+        if not validate_coordinates(pickup_lat, pickup_lon):
+            logger.error(f"❌ API ORDER: Невалідні pickup координати: {pickup_lat}, {pickup_lon}")
+            return web.json_response(
+                {"success": False, "error": "Invalid pickup coordinates"},
+                status=400
+            )
+        
+        if not validate_coordinates(dest_lat, dest_lon):
+            logger.error(f"❌ API ORDER: Невалідні destination координати: {dest_lat}, {dest_lon}")
+            return web.json_response(
+                {"success": False, "error": "Invalid destination coordinates"},
+                status=400
+            )
         
         # Отримати FSM context
         from aiogram.fsm.context import FSMContext

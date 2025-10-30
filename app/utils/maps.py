@@ -10,20 +10,25 @@ logger = logging.getLogger(__name__)
 # Затримка між запитами до Nominatim (обов'язкова згідно з правилами)
 _last_nominatim_request = 0
 NOMINATIM_DELAY = 1.0  # 1 секунда між запитами
+_nominatim_lock = asyncio.Lock()  # Lock для запобігання race condition
 
 
 async def _wait_for_nominatim():
-    """Затримка між запитами до Nominatim (1 запит/сек)"""
-    global _last_nominatim_request
-    import time
-    
-    now = time.time()
-    time_since_last = now - _last_nominatim_request
-    
-    if time_since_last < NOMINATIM_DELAY:
-        await asyncio.sleep(NOMINATIM_DELAY - time_since_last)
-    
-    _last_nominatim_request = time.time()
+    """
+    Затримка між запитами до Nominatim (1 запит/сек)
+    Використовує Lock для thread-safety при одночасних запитах
+    """
+    async with _nominatim_lock:  # Тільки один запит одночасно
+        global _last_nominatim_request
+        import time
+        
+        now = time.time()
+        time_since_last = now - _last_nominatim_request
+        
+        if time_since_last < NOMINATIM_DELAY:
+            await asyncio.sleep(NOMINATIM_DELAY - time_since_last)
+        
+        _last_nominatim_request = time.time()
 
 
 async def get_distance_and_duration(
