@@ -317,6 +317,10 @@
             position: 'bottomleft'
         }).addTo(map);
         
+        // Змінні для зберігання маркера та координат (оголосити перед використанням!)
+        let selectedMarker = null;
+        let selectedCoords = null;
+        
         // 🔍 ДОДАТИ ПОШУК АДРЕС (Geocoder)
         console.log('🔍 Налаштовую Geocoder...');
         const geocoder = L.Control.Geocoder.nominatim({
@@ -374,10 +378,6 @@
         
         console.log('🔍 Geocoder (пошук адрес) додано до карти');
         addDebugLog('🔍 Пошук адрес активовано', 'success');
-        
-        // Змінні для зберігання маркера та координат
-        let selectedMarker = null;
-        let selectedCoords = null;
         
         // Створення кастомного маркера
         const createMarkerIcon = () => {
