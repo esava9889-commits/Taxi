@@ -160,10 +160,13 @@ def create_router(config: AppConfig) -> Router:
         car_class_prices = {}
         car_class_explanations = {}
         from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
-        from app.storage.db import get_online_drivers_count, get_pricing_settings
+        from app.storage.db import get_online_drivers_count, get_pricing_settings, get_pending_orders
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
-        pending_orders_estimate = 5
+        
+        # Отримати РЕАЛЬНУ кількість pending orders
+        pending_orders = await get_pending_orders(config.database_path, city)
+        pending_orders_estimate = len(pending_orders)
         
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
@@ -977,9 +980,13 @@ def create_router(config: AppConfig) -> Router:
         if base_fare < tariff.minimum:
             base_fare = tariff.minimum
         from app.handlers.dynamic_pricing import calculate_dynamic_price
-        from app.storage.db import get_online_drivers_count, get_pricing_settings
+        from app.storage.db import get_online_drivers_count, get_pricing_settings, get_pending_orders
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
+        
+        # Отримати кількість pending orders для розрахунку попиту (РЕАЛЬНЕ значення!)
+        pending_orders = await get_pending_orders(config.database_path, city)
+        pending_count = len(pending_orders)
         
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
@@ -998,7 +1005,7 @@ def create_router(config: AppConfig) -> Router:
         
         class_fare = calculate_fare_with_class(base_fare, car_class, custom_multipliers)
         final_price, explanation, total_mult = await calculate_dynamic_price(
-            class_fare, city, online_count, 5,
+            class_fare, city, online_count, pending_count,  # <-- РЕАЛЬНЕ значення!
             pricing.night_percent, pricing.weather_percent,
             pricing.peak_hours_percent, pricing.weekend_percent,
             pricing.monday_morning_percent, pricing.no_drivers_percent,

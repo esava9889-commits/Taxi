@@ -315,14 +315,14 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
                 
                 # РЕДАГУВАТИ повідомлення з класами
-                pickup_address = data.get('pickup', '📍 Не вказано')
+                pickup_address = data.get('pickup', 'Не вказано')
                 if last_message_id:
                     try:
                         await bot.edit_message_text(
                             chat_id=user_id,
                             message_id=last_message_id,
-                            text=f"✅ <b>Місце подачі:</b> {pickup_address}\n"
-                                f"✅ <b>Призначення:</b> {address}\n\n"
+                            text=f"✅ <b>Місце подачі:</b>\n{pickup_address}\n\n"
+                                f"✅ <b>Призначення:</b>\n{address}\n\n"
                                 f"📏 Відстань: {distance_km:.1f} км\n"
                                 f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
                                 f"🚗 <b>Оберіть клас автомобіля:</b>",
@@ -333,8 +333,8 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                         logger.warning(f"⚠️ Не вдалося редагувати повідомлення: {e}")
                         await bot.send_message(
                             user_id,
-                            f"✅ <b>Місце подачі:</b> {pickup_address}\n"
-                            f"✅ <b>Призначення:</b> {address}\n\n"
+                            f"✅ <b>Місце подачі:</b>\n{pickup_address}\n\n"
+                            f"✅ <b>Призначення:</b>\n{address}\n\n"
                             f"📏 Відстань: {distance_km:.1f} км\n"
                             f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
                             f"🚗 <b>Оберіть клас автомобіля:</b>",
@@ -344,8 +344,8 @@ async def webapp_location_handler(request: web.Request) -> web.Response:
                 else:
                     await bot.send_message(
                         user_id,
-                        f"✅ <b>Місце подачі:</b> {pickup_address}\n"
-                        f"✅ <b>Призначення:</b> {address}\n\n"
+                        f"✅ <b>Місце подачі:</b>\n{pickup_address}\n\n"
+                        f"✅ <b>Призначення:</b>\n{address}\n\n"
                         f"📏 Відстань: {distance_km:.1f} км\n"
                         f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
                         f"🚗 <b>Оберіть клас автомобіля:</b>",
@@ -474,6 +474,9 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         if pricing is None:
             from app.storage.db import PricingSettings
             pricing = PricingSettings()
+            logger.warning("⚠️ PricingSettings not found in DB, using defaults")
+        else:
+            logger.info(f"✅ PricingSettings loaded: night={pricing.night_percent}%, peak={pricing.peak_hours_percent}%, weather={pricing.weather_percent}%")
         
         custom_multipliers = {
             "economy": pricing.economy_multiplier,
@@ -494,6 +497,8 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         from app.storage.db import get_pending_orders
         pending_orders = await get_pending_orders(config.database_path, client_city)
         pending_count = len(pending_orders)
+        
+        logger.info(f"📊 Pricing context: city={client_city}, online_drivers={online_count}, pending_orders={pending_count}")
         
         # Створити кнопки з класами
         kb_buttons = []
@@ -530,8 +535,8 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         last_message_id = data_state.get('last_message_id')
         
         msg_text = (
-            f"✅ <b>Місце подачі:</b>\n📍 {pickup_address}\n\n"
-            f"✅ <b>Призначення:</b>\n📍 {dest_address}\n\n"
+            f"✅ <b>Місце подачі:</b>\n{pickup_address}\n\n"
+            f"✅ <b>Призначення:</b>\n{dest_address}\n\n"
             f"📏 Відстань: {distance_km:.1f} км\n"
             f"⏱ Час в дорозі: ~{int(duration_minutes)} хв\n\n"
             f"🚗 <b>Оберіть клас автомобіля:</b>"
