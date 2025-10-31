@@ -81,12 +81,12 @@
         .pulse {
             width: 35px;
             height: 35px;
-            border: 6px solid var(--tg-theme-button-color, #3390ec);
+            border: 6px solid #FFD700;
             border-radius: 50%;
-            background: var(--tg-theme-button-color, #3390ec);
-            opacity: 0.9;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            opacity: 0.95;
             position: relative;
-            box-shadow: 0 4px 20px rgba(51, 144, 236, 0.6), 0 0 40px rgba(51, 144, 236, 0.3);
+            box-shadow: 0 4px 20px rgba(255, 215, 0, 0.7), 0 0 40px rgba(255, 215, 0, 0.4);
             animation: markerBounce 0.6s ease-out, glowPulse 2s ease-in-out infinite;
         }
         
@@ -109,7 +109,7 @@
             left: 50%;
             width: 45px;
             height: 45px;
-            border: 3px solid var(--tg-theme-button-color, #3390ec);
+            border: 3px solid #FFD700;
             border-radius: 50%;
             transform: translate(-50%, -50%);
             animation: pulse 2s ease-out infinite;
@@ -145,13 +145,13 @@
             }
         }
         
-        /* 🌟 Glow ефект */
+        /* 🌟 Glow ефект - ЗОЛОТИЙ */
         @keyframes glowPulse {
             0%, 100% {
-                box-shadow: 0 4px 20px rgba(51, 144, 236, 0.6), 0 0 40px rgba(51, 144, 236, 0.3);
+                box-shadow: 0 4px 20px rgba(255, 215, 0, 0.7), 0 0 40px rgba(255, 215, 0, 0.4);
             }
             50% {
-                box-shadow: 0 4px 30px rgba(51, 144, 236, 0.8), 0 0 60px rgba(51, 144, 236, 0.5);
+                box-shadow: 0 4px 30px rgba(255, 215, 0, 0.9), 0 0 60px rgba(255, 215, 0, 0.6);
             }
         }
         
@@ -187,17 +187,23 @@
             right: 20px;
             width: 50px;
             height: 50px;
-            background: var(--tg-theme-button-color, #3390ec);
-            border: none;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            border: 2px solid rgba(255, 215, 0, 0.5);
             border-radius: 50%;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 20px rgba(255, 215, 0, 0.5), 0 0 25px rgba(255, 215, 0, 0.3);
             cursor: pointer;
             z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--tg-theme-button-text-color, #ffffff);
+            color: #1a1a1a;
             font-size: 24px;
+            transition: all 0.3s ease;
+        }
+        
+        .locate-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px rgba(255, 215, 0, 0.7), 0 0 40px rgba(255, 215, 0, 0.5);
         }
         
         .locate-button:active {
@@ -211,14 +217,15 @@
             left: 50%;
             transform: translate(-50%, -50%);
             z-index: 2000;
-            background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98));
             color: #FFD700;
             padding: 30px 40px;
             border-radius: 20px;
             display: none;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 50px rgba(255, 215, 0, 0.3);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 50px rgba(255, 215, 0, 0.4);
             text-align: center;
             border: 2px solid #FFD700;
+            backdrop-filter: blur(10px);
         }
         
         /* Typing text для "Urban" - ЖОВТИЙ */
@@ -281,25 +288,27 @@
             100% { transform: rotate(360deg); }
         }
         
-        /* Інфо про маршрут */
+        /* Інфо про маршрут - ЧОРНО-ЗОЛОТИЙ */
         .route-info {
             position: absolute;
             bottom: 80px;
             left: 10px;
             right: 10px;
-            background: linear-gradient(135deg, #ffffff, #f8f9fa);
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98));
             padding: 14px 18px;
             border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.18);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.3);
             z-index: 1000;
             font-size: 14px;
-            color: #000000;
+            color: rgba(255, 215, 0, 0.9);
             display: none;
-            border: 1px solid rgba(0,0,0,0.08);
+            border: 2px solid #FFD700;
+            backdrop-filter: blur(10px);
         }
         
         .route-info strong {
-            color: #1a1a1a;
+            color: #FFD700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
         }
         
         /* Кнопка скидання */
@@ -309,27 +318,35 @@
             left: 20px;
             width: 50px;
             height: 50px;
-            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            border: none;
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(45, 45, 45, 0.95));
+            border: 2px solid #FFD700;
             border-radius: 50%;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 215, 0, 0.3);
             cursor: pointer;
             z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--tg-theme-text-color, #000000);
+            color: #FFD700;
             font-size: 24px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .reset-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.6), 0 0 35px rgba(255, 215, 0, 0.5);
         }
         
         .reset-button:active {
             transform: scale(0.95);
         }
         
-        /* 🎨 Анімація для маршруту */
+        /* 🎨 Анімація для маршруту - ЗОЛОТИЙ З GLOW */
         .route-line {
             stroke-dasharray: 10, 5;
             animation: dash 20s linear infinite;
+            filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8)) drop-shadow(0 0 15px rgba(255, 215, 0, 0.5));
         }
         
         @keyframes dash {
@@ -338,18 +355,18 @@
             }
         }
         
-        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ - НА ВСЮ ШИРИНУ + DRAGGABLE */
+        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ - ЧОРНО-ЗОЛОТИЙ СТИЛЬ */
         .leaflet-control-geocoder {
             border: none !important;
             border-radius: 16px !important;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(238, 245, 255, 0.92)) !important;
-            box-shadow: 0 8px 24px rgba(40, 65, 120, 0.15) !important;
+            background: linear-gradient(145deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98)) !important;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.2) !important;
             width: calc(100vw - 20px) !important;
             max-width: calc(100vw - 20px) !important;
             min-width: calc(100vw - 20px) !important;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             backdrop-filter: blur(14px);
-            border: 1px solid rgba(51, 109, 255, 0.12) !important;
+            border: 2px solid #FFD700 !important;
             position: fixed !important;
             left: 10px !important;
             top: 10px !important;
@@ -359,7 +376,7 @@
         }
         
         .leaflet-control-geocoder.dragging {
-            box-shadow: 0 12px 32px rgba(40, 65, 120, 0.25) !important;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 50px rgba(255, 215, 0, 0.4) !important;
             transition: none !important;
         }
 
@@ -372,36 +389,36 @@
         .leaflet-control-geocoder-form input {
             font-size: 16px !important;
             padding: 14px 18px !important;
-            border: 1px solid rgba(51, 109, 255, 0.25) !important;
+            border: 1px solid rgba(255, 215, 0, 0.3) !important;
             border-radius: 14px !important;
-            background: #ffffff !important;
-            color: #000000 !important;
+            background: rgba(20, 20, 20, 0.9) !important;
+            color: #FFD700 !important;
             width: 100% !important;
             box-sizing: border-box !important;
             transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
         }
 
         .leaflet-control-geocoder-form input:focus {
-            border-color: var(--tg-theme-button-color, #336dff) !important;
+            border-color: #FFD700 !important;
             outline: none !important;
-            box-shadow: 0 12px 28px rgba(51, 109, 255, 0.2) !important;
+            box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3) !important;
         }
 
         .leaflet-control-geocoder-form input::placeholder {
-            color: #666666 !important;
+            color: rgba(255, 215, 0, 0.6) !important;
             opacity: 1 !important;
         }
 
         .leaflet-control-geocoder-form input:disabled {
-            background: rgba(248, 250, 255, 0.75) !important;
-            color: rgba(15, 23, 42, 0.35) !important;
+            background: rgba(20, 20, 20, 0.5) !important;
+            color: rgba(255, 215, 0, 0.3) !important;
             cursor: not-allowed !important;
             opacity: 0.7 !important;
         }
 
-        /* Кнопка пошуку */
+        /* Кнопка пошуку - ЗОЛОТА */
         .leaflet-control-geocoder-icon {
-            background: linear-gradient(135deg, var(--tg-theme-button-color, #336dff), rgba(51, 109, 255, 0.85)) !important;
+            background: linear-gradient(135deg, #FFD700, #FFA500) !important;
             border-radius: 12px !important;
             width: 44px !important;
             height: 44px !important;
@@ -409,14 +426,15 @@
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            box-shadow: 0 6px 18px rgba(51, 109, 255, 0.35) !important;
+            box-shadow: 0 6px 18px rgba(255, 215, 0, 0.5), 0 0 20px rgba(255, 215, 0, 0.3) !important;
             cursor: pointer !important;
             transition: all 0.2s ease !important;
+            border: 1px solid rgba(255, 215, 0, 0.5) !important;
         }
         
         .leaflet-control-geocoder-icon:hover {
             transform: scale(1.05) !important;
-            box-shadow: 0 8px 22px rgba(51, 109, 255, 0.45) !important;
+            box-shadow: 0 8px 22px rgba(255, 215, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.4) !important;
         }
         
         .leaflet-control-geocoder-icon:active {
@@ -428,14 +446,15 @@
             content: "🔍" !important;
             font-size: 20px !important;
             display: block !important;
+            filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
         }
 
-        /* Список результатів */
+        /* Список результатів - ТЕМНИЙ */
         .leaflet-control-geocoder-alternatives {
-            background: rgba(255, 255, 255, 0.94) !important;
-            border: none !important;
+            background: rgba(20, 20, 20, 0.98) !important;
+            border: 1px solid rgba(255, 215, 0, 0.3) !important;
             border-radius: 0 0 18px 18px !important;
-            box-shadow: 0 18px 32px rgba(15, 23, 42, 0.15) !important;
+            box-shadow: 0 18px 32px rgba(0, 0, 0, 0.5) !important;
             max-height: 320px !important;
             overflow-y: auto !important;
             margin-top: 10px !important;
@@ -449,15 +468,15 @@
         /* Окремий результат */
         .leaflet-control-geocoder-alternative {
             padding: 16px 18px !important;
-            border-bottom: 1px solid rgba(51, 109, 255, 0.08) !important;
-            color: rgba(15, 23, 42, 0.92) !important;
+            border-bottom: 1px solid rgba(255, 215, 0, 0.15) !important;
+            color: rgba(255, 215, 0, 0.9) !important;
             cursor: pointer !important;
             transition: background 0.2s ease, transform 0.2s ease !important;
             font-size: 15px !important;
         }
 
         .leaflet-control-geocoder-alternative:hover {
-            background: rgba(51, 109, 255, 0.08) !important;
+            background: rgba(255, 215, 0, 0.15) !important;
             transform: translateY(-1px);
         }
 
@@ -467,8 +486,9 @@
         }
 
         .leaflet-control-geocoder-alternative-first {
-            background: rgba(51, 109, 255, 0.12) !important;
+            background: rgba(255, 215, 0, 0.2) !important;
             font-weight: 600 !important;
+            color: #FFD700 !important;
         }
         
         /* Прибрати стандартний spinner */
@@ -530,8 +550,8 @@
         let destinationCoords = null;
         
         tg.MainButton.setText('✅ Підтвердити місце посадки');
-        tg.MainButton.color = tg.themeParams.button_color || '#3390ec';
-        tg.MainButton.textColor = tg.themeParams.button_text_color || '#ffffff';
+        tg.MainButton.color = '#FFD700'; // Золота кнопка
+        tg.MainButton.textColor = '#1a1a1a'; // Чорний текст
         tg.MainButton.hide(); // Спочатку сховати
         
         // Застосувати тему Telegram
@@ -656,11 +676,11 @@
                     const route = data.routes[0];
                     const coords = route.geometry.coordinates.map(c => [c[1], c[0]]); // [lng, lat] → [lat, lng]
                     
-                    // 🎨 Відобразити маршрут з анімацією малювання
+                    // 🎨 Відобразити маршрут з анімацією малювання - ЗОЛОТИЙ
                     routePolyline = L.polyline(coords, {
-                        color: '#2196F3',
-                        weight: 5,
-                        opacity: 0.8,
+                        color: '#FFD700',
+                        weight: 6,
+                        opacity: 0.9,
                         className: 'route-line',
                         // Додати dashArray для анімації малювання
                         dashArray: '2000',
