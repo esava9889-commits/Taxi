@@ -204,34 +204,35 @@
             transform: scale(0.95);
         }
         
-        /* 🚗 КАСТОМНИЙ LOADER "URBAN" */
+        /* 🚗 КАСТОМНИЙ LOADER "URBAN" - ТЕМНИЙ З ЖОВТИМ */
         .loading {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             z-index: 2000;
-            background: rgba(255, 255, 255, 0.98);
-            color: #333;
+            background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+            color: #FFD700;
             padding: 30px 40px;
             border-radius: 20px;
             display: none;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 50px rgba(255, 215, 0, 0.3);
             text-align: center;
-            border: 2px solid #3390ec;
+            border: 2px solid #FFD700;
         }
         
-        /* Typing text для "Urban" */
+        /* Typing text для "Urban" - ЖОВТИЙ */
         .loading-text {
             font-size: 32px;
             font-weight: bold;
-            color: #3390ec;
+            color: #FFD700;
             font-family: 'Segoe UI', Roboto, sans-serif;
             letter-spacing: 2px;
             margin-bottom: 20px;
             overflow: hidden;
-            border-right: 3px solid #3390ec;
+            border-right: 3px solid #FFD700;
             white-space: nowrap;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
             animation: typing 1.5s steps(5) forwards, blinkCursor 0.75s step-end infinite;
         }
         
@@ -242,10 +243,10 @@
         
         @keyframes blinkCursor {
             from, to { border-color: transparent; }
-            50% { border-color: #3390ec; }
+            50% { border-color: #FFD700; }
         }
         
-        /* 🚗 Колесо що крутиться */
+        /* 🚗 Колесо що крутиться - ЖОВТЕ */
         .loading-wheel {
             width: 60px;
             height: 60px;
@@ -256,10 +257,11 @@
         .wheel {
             width: 60px;
             height: 60px;
-            border: 6px solid #e0e0e0;
-            border-top: 6px solid #3390ec;
+            border: 6px solid #3a3a3a;
+            border-top: 6px solid #FFD700;
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.4);
         }
         
         .wheel-center {
@@ -269,8 +271,9 @@
             transform: translate(-50%, -50%);
             width: 20px;
             height: 20px;
-            background: #3390ec;
+            background: #FFD700;
             border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
         }
         
         @keyframes spin {
@@ -335,7 +338,7 @@
             }
         }
         
-        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ - НА ВСЮ ШИРИНУ */
+        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ - НА ВСЮ ШИРИНУ + DRAGGABLE */
         .leaflet-control-geocoder {
             border: none !important;
             border-radius: 16px !important;
@@ -347,9 +350,17 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             backdrop-filter: blur(14px);
             border: 1px solid rgba(51, 109, 255, 0.12) !important;
+            position: fixed !important;
             left: 10px !important;
-            right: 10px !important;
             top: 10px !important;
+            cursor: move !important;
+            touch-action: none !important;
+            z-index: 1001 !important;
+        }
+        
+        .leaflet-control-geocoder.dragging {
+            box-shadow: 0 12px 32px rgba(40, 65, 120, 0.25) !important;
+            transition: none !important;
         }
 
         .leaflet-control-geocoder-form {
@@ -616,6 +627,10 @@
                 loadingText.textContent = 'Urban';
                 loading.style.display = 'block';
                 
+                // ⏰ Запустити таймер для мінімальної затримки 2 секунди
+                const minLoadingTime = 2000; // 2 секунди
+                const startTime = Date.now();
+                
                 // Видалити попередній маршрут
                 if (routePolyline) {
                     map.removeLayer(routePolyline);
@@ -714,6 +729,15 @@
                     }
                     
                     console.log(`✅ Маршрут завантажено: ${distance} км, ${duration} хв`);
+                    
+                    // ⏰ Переконатися що минуло мінімум 2 секунди для показу "Urban"
+                    const elapsedTime = Date.now() - startTime;
+                    const remainingTime = Math.max(0, minLoadingTime - elapsedTime);
+                    
+                    if (remainingTime > 0) {
+                        debugLog(`⏳ Чекаю ще ${remainingTime}ms щоб "Urban" встиг з'явитися`, 'info');
+                        await new Promise(resolve => setTimeout(resolve, remainingTime));
+                    }
                     
                     loading.style.display = 'none';
                 } else {
@@ -1148,9 +1172,77 @@
             }
         }).addTo(map);
         
-        // Додати обробник Enter для пошуку та згортання клавіатури
+        // 🎯 DRAGGABLE SEARCH BOX
         setTimeout(() => {
+            const geocoderElement = document.querySelector('.leaflet-control-geocoder');
             const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            
+            if (geocoderElement) {
+                let isDragging = false;
+                let startX, startY, initialLeft, initialTop;
+                
+                // Початок перетягування
+                geocoderElement.addEventListener('mousedown', startDrag);
+                geocoderElement.addEventListener('touchstart', startDrag);
+                
+                function startDrag(e) {
+                    // Не починати drag якщо клік по input
+                    if (e.target.tagName === 'INPUT' || e.target.closest('.leaflet-control-geocoder-alternatives')) {
+                        return;
+                    }
+                    
+                    isDragging = true;
+                    geocoderElement.classList.add('dragging');
+                    
+                    const touch = e.touches ? e.touches[0] : e;
+                    startX = touch.clientX;
+                    startY = touch.clientY;
+                    
+                    const rect = geocoderElement.getBoundingClientRect();
+                    initialLeft = rect.left;
+                    initialTop = rect.top;
+                    
+                    e.preventDefault();
+                }
+                
+                // Перетягування
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('touchmove', drag);
+                
+                function drag(e) {
+                    if (!isDragging) return;
+                    
+                    const touch = e.touches ? e.touches[0] : e;
+                    const deltaX = touch.clientX - startX;
+                    const deltaY = touch.clientY - startY;
+                    
+                    const newLeft = initialLeft + deltaX;
+                    const newTop = initialTop + deltaY;
+                    
+                    // Обмеження в межах екрану
+                    const maxLeft = window.innerWidth - geocoderElement.offsetWidth;
+                    const maxTop = window.innerHeight - geocoderElement.offsetHeight;
+                    
+                    geocoderElement.style.left = Math.max(0, Math.min(newLeft, maxLeft)) + 'px';
+                    geocoderElement.style.top = Math.max(0, Math.min(newTop, maxTop)) + 'px';
+                    geocoderElement.style.right = 'auto';
+                    
+                    e.preventDefault();
+                }
+                
+                // Кінець перетягування
+                document.addEventListener('mouseup', stopDrag);
+                document.addEventListener('touchend', stopDrag);
+                
+                function stopDrag() {
+                    if (isDragging) {
+                        isDragging = false;
+                        geocoderElement.classList.remove('dragging');
+                    }
+                }
+            }
+            
+            // Додати обробник Enter для пошуку та згортання клавіатури
             if (searchInput) {
                 searchInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
