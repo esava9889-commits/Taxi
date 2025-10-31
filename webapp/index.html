@@ -1191,12 +1191,9 @@
             placeholder: '📍 Звідки їдемо? (наприклад: Київ, Хрещатик 1)',
             errorMessage: '❌ Нічого не знайдено. Спробуйте інший запит',
             collapsed: false,
-            expand: 'touch',  // Показувати результати при введенні
-            suggestMinLength: 3,  // Мінімум 3 символи для пошуку
-            suggestTimeout: 250,  // Затримка 250мс
+            expand: 'click',  // Пошук тільки по кнопці
             queryMinLength: 3,
-            showResultIcons: true,  // Показувати іконки результатів
-            autoClose: false  // Не закривати автоматично
+            showResultIcons: true  // Показувати іконки результатів
         })
         .on('startgeocode', function(e) {
             debugLog(`🔍 ПОШУК: "${e.input}"`, 'search');
@@ -1302,34 +1299,10 @@
             }
         }).addTo(map);
         
-        // 🎯 DRAGGABLE SEARCH BOX + АВТОПОШУК
+        // 🎯 DRAGGABLE SEARCH BOX
         setTimeout(() => {
             const geocoderElement = document.querySelector('.leaflet-control-geocoder');
             const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
-            
-            // 🔍 АВТОПОШУК ПРИ ВВЕДЕННІ ТЕКСТУ
-            if (searchInput) {
-                let searchTimeout;
-                searchInput.addEventListener('input', function(e) {
-                    const query = e.target.value.trim();
-                    
-                    // Якщо введено мінімум 3 символи - запускаємо пошук
-                    if (query.length >= 3) {
-                        // Очистити попередній таймер
-                        clearTimeout(searchTimeout);
-                        
-                        // Запустити пошук через 250мс після останнього введення
-                        searchTimeout = setTimeout(() => {
-                            debugLog(`🔍 Автопошук: "${query}"`, 'info');
-                            
-                            // Запустити geocoding
-                            geocoderControl._geocode();
-                        }, 250);
-                    }
-                });
-                
-                debugLog('✅ Автопошук увімкнено (мін. 3 символи)', 'success');
-            }
             
             if (geocoderElement) {
                 let isDragging = false;
