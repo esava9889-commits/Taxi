@@ -294,15 +294,33 @@
 
         /* Кнопка пошуку */
         .leaflet-control-geocoder-icon {
-            background: linear-gradient(135deg, var(--tg-theme-button-color, #336dff), rgba(51, 109, 255, 0.78)) !important;
+            background: linear-gradient(135deg, var(--tg-theme-button-color, #336dff), rgba(51, 109, 255, 0.85)) !important;
             border-radius: 12px !important;
-            width: 40px !important;
-            height: 40px !important;
-            margin: 6px !important;
+            width: 44px !important;
+            height: 44px !important;
+            margin: 4px !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            box-shadow: 0 10px 22px rgba(51, 109, 255, 0.25) !important;
+            box-shadow: 0 6px 18px rgba(51, 109, 255, 0.35) !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .leaflet-control-geocoder-icon:hover {
+            transform: scale(1.05) !important;
+            box-shadow: 0 8px 22px rgba(51, 109, 255, 0.45) !important;
+        }
+        
+        .leaflet-control-geocoder-icon:active {
+            transform: scale(0.95) !important;
+        }
+        
+        /* Іконка пошуку всередині кнопки */
+        .leaflet-control-geocoder-icon::before {
+            content: "🔍" !important;
+            font-size: 20px !important;
+            display: block !important;
         }
 
         /* Список результатів */
@@ -506,7 +524,13 @@
                     map.removeLayer(routePolyline);
                 }
                 
-                // Завантажити маршрут з OSRM (HTTPS)
+                // 🚗 OSRM Routing Engine:
+                // - Використовує алгоритм Contraction Hierarchies (CH)
+                // - За замовчуванням обирає НАЙШВИДШИЙ маршрут (fastest)
+                // - Враховує швидкість доріг, пробки, типи доріг
+                // - Оптимальний для таксі: швидкість > відстань
+                // 
+                // Альтернатива: додати параметр alternatives=true для показу кількох маршрутів
                 const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
                 const response = await fetch(url, { timeout: 10000 });
                 
@@ -903,7 +927,8 @@
             expand: 'click',
             suggestMinLength: 3,
             suggestTimeout: 300,
-            queryMinLength: 3
+            queryMinLength: 3,
+            showResultIcons: true  // Показувати іконки результатів
         })
         .on('startgeocode', function(e) {
             debugLog(`🔍 ПОШУК: "${e.input}"`, 'search');
@@ -934,6 +959,12 @@
             debugLog(`✅ ВИБРАНО: ${e.geocode.name}`, 'success');
             debugLog(`📍 Координати: ${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`, 'info');
             
+            // ✅ ЗГОРНУТИ КЛАВІАТУРУ після вибору адреси
+            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            if (searchInput) {
+                searchInput.blur();  // Згорнути клавіатуру
+            }
+            
             if (currentState === 'pickup') {
                 // Видалити старий маркер pickup
                 if (pickupMarker) {
@@ -954,7 +985,6 @@
                 tg.MainButton.show();
                 
                 // ✅ ОЧИСТИТИ поле пошуку після вибору pickup
-                const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
                 if (searchInput) {
                     searchInput.value = '';
                     searchInput.placeholder = '🎯 Куди їдемо? (наприклад: Львів, пл. Ринок)';
@@ -1003,6 +1033,21 @@
                 tg.HapticFeedback.impactOccurred('medium');
             }
         }).addTo(map);
+        
+        // Додати обробник Enter для пошуку та згортання клавіатури
+        setTimeout(() => {
+            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            if (searchInput) {
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        // Згорнути клавіатуру після Enter
+                        setTimeout(() => {
+                            searchInput.blur();
+                        }, 100);
+                    }
+                });
+            }
+        }, 500);
         
         // Обробник кліку по карті
         map.on('click', (e) => {
