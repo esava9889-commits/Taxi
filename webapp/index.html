@@ -999,17 +999,19 @@
         // 🎯 ФУНКЦІЯ ДЛЯ СТВОРЕННЯ VIEWBOX НАВКОЛО МІСТА КЛІЄНТА
         const getSearchParams = () => {
             const baseParams = {
-                countrycodes: 'ua',  // Тільки Україна
+                countrycodes: 'ua',  // СТРОГО тільки Україна (блокує інші країни)
                 addressdetails: 1,
-                limit: 8
+                limit: 10,  // Збільшено для кращої фільтрації
+                'accept-language': 'uk'  // Українська мова в пріоритеті
             };
             
             // Якщо є координати міста клієнта - додаємо viewbox
             if (clientCityCoords) {
                 const { lat, lon, city } = clientCityCoords;
                 
-                // Створити bounding box навколо міста (±0.15 градуси = ~15-17 км)
-                const boxSize = 0.15;
+                // Створити більш вузький bounding box (±0.1 градуси = ~10 км)
+                // Це більш точно відповідає межам міста
+                const boxSize = 0.1;  // Зменшено з 0.15 для більшої точності
                 const minLon = (lon - boxSize).toFixed(4);
                 const minLat = (lat - boxSize).toFixed(4);
                 const maxLon = (lon + boxSize).toFixed(4);
@@ -1017,9 +1019,9 @@
                 
                 // viewbox формат: minlon,minlat,maxlon,maxlat
                 baseParams.viewbox = `${minLon},${minLat},${maxLon},${maxLat}`;
-                baseParams.bounded = 1;  // Пріоритезувати результати з viewbox
+                baseParams.bounded = 1;  // СТРОГО в межах viewbox
                 
-                debugLog(`🎯 Пошук обмежено містом: ${city} (viewbox: ${baseParams.viewbox})`, 'info');
+                debugLog(`🎯 Строгий пошук у місті: ${city} (viewbox: ${baseParams.viewbox}, bounded=1)`, 'info');
             }
             
             return baseParams;
@@ -1030,7 +1032,7 @@
                 return [];
             }
 
-            return items
+            const results = items
                 .map((item) => {
                     if (!item || typeof item !== 'object') {
                         return null;
@@ -1064,6 +1066,40 @@
                     };
                 })
                 .filter(Boolean);
+            
+            // 🎯 ФІЛЬТРАЦІЯ: Пріоритет адресам з міста клієнта
+            if (clientCityName && results.length > 0) {
+                const cityLower = clientCityName.toLowerCase();
+                
+                // Розділити на адреси з міста клієнта і без
+                const fromClientCity = [];
+                const fromOtherPlaces = [];
+                
+                results.forEach(result => {
+                    const displayName = (result.name || '').toLowerCase();
+                    const address = result.properties?.address || {};
+                    
+                    // Перевірити чи адреса з міста клієнта
+                    const isFromClientCity = 
+                        displayName.includes(cityLower) ||
+                        (address.city && address.city.toLowerCase() === cityLower) ||
+                        (address.town && address.town.toLowerCase() === cityLower) ||
+                        (address.municipality && address.municipality.toLowerCase() === cityLower);
+                    
+                    if (isFromClientCity) {
+                        fromClientCity.push(result);
+                    } else {
+                        fromOtherPlaces.push(result);
+                    }
+                });
+                
+                debugLog(`🎯 Фільтрація: ${fromClientCity.length} з міста "${clientCityName}", ${fromOtherPlaces.length} з інших місць`, 'info');
+                
+                // Повернути адреси з міста клієнта в першу чергу
+                return [...fromClientCity, ...fromOtherPlaces];
+            }
+            
+            return results;
         };
 
         const buildProxyUrl = (query, paramsObject) => {
@@ -1114,7 +1150,21 @@
         };
 
         geocoder.geocode = function(query, callback, context) {
-            const normalizedQuery = (query || '').trim().replace(/\s+/g, ' ');
+            let normalizedQuery = (query || '').trim().replace(/\s+/g, ' ');
+            
+            // 🎯 ДОДАТИ НАЗВУ МІСТА ДО ЗАПИТУ, ЯКЩО ЇЇ НЕМАЄ
+            if (clientCityName && normalizedQuery) {
+                // Перевірити чи запит вже містить назву міста
+                const queryLower = normalizedQuery.toLowerCase();
+                const cityLower = clientCityName.toLowerCase();
+                
+                if (!queryLower.includes(cityLower)) {
+                    // Додати місто до запиту
+                    normalizedQuery = `${normalizedQuery}, ${clientCityName}`;
+                    debugLog(`🎯 Додано місто до запиту: "${normalizedQuery}"`, 'info');
+                }
+            }
+            
             // 🎯 ВИКОРИСТАТИ ДИНАМІЧНІ ПАРАМЕТРИ З VIEWBOX МІСТА КЛІЄНТА
             const paramsSnapshot = getSearchParams();
             const serviceUrl = (this.options.serviceUrl || '').replace(/\/$/, '');
