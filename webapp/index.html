@@ -475,12 +475,19 @@
             font-size: 15px !important;
         }
         
-        /* Золотий текст для всіх елементів в підказках */
+        /* ЗОЛОТИЙ ТЕКСТ ДЛЯ ВСІХ ПІДКАЗОК - МАКСИМАЛЬНИЙ ПРІОРИТЕТ */
+        .leaflet-control-geocoder-alternatives a,
+        .leaflet-control-geocoder-alternative,
         .leaflet-control-geocoder-alternative *,
         .leaflet-control-geocoder-alternative a,
         .leaflet-control-geocoder-alternative span,
-        .leaflet-control-geocoder-alternative div {
+        .leaflet-control-geocoder-alternative div,
+        .leaflet-control-geocoder-alternative p,
+        .leaflet-control-geocoder-alternative strong,
+        .leaflet-control-geocoder-alternative em,
+        .leaflet-control-geocoder-alternatives .leaflet-control-geocoder-alternative {
             color: #FFD700 !important;
+            text-decoration: none !important;
         }
 
         .leaflet-control-geocoder-alternative:hover {
@@ -489,10 +496,15 @@
             color: #FFED4E !important;
         }
         
+        /* При hover - світліше золото */
+        .leaflet-control-geocoder-alternative:hover,
         .leaflet-control-geocoder-alternative:hover *,
         .leaflet-control-geocoder-alternative:hover a,
         .leaflet-control-geocoder-alternative:hover span,
-        .leaflet-control-geocoder-alternative:hover div {
+        .leaflet-control-geocoder-alternative:hover div,
+        .leaflet-control-geocoder-alternative:hover p,
+        .leaflet-control-geocoder-alternative:hover strong,
+        .leaflet-control-geocoder-alternative:hover em {
             color: #FFED4E !important;
         }
 
@@ -1179,11 +1191,12 @@
             placeholder: '📍 Звідки їдемо? (наприклад: Київ, Хрещатик 1)',
             errorMessage: '❌ Нічого не знайдено. Спробуйте інший запит',
             collapsed: false,
-            expand: 'click',
-            suggestMinLength: 3,
-            suggestTimeout: 300,
+            expand: 'touch',  // Показувати результати при введенні
+            suggestMinLength: 3,  // Мінімум 3 символи для пошуку
+            suggestTimeout: 250,  // Затримка 250мс
             queryMinLength: 3,
-            showResultIcons: true  // Показувати іконки результатів
+            showResultIcons: true,  // Показувати іконки результатів
+            autoClose: false  // Не закривати автоматично
         })
         .on('startgeocode', function(e) {
             debugLog(`🔍 ПОШУК: "${e.input}"`, 'search');
@@ -1289,10 +1302,34 @@
             }
         }).addTo(map);
         
-        // 🎯 DRAGGABLE SEARCH BOX
+        // 🎯 DRAGGABLE SEARCH BOX + АВТОПОШУК
         setTimeout(() => {
             const geocoderElement = document.querySelector('.leaflet-control-geocoder');
             const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            
+            // 🔍 АВТОПОШУК ПРИ ВВЕДЕННІ ТЕКСТУ
+            if (searchInput) {
+                let searchTimeout;
+                searchInput.addEventListener('input', function(e) {
+                    const query = e.target.value.trim();
+                    
+                    // Якщо введено мінімум 3 символи - запускаємо пошук
+                    if (query.length >= 3) {
+                        // Очистити попередній таймер
+                        clearTimeout(searchTimeout);
+                        
+                        // Запустити пошук через 250мс після останнього введення
+                        searchTimeout = setTimeout(() => {
+                            debugLog(`🔍 Автопошук: "${query}"`, 'info');
+                            
+                            // Запустити geocoding
+                            geocoderControl._geocode();
+                        }, 250);
+                    }
+                });
+                
+                debugLog('✅ Автопошук увімкнено (мін. 3 символи)', 'success');
+            }
             
             if (geocoderElement) {
                 let isDragging = false;
