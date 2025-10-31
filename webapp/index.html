@@ -496,64 +496,6 @@
         .leaflet-control-geocoder-throbber {
             display: none !important;
         }
-        
-        /* 🚕 АНІМОВАНІ МІНІ-ТАКСІ */
-        .mini-taxi {
-            width: 30px;
-            height: 20px;
-            position: absolute;
-            z-index: 400;
-            pointer-events: none;
-            opacity: 0.7;
-            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-            transition: opacity 0.3s ease;
-        }
-        
-        .mini-taxi:hover {
-            opacity: 0.9;
-        }
-        
-        /* SVG таксі */
-        .taxi-icon {
-            width: 100%;
-            height: 100%;
-        }
-        
-        /* Анімації руху таксі */
-        @keyframes driveTaxi1 {
-            0% { transform: translate(0, 0) rotate(0deg); }
-            25% { transform: translate(100px, 30px) rotate(15deg); }
-            50% { transform: translate(200px, 10px) rotate(-10deg); }
-            75% { transform: translate(150px, -20px) rotate(20deg); }
-            100% { transform: translate(0, 0) rotate(0deg); }
-        }
-        
-        @keyframes driveTaxi2 {
-            0% { transform: translate(0, 0) rotate(180deg); }
-            25% { transform: translate(-120px, 40px) rotate(165deg); }
-            50% { transform: translate(-180px, -10px) rotate(190deg); }
-            75% { transform: translate(-80px, 30px) rotate(170deg); }
-            100% { transform: translate(0, 0) rotate(180deg); }
-        }
-        
-        @keyframes driveTaxi3 {
-            0% { transform: translate(0, 0) rotate(90deg); }
-            33% { transform: translate(50px, 100px) rotate(75deg); }
-            66% { transform: translate(-30px, 180px) rotate(105deg); }
-            100% { transform: translate(0, 0) rotate(90deg); }
-        }
-        
-        @keyframes driveTaxi4 {
-            0% { transform: translate(0, 0) rotate(-90deg); }
-            33% { transform: translate(-60px, -120px) rotate(-105deg); }
-            66% { transform: translate(40px, -200px) rotate(-75deg); }
-            100% { transform: translate(0, 0) rotate(-90deg); }
-        }
-        
-        .mini-taxi-1 { animation: driveTaxi1 25s ease-in-out infinite; }
-        .mini-taxi-2 { animation: driveTaxi2 30s ease-in-out infinite; }
-        .mini-taxi-3 { animation: driveTaxi3 35s ease-in-out infinite; }
-        .mini-taxi-4 { animation: driveTaxi4 28s ease-in-out infinite; }
     </style>
 </head>
 <body>
@@ -668,59 +610,79 @@
             position: 'bottomleft'
         }).addTo(map);
         
-        // 🚕 ДОДАТИ АНІМОВАНІ МІНІ-ТАКСІ НА КАРТУ
-        function addMiniTaxis() {
-            const taxiSVG = `
-                <svg viewBox="0 0 30 20" class="taxi-icon">
-                    <!-- Кузов авто -->
-                    <rect x="5" y="8" width="20" height="8" rx="2" fill="#FFD700" stroke="#FFA500" stroke-width="0.5"/>
-                    <!-- Дах -->
-                    <path d="M 8 8 L 10 4 L 20 4 L 22 8 Z" fill="#FFD700" stroke="#FFA500" stroke-width="0.5"/>
-                    <!-- Вікна (темні) -->
-                    <rect x="11" y="5" width="3" height="2.5" rx="0.3" fill="#1a1a1a" opacity="0.8"/>
-                    <rect x="16" y="5" width="3" height="2.5" rx="0.3" fill="#1a1a1a" opacity="0.8"/>
-                    <!-- Фари -->
-                    <circle cx="6" cy="9" r="0.8" fill="#fff" opacity="0.9"/>
-                    <circle cx="24" cy="9" r="0.8" fill="#ff4444" opacity="0.7"/>
-                    <!-- Колеса -->
-                    <circle cx="9" cy="16" r="2" fill="#1a1a1a" stroke="#FFD700" stroke-width="0.5"/>
-                    <circle cx="21" cy="16" r="2" fill="#1a1a1a" stroke="#FFD700" stroke-width="0.5"/>
-                    <!-- Написи Urban на боці -->
-                    <text x="15" y="12" font-size="3" fill="#1a1a1a" text-anchor="middle" font-weight="bold">U</text>
-                </svg>
-            `;
-            
-            // Створити 4 таксі на різних позиціях
-            const taxiPositions = [
-                { top: '30%', left: '20%', class: 'mini-taxi-1' },
-                { top: '50%', right: '25%', class: 'mini-taxi-2' },
-                { bottom: '35%', left: '15%', class: 'mini-taxi-3' },
-                { top: '40%', right: '30%', class: 'mini-taxi-4' }
-            ];
-            
-            taxiPositions.forEach((pos, index) => {
-                const taxiDiv = document.createElement('div');
-                taxiDiv.className = `mini-taxi ${pos.class}`;
-                taxiDiv.innerHTML = taxiSVG;
-                taxiDiv.style.position = 'fixed';
-                if (pos.top) taxiDiv.style.top = pos.top;
-                if (pos.bottom) taxiDiv.style.bottom = pos.bottom;
-                if (pos.left) taxiDiv.style.left = pos.left;
-                if (pos.right) taxiDiv.style.right = pos.right;
+        // 🎯 АВТОМАТИЧНЕ ЦЕНТРУВАННЯ НА МІСТО КЛІЄНТА
+        async function centerMapOnClientCity() {
+            try {
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (!userId) {
+                    debugLog('⚠️ Не вдалось отримати ID користувача', 'error');
+                    return;
+                }
                 
-                // Додати з затримкою для кращого ефекту
-                setTimeout(() => {
-                    document.body.appendChild(taxiDiv);
-                }, index * 500);
-            });
-            
-            debugLog('🚕 Додано 4 анімовані міні-таксі на карту', 'success');
+                debugLog(`🔍 Отримую місто для користувача ${userId}...`, 'info');
+                
+                const response = await fetch('/api/webapp/get-user-city', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success && data.city && data.coordinates) {
+                    const { lat, lon, city } = data.coordinates;
+                    debugLog(`🏙️ Місто користувача: ${city} (${lat}, ${lon})`, 'success');
+                    
+                    // Центрувати карту на місті клієнта
+                    map.setView([lat, lon], 13, {
+                        animate: true,
+                        duration: 1.5
+                    });
+                    
+                    // Показати назву міста на карті
+                    const cityMarker = L.marker([lat, lon], {
+                        icon: L.divIcon({
+                            className: 'city-label',
+                            html: `<div style="
+                                background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(40, 40, 40, 0.95));
+                                color: #FFD700;
+                                padding: 8px 16px;
+                                border-radius: 20px;
+                                font-weight: 600;
+                                font-size: 14px;
+                                border: 2px solid rgba(255, 215, 0, 0.5);
+                                box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3), 0 0 20px rgba(255, 215, 0, 0.2);
+                                text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+                                white-space: nowrap;
+                            ">🏙️ ${city}</div>`,
+                            iconSize: [120, 40],
+                            iconAnchor: [60, 20]
+                        })
+                    }).addTo(map);
+                    
+                    // Видалити мітку через 3 секунди
+                    setTimeout(() => {
+                        map.removeLayer(cityMarker);
+                    }, 3000);
+                    
+                } else {
+                    debugLog('⚠️ Місто не знайдено для користувача', 'warning');
+                }
+                
+            } catch (error) {
+                debugLog(`❌ Помилка при отриманні міста: ${error.message}`, 'error');
+                console.error('Помилка центрування на місто:', error);
+            }
         }
         
-        // Запустити додавання таксі після завантаження карти
+        // Запустити центрування після завантаження карти
         setTimeout(() => {
-            addMiniTaxis();
-        }, 1000);
+            centerMapOnClientCity();
+        }, 500);
         
         // Змінні для зберігання маркерів та маршруту
         let pickupMarker = null;       // Зелений маркер pickup

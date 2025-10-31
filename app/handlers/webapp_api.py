@@ -855,6 +855,114 @@ async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
         }, status=500)
 
 
+async def webapp_get_user_city_handler(request: web.Request) -> web.Response:
+    """
+    API endpoint для отримання міста клієнта та його координат
+    
+    POST /api/webapp/get-user-city
+    Body: {
+        "user_id": 123456
+    }
+    
+    Response: {
+        "success": True,
+        "city": "Київ",
+        "coordinates": {
+            "lat": 50.4501,
+            "lon": 30.5234,
+            "city": "Київ"
+        }
+    }
+    """
+    try:
+        data = await request.json()
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return web.json_response({
+                "success": False,
+                "error": "Missing user_id"
+            }, status=400)
+        
+        logger.info(f"🏙️ Getting city for user {user_id}")
+        
+        # Отримати користувача з БД
+        from app.storage.db import get_user_by_id
+        user = await get_user_by_id(request.app['config'].database_path, user_id)
+        
+        if not user or not user.city:
+            logger.warning(f"⚠️ User {user_id} has no city")
+            return web.json_response({
+                "success": False,
+                "error": "User city not found"
+            }, status=404)
+        
+        # Координати міст України
+        city_coordinates = {
+            "Київ": {"lat": 50.4501, "lon": 30.5234},
+            "Харків": {"lat": 49.9935, "lon": 36.2304},
+            "Одеса": {"lat": 46.4825, "lon": 30.7233},
+            "Дніпро": {"lat": 48.4647, "lon": 35.0462},
+            "Донецьк": {"lat": 48.0159, "lon": 37.8028},
+            "Запоріжжя": {"lat": 47.8388, "lon": 35.1396},
+            "Львів": {"lat": 49.8397, "lon": 24.0297},
+            "Кривий Ріг": {"lat": 47.9088, "lon": 33.3443},
+            "Миколаїв": {"lat": 46.9750, "lon": 31.9946},
+            "Маріуполь": {"lat": 47.0956, "lon": 37.5431},
+            "Луганськ": {"lat": 48.5740, "lon": 39.3078},
+            "Вінниця": {"lat": 49.2328, "lon": 28.4681},
+            "Макіївка": {"lat": 48.0479, "lon": 37.9772},
+            "Сімферополь": {"lat": 44.9521, "lon": 34.1024},
+            "Севастополь": {"lat": 44.6167, "lon": 33.5254},
+            "Херсон": {"lat": 46.6354, "lon": 32.6169},
+            "Полтава": {"lat": 49.5883, "lon": 34.5514},
+            "Чернігів": {"lat": 51.4982, "lon": 31.2893},
+            "Черкаси": {"lat": 49.4444, "lon": 32.0598},
+            "Житомир": {"lat": 50.2547, "lon": 28.6587},
+            "Суми": {"lat": 50.9077, "lon": 34.7981},
+            "Хмельницький": {"lat": 49.4229, "lon": 26.9871},
+            "Чернівці": {"lat": 48.2921, "lon": 25.9358},
+            "Рівне": {"lat": 50.6199, "lon": 26.2516},
+            "Кропивницький": {"lat": 48.5079, "lon": 32.2623},
+            "Івано-Франківськ": {"lat": 48.9226, "lon": 24.7111},
+            "Кам'янське": {"lat": 48.5132, "lon": 34.6031},
+            "Тернопіль": {"lat": 49.5535, "lon": 25.5948},
+            "Луцьк": {"lat": 50.7472, "lon": 25.3254},
+            "Біла Церква": {"lat": 49.8097, "lon": 30.1127},
+            "Краматорськ": {"lat": 48.7233, "lon": 37.5562},
+            "Мелітополь": {"lat": 46.8489, "lon": 35.3675},
+            "Ужгород": {"lat": 48.6208, "lon": 22.2879},
+        }
+        
+        city = user.city
+        coordinates = city_coordinates.get(city)
+        
+        if not coordinates:
+            # Якщо міста немає в списку, повертаємо Київ за замовчуванням
+            logger.warning(f"⚠️ City '{city}' not found in coordinates map, using Kyiv")
+            coordinates = city_coordinates["Київ"]
+            city = "Київ"
+        
+        logger.info(f"✅ City found: {city} ({coordinates['lat']}, {coordinates['lon']})")
+        
+        return web.json_response({
+            "success": True,
+            "city": city,
+            "coordinates": {
+                "lat": coordinates["lat"],
+                "lon": coordinates["lon"],
+                "city": city
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting user city: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
     Налаштувати API endpoints для WebApp
@@ -870,7 +978,9 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     app.router.add_get('/api/webapp/geocode', webapp_geocode_proxy)
     app.router.add_post('/api/webapp/geocode', webapp_geocode_proxy)
     app.router.add_post('/api/webapp/calculate-price', webapp_calculate_price_handler)
+    app.router.add_post('/api/webapp/get-user-city', webapp_get_user_city_handler)
     
     logger.info("🌐 API endpoint registered: POST /api/webapp/order")
     logger.info("🌐 API endpoint registered: GET/POST /api/webapp/geocode")
     logger.info("🌐 API endpoint registered: POST /api/webapp/calculate-price")
+    logger.info("🌐 API endpoint registered: POST /api/webapp/get-user-city")
