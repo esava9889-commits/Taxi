@@ -474,10 +474,25 @@
             transition: background 0.2s ease, transform 0.2s ease, color 0.2s ease !important;
             font-size: 15px !important;
         }
+        
+        /* Золотий текст для всіх елементів в підказках */
+        .leaflet-control-geocoder-alternative *,
+        .leaflet-control-geocoder-alternative a,
+        .leaflet-control-geocoder-alternative span,
+        .leaflet-control-geocoder-alternative div {
+            color: #FFD700 !important;
+        }
 
         .leaflet-control-geocoder-alternative:hover {
             background: rgba(255, 215, 0, 0.15) !important;
             transform: translateY(-1px);
+            color: #FFED4E !important;
+        }
+        
+        .leaflet-control-geocoder-alternative:hover *,
+        .leaflet-control-geocoder-alternative:hover a,
+        .leaflet-control-geocoder-alternative:hover span,
+        .leaflet-control-geocoder-alternative:hover div {
             color: #FFED4E !important;
         }
 
@@ -489,6 +504,13 @@
         .leaflet-control-geocoder-alternative-first {
             background: rgba(255, 215, 0, 0.2) !important;
             font-weight: 600 !important;
+            color: #FFD700 !important;
+        }
+        
+        .leaflet-control-geocoder-alternative-first *,
+        .leaflet-control-geocoder-alternative-first a,
+        .leaflet-control-geocoder-alternative-first span,
+        .leaflet-control-geocoder-alternative-first div {
             color: #FFD700 !important;
         }
         
