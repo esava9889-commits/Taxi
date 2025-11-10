@@ -1077,6 +1077,12 @@
                 routeLine = null;
             }
             
+            // Сховати панель з відстанню і ціною
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                routeInfo.style.display = 'none';
+            }
+            
             // Сховати destination line
             document.getElementById('dest-address-line').style.display = 'none';
             document.getElementById('pickup-address-text').textContent = 'Не обрано';
@@ -1111,6 +1117,12 @@
             if (routeLine) {
                 map.removeLayer(routeLine);
                 routeLine = null;
+            }
+            
+            // Сховати панель з відстанню і ціною
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                routeInfo.style.display = 'none';
             }
             
             // Оновити текст
