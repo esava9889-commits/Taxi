@@ -730,7 +730,9 @@
                 `;
                 
                 if (price !== null) {
-                    html += `<br><strong>💰 Ціна: ${price} грн</strong>`;
+                    // Округлити до цілого числа (як у кнопках при створенні замовлення)
+                    const roundedPrice = Math.round(price);
+                    html += `<br><strong>💰 Ціна: ${roundedPrice} грн</strong>`;
                 }
                 
                 routeInfo.innerHTML = html;

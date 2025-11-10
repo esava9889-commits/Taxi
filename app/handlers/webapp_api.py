@@ -972,9 +972,13 @@ async def webapp_calculate_price_handler(request: web.Request) -> web.Response:
         
         logger.info(f"💰 Price calculated for user {user_id}: base={base_fare:.2f}, economy={economy_fare:.2f}, final={final_price:.2f}, multiplier={total_multiplier:.2f}")
         
+        # Округлення до цілого числа (як у кнопках при створенні замовлення)
+        # Це гарантує що ціна на карті = ціні в кнопках
+        final_price_rounded = round(final_price)  # Округлення до найближчого цілого
+        
         return web.json_response({
             "success": True,
-            "price": round(final_price, 2),
+            "price": final_price_rounded,  # Ціла ціна без копійок
             "base_fare": round(base_fare, 2),
             "economy_fare": round(economy_fare, 2),
             "multiplier": round(total_multiplier, 2),
