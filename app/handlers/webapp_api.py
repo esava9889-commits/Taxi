@@ -463,14 +463,31 @@ async def webapp_order_handler(request: web.Request) -> web.Response:
         
         # Reverse geocoding для обох точок
         from app.utils.maps import reverse_geocode
+        import asyncio
         logger.info("🌍 API: Виконую reverse geocoding...")
         
+        # 🔄 ПОСЛІДОВНО з затримкою (щоб не заблокувати rate limit)
         pickup_address = await reverse_geocode("", pickup_lat, pickup_lon)
         if not pickup_address:
+            logger.warning(f"⚠️ Pickup reverse geocoding не спрацював, retry...")
+            await asyncio.sleep(2.0)  # Чекати 2 сек перед retry
+            pickup_address = await reverse_geocode("", pickup_lat, pickup_lon)
+        
+        if not pickup_address:
+            logger.error(f"❌ Pickup reverse geocoding failed після retry! Використую координати")
             pickup_address = f"📍 Координати: {pickup_lat:.6f}, {pickup_lon:.6f}"
+        
+        # ⏰ ЗАТРИМКА між двома reverse geocode (гарантувати rate limit)
+        await asyncio.sleep(0.5)
         
         dest_address = await reverse_geocode("", dest_lat, dest_lon)
         if not dest_address:
+            logger.warning(f"⚠️ Destination reverse geocoding не спрацював, retry...")
+            await asyncio.sleep(2.0)  # Чекати 2 сек перед retry
+            dest_address = await reverse_geocode("", dest_lat, dest_lon)
+        
+        if not dest_address:
+            logger.error(f"❌ Destination reverse geocoding failed після retry! Використую координати")
             dest_address = f"📍 Координати: {dest_lat:.6f}, {dest_lon:.6f}"
         
         logger.info(f"✅ Pickup: {pickup_address}")
