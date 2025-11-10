@@ -342,11 +342,11 @@
             transform: scale(0.95);
         }
         
-        /* 🎨 Анімація для маршруту - ЗОЛОТИЙ З GLOW */
+        /* 🎨 Анімація для маршруту - БЛАКИТНИЙ З GLOW */
         .route-line {
             stroke-dasharray: 10, 5;
             animation: dash 20s linear infinite;
-            filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8)) drop-shadow(0 0 15px rgba(255, 215, 0, 0.5));
+            filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.8)) drop-shadow(0 0 15px rgba(33, 150, 243, 0.5));
         }
         
         @keyframes dash {
@@ -794,9 +794,9 @@
                     const route = data.routes[0];
                     const coords = route.geometry.coordinates.map(c => [c[1], c[0]]); // [lng, lat] → [lat, lng]
                     
-                    // 🎨 Відобразити маршрут з анімацією малювання - ЗОЛОТИЙ
+                    // 🎨 Відобразити маршрут з анімацією малювання - БЛАКИТНИЙ
                     routePolyline = L.polyline(coords, {
-                        color: '#FFD700',
+                        color: '#2196F3',
                         weight: 6,
                         opacity: 0.9,
                         className: 'route-line',
