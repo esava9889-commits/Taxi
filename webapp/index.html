@@ -99,6 +99,21 @@
             cursor: pointer;
         }
         
+        .location-btn {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+        }
+        
         .loading {
             position: fixed;
             top: 50%;
@@ -119,6 +134,8 @@
     <div class="center-marker" id="center-marker">📍</div>
     
     <div class="autocomplete-results" id="autocomplete-results"></div>
+    
+    <button class="location-btn" id="location-btn">📍</button>
     
     <div class="search-container">
         <input type="text" class="search-input" id="search" placeholder="📍 Звідки їдемо?" autocomplete="off">
@@ -351,6 +368,40 @@
         document.addEventListener('click', (e) => {
             if (!searchInput.contains(e.target) && !autocompleteResults.contains(e.target)) {
                 autocompleteResults.style.display = 'none';
+            }
+        });
+        
+        // Кнопка геолокації
+        document.getElementById('location-btn').addEventListener('click', () => {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        map.setView([lat, lon], 16);
+                        loading.style.display = 'none';
+                        
+                        if (tg.HapticFeedback) {
+                            tg.HapticFeedback.notificationOccurred('success');
+                        }
+                    },
+                    (error) => {
+                        loading.style.display = 'none';
+                        alert('❌ Не вдалося отримати геолокацію');
+                        console.error('Geolocation error:', error);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                loading.style.display = 'none';
+                alert('❌ Геолокація не підтримується');
             }
         });
         
