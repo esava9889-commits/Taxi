@@ -529,6 +529,83 @@
             }
         });
         
+        // Кнопки редагування адрес
+        document.getElementById('edit-pickup-btn').addEventListener('click', () => {
+            // Повернутися до вибору pickup
+            currentState = 'pickup';
+            document.getElementById('center-marker').style.display = 'block';
+            document.getElementById('center-marker').textContent = '📍';
+            document.getElementById('search').placeholder = '📍 Звідки їдемо?';
+            
+            // Видалити маркер pickup
+            if (pickupMarker) {
+                map.removeLayer(pickupMarker);
+                pickupMarker = null;
+            }
+            
+            // Якщо є destination - видалити і його
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+                destinationMarker = null;
+            }
+            
+            // Видалити маршрут
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            }
+            
+            // Сховати destination line
+            document.getElementById('dest-address-line').style.display = 'none';
+            document.getElementById('pickup-address-text').textContent = 'Не обрано';
+            
+            // Центрувати на pickup координатах якщо були
+            if (pickupCoords) {
+                map.setView([pickupCoords.lat, pickupCoords.lng], 15);
+            }
+            
+            pickupCoords = null;
+            destinationCoords = null;
+            
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        });
+        
+        document.getElementById('edit-dest-btn').addEventListener('click', () => {
+            // Повернутися до вибору destination
+            currentState = 'destination';
+            document.getElementById('center-marker').style.display = 'block';
+            document.getElementById('center-marker').textContent = '🏁';
+            document.getElementById('search').placeholder = '🎯 Куди їдемо?';
+            
+            // Видалити маркер destination
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+                destinationMarker = null;
+            }
+            
+            // Видалити маршрут
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            }
+            
+            // Оновити текст
+            document.getElementById('dest-address-text').textContent = 'Не обрано';
+            
+            // Центрувати на destination координатах якщо були
+            if (destinationCoords) {
+                map.setView([destinationCoords.lat, destinationCoords.lng], 15);
+            }
+            
+            destinationCoords = null;
+            
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        });
+        
         // Закриття WebApp
         tg.BackButton.show();
         tg.onEvent('backButtonClicked', () => {
