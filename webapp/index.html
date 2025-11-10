@@ -343,9 +343,160 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* 🎬 SPLASH SCREEN - Заставка при завантаженні */
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            animation: fadeOut 1s ease-out 3s forwards;
+        }
+        
+        /* Великий надпис УРБАН */
+        .splash-title {
+            font-size: 80px;
+            font-weight: 900;
+            color: #FFD700;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            letter-spacing: 20px;
+            text-shadow: 
+                0 0 20px rgba(255, 215, 0, 0.8),
+                0 0 40px rgba(255, 215, 0, 0.6),
+                0 0 60px rgba(255, 215, 0, 0.4);
+            animation: titlePulse 2s ease-in-out infinite, titleSlideIn 1s ease-out;
+            text-align: center;
+            padding: 0 20px;
+        }
+        
+        /* Назва міста під надписом */
+        .splash-city {
+            font-size: 32px;
+            font-weight: 600;
+            color: rgba(255, 215, 0, 0.9);
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+            animation: cityFadeIn 1.5s ease-out 0.5s backwards;
+        }
+        
+        /* Колесо що котиться */
+        .splash-wheel-container {
+            position: absolute;
+            bottom: 100px;
+            width: 100%;
+            height: 80px;
+            overflow: hidden;
+        }
+        
+        .splash-wheel {
+            width: 80px;
+            height: 80px;
+            border: 8px solid #3a3a3a;
+            border-top: 8px solid #FFD700;
+            border-radius: 50%;
+            position: absolute;
+            left: -100px;
+            animation: wheelRoll 3s ease-in-out forwards;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.6);
+        }
+        
+        .splash-wheel::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 30px;
+            height: 30px;
+            background: #FFD700;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+        }
+        
+        /* Анімація ковзання колеса зліва направо з обертанням */
+        @keyframes wheelRoll {
+            0% {
+                left: -100px;
+                transform: rotate(0deg);
+            }
+            100% {
+                left: calc(100% + 100px);
+                transform: rotate(1080deg); /* 3 повних оберти */
+            }
+        }
+        
+        /* Анімація появи заголовка */
+        @keyframes titleSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px) scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        /* Пульсація заголовка */
+        @keyframes titlePulse {
+            0%, 100% {
+                text-shadow: 
+                    0 0 20px rgba(255, 215, 0, 0.8),
+                    0 0 40px rgba(255, 215, 0, 0.6),
+                    0 0 60px rgba(255, 215, 0, 0.4);
+            }
+            50% {
+                text-shadow: 
+                    0 0 30px rgba(255, 215, 0, 1),
+                    0 0 60px rgba(255, 215, 0, 0.8),
+                    0 0 90px rgba(255, 215, 0, 0.6);
+            }
+        }
+        
+        /* Анімація появи назви міста */
+        @keyframes cityFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Анімація зникнення splash screen */
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                visibility: hidden;
+            }
+        }
+        
+        /* Сховати splash після анімації */
+        .splash-screen.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <!-- 🎬 SPLASH SCREEN -->
+    <div class="splash-screen" id="splash-screen">
+        <div class="splash-title">УРБАН</div>
+        <div class="splash-city" id="splash-city">Завантаження...</div>
+        <div class="splash-wheel-container">
+            <div class="splash-wheel"></div>
+        </div>
+    </div>
+    
     <div id="map"></div>
     <div class="center-marker" id="center-marker">📍</div>
     
