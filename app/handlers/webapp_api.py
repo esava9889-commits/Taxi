@@ -664,21 +664,108 @@ async def webapp_geocode_proxy(request: web.Request) -> web.Response:
             return web.json_response({"error": "Missing required parameter 'q'"}, status=400)
 
         query = str(query).strip()
+        
+        # 🎯 SERVER-SIDE ФІЛЬТРАЦІЯ: Отримати місто користувача
+        user_id = params.get("user_id")
+        client_city = None
+        city_coords = None
+        
+        if user_id:
+            try:
+                from app.storage.db import get_user_by_id
+                user = await get_user_by_id(request.app['config'].database_path, int(user_id))
+                if user and user.city:
+                    client_city = user.city
+                    
+                    # Координати міст України (з webapp_get_user_city_handler)
+                    city_coordinates = {
+                        "Київ": {"lat": 50.4501, "lon": 30.5234},
+                        "Харків": {"lat": 49.9935, "lon": 36.2304},
+                        "Одеса": {"lat": 46.4825, "lon": 30.7233},
+                        "Дніпро": {"lat": 48.4647, "lon": 35.0462},
+                        "Донецьк": {"lat": 48.0159, "lon": 37.8028},
+                        "Запоріжжя": {"lat": 47.8388, "lon": 35.1396},
+                        "Львів": {"lat": 49.8397, "lon": 24.0297},
+                        "Кривий Ріг": {"lat": 47.9088, "lon": 33.3443},
+                        "Миколаїв": {"lat": 46.9750, "lon": 31.9946},
+                        "Маріуполь": {"lat": 47.0956, "lon": 37.5431},
+                        "Луганськ": {"lat": 48.5740, "lon": 39.3078},
+                        "Вінниця": {"lat": 49.2328, "lon": 28.4681},
+                        "Макіївка": {"lat": 48.0479, "lon": 37.9772},
+                        "Сімферополь": {"lat": 44.9521, "lon": 34.1024},
+                        "Севастополь": {"lat": 44.6167, "lon": 33.5254},
+                        "Херсон": {"lat": 46.6354, "lon": 32.6169},
+                        "Полтава": {"lat": 49.5883, "lon": 34.5514},
+                        "Чернігів": {"lat": 51.4982, "lon": 31.2893},
+                        "Черкаси": {"lat": 49.4444, "lon": 32.0598},
+                        "Житомир": {"lat": 50.2547, "lon": 28.6587},
+                        "Суми": {"lat": 50.9077, "lon": 34.7981},
+                        "Хмельницький": {"lat": 49.4229, "lon": 26.9871},
+                        "Чернівці": {"lat": 48.2921, "lon": 25.9358},
+                        "Рівне": {"lat": 50.6199, "lon": 26.2516},
+                        "Кропивницький": {"lat": 48.5079, "lon": 32.2623},
+                        "Івано-Франківськ": {"lat": 48.9226, "lon": 24.7111},
+                        "Кам'янське": {"lat": 48.5132, "lon": 34.6031},
+                        "Тернопіль": {"lat": 49.5535, "lon": 25.5948},
+                        "Луцьк": {"lat": 50.7472, "lon": 25.3254},
+                        "Біла Церква": {"lat": 49.8097, "lon": 30.1127},
+                        "Краматорськ": {"lat": 48.7233, "lon": 37.5562},
+                        "Мелітополь": {"lat": 46.8489, "lon": 35.3675},
+                        "Ужгород": {"lat": 48.6208, "lon": 22.2879},
+                    }
+                    city_coords = city_coordinates.get(client_city)
+                    logger.info(f"🏙️ Місто користувача {user_id}: {client_city}")
+            except Exception as e:
+                logger.warning(f"⚠️ Не вдалося отримати місто користувача: {e}")
+        
+        # 🎯 ДОДАТИ МІСТО ДО ЗАПИТУ (якщо його немає)
+        if client_city:
+            query_lower = query.lower()
+            city_lower = client_city.lower()
+            
+            if city_lower not in query_lower:
+                query = f"{query}, {client_city}, Україна"
+                logger.info(f"🎯 Додано місто до запиту: '{query}'")
+            elif "україна" not in query_lower and "ukraine" not in query_lower:
+                query = f"{query}, Україна"
+                logger.info(f"🎯 Додано країну до запиту: '{query}'")
+        
         proxy_params = {
             "q": query,
             "format": "json",
             "addressdetails": params.get("addressdetails", "1"),
-            "limit": params.get("limit", "8"),
+            "limit": params.get("limit", "15"),  # Збільшено для кращої фільтрації
         }
 
-        if params.get("countrycodes"):
-            proxy_params["countrycodes"] = params["countrycodes"]
+        # ЗАВЖДИ обмежувати Україною
+        proxy_params["countrycodes"] = params.get("countrycodes", "ua")
+
+        # 🎯 ДОДАТИ VIEWBOX якщо є координати міста (SERVER-SIDE)
+        if city_coords and not params.get("viewbox"):
+            lat = city_coords["lat"]
+            lon = city_coords["lon"]
+            box_size = 0.15  # ±15 км
+            
+            min_lon = lon - box_size
+            min_lat = lat - box_size
+            max_lon = lon + box_size
+            max_lat = lat + box_size
+            
+            proxy_params["viewbox"] = f"{min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f}"
+            proxy_params["bounded"] = params.get("bounded", "1")
+            logger.info(f"🎯 Додано viewbox для міста {client_city}: {proxy_params['viewbox']}")
+        elif params.get("viewbox"):
+            # Якщо viewbox вже є з фронтенду - використати його
+            proxy_params["viewbox"] = params["viewbox"]
+            if params.get("bounded"):
+                proxy_params["bounded"] = params["bounded"]
 
         # Бажано повертати українською
-        proxy_params["accept-language"] = params.get("accept-language", "uk")
+        proxy_params["accept-language"] = params.get("accept-language", "uk,en")
 
         debug_info = {
             "query": query,
+            "city": client_city,
             "params": proxy_params
         }
         logger.info(f"🛰️ Proxy geocode: {debug_info}")
