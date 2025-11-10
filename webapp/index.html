@@ -406,6 +406,7 @@
         let pickupMarker = null;
         let destinationMarker = null;
         let routeLine = null;
+        let userCity = null;  // Місто клієнта для фільтрації пошуку
         
         // Ініціалізація карти
         const map = L.map('map').setView([50.4501, 30.5234], 13); // За замовчуванням Київ
@@ -429,6 +430,9 @@
                         const data = await response.json();
                         if (data.success && data.coordinates) {
                             map.setView([data.coordinates.lat, data.coordinates.lon], 13);
+                            // Зберегти назву міста для фільтрації пошуку
+                            userCity = data.coordinates.city || data.city;
+                            console.log('🏙️ Місто клієнта:', userCity);
                         }
                     }
                 }
@@ -687,6 +691,59 @@
             document.getElementById('center-marker').classList.remove('dragging');
         });
         
+        // Функція форматування адреси для підказки
+        function formatAddressShort(item) {
+            const address = item.address || {};
+            const parts = [];
+            
+            // Вулиця + номер будинку
+            if (address.road) {
+                let street = address.road;
+                if (address.house_number) {
+                    street += ', ' + address.house_number;
+                }
+                parts.push(street);
+            }
+            
+            // Район/мікрорайон
+            if (address.suburb) {
+                parts.push(address.suburb);
+            } else if (address.neighbourhood) {
+                parts.push(address.neighbourhood);
+            } else if (address.quarter) {
+                parts.push(address.quarter);
+            }
+            
+            // Якщо немає вулиці, додати основну інформацію
+            if (parts.length === 0) {
+                if (address.amenity || address.building || address.shop) {
+                    parts.push(address.amenity || address.building || address.shop);
+                }
+            }
+            
+            return parts.length > 0 ? parts.join(', ') : item.display_name.split(',')[0];
+        }
+        
+        // Функція фільтрації результатів по місту
+        function filterByUserCity(results) {
+            if (!userCity) return results;
+            
+            const cityLower = userCity.toLowerCase();
+            return results.filter(item => {
+                const address = item.address || {};
+                const displayName = (item.display_name || '').toLowerCase();
+                
+                // Перевірити чи адреса з міста клієнта
+                const isFromUserCity = 
+                    displayName.includes(cityLower) ||
+                    (address.city && address.city.toLowerCase() === cityLower) ||
+                    (address.town && address.town.toLowerCase() === cityLower) ||
+                    (address.municipality && address.municipality.toLowerCase() === cityLower);
+                
+                return isFromUserCity;
+            });
+        }
+        
         // Пошук адрес
         const searchInput = document.getElementById('search');
         const autocompleteResults = document.getElementById('autocomplete-results');
@@ -704,11 +761,24 @@
             
             searchTimeout = setTimeout(async () => {
                 try {
-                    const response = await fetch(`/api/webapp/geocode?q=${encodeURIComponent(query)}`);
-                    const data = await response.json();
+                    // Додати user_id для server-side фільтрації
+                    const userId = tg.initDataUnsafe?.user?.id;
+                    let url = `/api/webapp/geocode?q=${encodeURIComponent(query)}`;
+                    if (userId) {
+                        url += `&user_id=${userId}`;
+                    }
+                    
+                    const response = await fetch(url);
+                    let data = await response.json();
+                    
+                    // Фільтрувати результати по місту клієнта (client-side)
+                    if (userCity) {
+                        data = filterByUserCity(data);
+                        console.log(`🔍 Фільтрація: з ${data.length} результатів залишилось для міста ${userCity}`);
+                    }
                     
                     if (data.length === 0) {
-                        autocompleteResults.innerHTML = '<div class="autocomplete-item">🔍 Нічого не знайдено</div>';
+                        autocompleteResults.innerHTML = '<div class="autocomplete-item">🔍 Нічого не знайдено в вашому місті</div>';
                         autocompleteResults.style.display = 'block';
                         return;
                     }
@@ -717,10 +787,14 @@
                     data.slice(0, 5).forEach(item => {
                         const div = document.createElement('div');
                         div.className = 'autocomplete-item';
-                        div.textContent = item.display_name;
+                        
+                        // Коротка адреса: вулиця, номер, район
+                        const shortAddress = formatAddressShort(item);
+                        div.textContent = shortAddress;
+                        
                         div.addEventListener('click', () => {
                             map.setView([item.lat, item.lon], 16);
-                            searchInput.value = item.display_name;
+                            searchInput.value = shortAddress;
                             autocompleteResults.style.display = 'none';
                         });
                         autocompleteResults.appendChild(div);
