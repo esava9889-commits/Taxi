@@ -76,7 +76,8 @@ async def set_admin_payment_card(database_path: str, card_number: str) -> None:
 def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="👥 Модерація водіїв")],
+            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="📈 Моніторинг")],
+            [KeyboardButton(text="👥 Модерація водіїв"), KeyboardButton(text="⚠️ Помилки")],
             [KeyboardButton(text="💰 Тарифи"), KeyboardButton(text="🚗 Водії")],
             [KeyboardButton(text="👤 Клієнти"), KeyboardButton(text="📢 Розсилка")],
             [KeyboardButton(text="⚙️ Налаштування")],
@@ -286,6 +287,105 @@ def create_router(config: AppConfig) -> Router:
             logger.error(traceback.format_exc())
             await message.answer(
                 "❌ Помилка отримання статистики. Переконайтесь що DATABASE_URL налаштовано на Render.",
+                reply_markup=admin_menu_keyboard()
+            )
+
+    @router.message(Command("monitoring"))
+    @router.message(Command("metrics"))
+    @router.message(F.text == "📈 Моніторинг")
+    async def show_monitoring(message: Message) -> None:
+        """Показати метрики з системи моніторингу"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        try:
+            from app.utils.metrics import get_metrics_collector
+            
+            collector = get_metrics_collector()
+            if not collector:
+                await message.answer(
+                    "❌ Система метрик не ініціалізована",
+                    reply_markup=admin_menu_keyboard()
+                )
+                return
+            
+            # Спочатку оновити з БД
+            await collector.update_from_db()
+            
+            # Отримати метрики
+            metrics = collector.get_metrics()
+            
+            # Відправити як HTML
+            await message.answer(
+                metrics.to_human_readable(),
+                parse_mode="HTML",
+                reply_markup=admin_menu_keyboard()
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання метрик: {e}")
+            await message.answer(
+                f"❌ Помилка отримання метрик: {e}",
+                reply_markup=admin_menu_keyboard()
+            )
+    
+    @router.message(Command("errors"))
+    @router.message(F.text == "⚠️ Помилки")
+    async def show_errors(message: Message) -> None:
+        """Показати статистику помилок"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        try:
+            from app.utils.error_handler import get_error_stats
+            
+            stats = get_error_stats()
+            
+            # Форматувати повідомлення
+            text = "⚠️ <b>Статистика помилок</b>\n\n"
+            text += f"<b>Всього помилок:</b> {stats['total_errors']}\n"
+            text += f"<b>Критичних:</b> {stats['critical_errors']}\n\n"
+            
+            # Топ-5 типів помилок
+            if stats['errors_by_type']:
+                text += "<b>Топ-5 типів помилок:</b>\n"
+                sorted_errors = sorted(
+                    stats['errors_by_type'].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:5]
+                
+                for error_type, count in sorted_errors:
+                    text += f"  • {error_type}: {count}\n"
+                text += "\n"
+            
+            # Останні помилки
+            if stats['last_10_errors']:
+                text += "<b>Останні 5 помилок:</b>\n"
+                for error in stats['last_10_errors'][-5:]:
+                    severity_emoji = {
+                        'LOW': '🟢',
+                        'MEDIUM': '🟡',
+                        'HIGH': '🟠',
+                        'CRITICAL': '🔴'
+                    }.get(error['severity'], '⚪️')
+                    
+                    timestamp = error['timestamp'].split('T')[1].split('.')[0] if 'T' in error['timestamp'] else error['timestamp']
+                    text += f"{severity_emoji} <code>{error['type']}</code> [{timestamp}]\n"
+            
+            if stats['total_errors'] == 0:
+                text += "\n✅ <b>Помилок немає - все працює ідеально!</b>"
+            
+            await message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=admin_menu_keyboard()
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання статистики помилок: {e}")
+            await message.answer(
+                f"❌ Помилка: {e}",
                 reply_markup=admin_menu_keyboard()
             )
 
