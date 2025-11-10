@@ -259,13 +259,15 @@ def create_router(config: AppConfig) -> Router:
             pass
         
         from app.handlers.driver import cancel_keyboard
-        await call.message.answer(
+        msg = await call.message.answer(
             "🚗 <b>Реєстрація водія</b>\n\n"
             "Давайте заповнимо вашу анкету!\n\n"
             "📝 <b>Крок 1/8:</b> Введіть ваше ПІБ\n\n"
             "💡 Наприклад: Іванов Іван Іванович",
             reply_markup=cancel_keyboard()
         )
+        # ✅ ВИПРАВЛЕННЯ: Зберегти ID повідомлення щоб його можна було видалити після введення ПІБ
+        await state.update_data(reg_message_id=msg.message_id)
 
     @router.callback_query(F.data == "help:close")
     async def close_help(call: CallbackQuery) -> None:

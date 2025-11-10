@@ -226,11 +226,13 @@ def create_router(config: AppConfig) -> Router:
             return
         
         await state.set_state(DriverRegStates.name)
-        await message.answer(
+        msg = await message.answer(
             "🚗 <b>Реєстрація водія</b>\n\n"
             "📝 Крок 1/7: Введіть ваше ПІБ:",
             reply_markup=cancel_keyboard()
         )
+        # ✅ ВИПРАВЛЕННЯ: Зберегти ID повідомлення щоб його можна було видалити після введення ПІБ
+        await state.update_data(reg_message_id=msg.message_id)
     
     @router.callback_query(F.data == "driver_reg:confirm")
     async def driver_reg_confirm(call: CallbackQuery, state: FSMContext) -> None:
