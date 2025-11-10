@@ -690,8 +690,15 @@ async def webapp_geocode_proxy(request: web.Request) -> web.Response:
             "User-Agent": NOMINATIM_USER_AGENT,
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(NOMINATIM_SEARCH_URL, params=proxy_params, headers=headers, timeout=15) as resp:
+        # ✅ SSL FIX: додати ssl=False для обходу SSL помилок
+        import ssl
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.get(NOMINATIM_SEARCH_URL, params=proxy_params, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                 body_text = await resp.text()
 
                 if resp.status != 200:

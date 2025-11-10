@@ -798,13 +798,14 @@
                 className: 'marker-icon',
                 html: `
                     <div style="
-                        font-size: 42px;
+                        font-size: 48px;
+                        line-height: 48px;
                         filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
                         animation: markerBounce 0.6s ease-out;
                     ">${emoji}</div>
                 `,
-                iconSize: [42, 42],
-                iconAnchor: [21, 42]  // Низ емоджі - це точка на карті
+                iconSize: [48, 48],
+                iconAnchor: [24, 46]  // ✅ ВИПРАВЛЕНО: Точка прив'язки на низу емоджі (центр по X, майже низ по Y)
             });
         };
         
@@ -1055,17 +1056,17 @@
             const baseParams = {
                 countrycodes: 'ua',  // СТРОГО тільки Україна (блокує інші країни)
                 addressdetails: 1,
-                limit: 10,  // Збільшено для кращої фільтрації
-                'accept-language': 'uk'  // Українська мова в пріоритеті
+                limit: 15,  // Збільшено для кращої фільтрації (було 10)
+                'accept-language': 'uk,en'  // Українська та англійська мови
             };
             
             // Якщо є координати міста клієнта - додаємо viewbox
             if (clientCityCoords) {
                 const { lat, lon, city } = clientCityCoords;
                 
-                // Створити більш вузький bounding box (±0.1 градуси = ~10 км)
-                // Це більш точно відповідає межам міста
-                const boxSize = 0.1;  // Зменшено з 0.15 для більшої точності
+                // Створити bounding box (±0.15 градуси = ~15-20 км)
+                // Трохи збільшено для покращення пошуку околиць
+                const boxSize = 0.15;  // Збільшено з 0.1 для околиць міста
                 const minLon = (lon - boxSize).toFixed(4);
                 const minLat = (lat - boxSize).toFixed(4);
                 const maxLon = (lon + boxSize).toFixed(4);
@@ -1206,7 +1207,7 @@
         geocoder.geocode = function(query, callback, context) {
             let normalizedQuery = (query || '').trim().replace(/\s+/g, ' ');
             
-            // 🎯 ДОДАТИ НАЗВУ МІСТА ДО ЗАПИТУ, ЯКЩО ЇЇ НЕМАЄ
+            // 🎯 ЗАВЖДИ ДОДАВАТИ НАЗВУ МІСТА ДО ЗАПИТУ (для кращої фільтрації)
             if (clientCityName && normalizedQuery) {
                 // Перевірити чи запит вже містить назву міста
                 const queryLower = normalizedQuery.toLowerCase();
@@ -1214,8 +1215,14 @@
                 
                 if (!queryLower.includes(cityLower)) {
                     // Додати місто до запиту
-                    normalizedQuery = `${normalizedQuery}, ${clientCityName}`;
-                    debugLog(`🎯 Додано місто до запиту: "${normalizedQuery}"`, 'info');
+                    normalizedQuery = `${normalizedQuery}, ${clientCityName}, Україна`;
+                    debugLog(`🎯 Додано місто та країну до запиту: "${normalizedQuery}"`, 'info');
+                } else {
+                    // Якщо місто вже є, просто додати країну
+                    if (!queryLower.includes('україна') && !queryLower.includes('ukraine')) {
+                        normalizedQuery = `${normalizedQuery}, Україна`;
+                        debugLog(`🎯 Додано країну до запиту: "${normalizedQuery}"`, 'info');
+                    }
                 }
             }
             
@@ -1282,9 +1289,15 @@
                         }
 
                         if (stage === 'primary' && results.length === 0 && paramsSnapshot.countrycodes) {
-                            debugLog('⚠️ Основний пошук (з countrycodes) нічого не знайшов. Пробую без обмеження країни...', 'warning');
+                            debugLog('⚠️ Основний пошук (з countrycodes та viewbox) нічого не знайшов.', 'warning');
+                            
+                            // ✅ ВИПРАВЛЕНО: НЕ видаляти viewbox на fallback, тільки countrycodes
                             const fallbackParams = { ...paramsSnapshot };
-                            delete fallbackParams.countrycodes;
+                            delete fallbackParams.countrycodes;  // Прибрати обмеження країни
+                            delete fallbackParams.bounded;  // Прибрати строге обмеження viewbox
+                            // viewbox залишається для пріоритезації
+                            
+                            debugLog(`🔁 Fallback пошук з розширеними параметрами (без countrycodes, viewbox=${fallbackParams.viewbox})`, 'info');
                             runWithParams(fallbackParams, 'fallback');
                             return;
                         }
