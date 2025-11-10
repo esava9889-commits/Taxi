@@ -614,6 +614,9 @@
                 currentState = 'destination';
                 document.getElementById('center-marker').textContent = '🏁';
                 document.getElementById('search').placeholder = '🎯 Куди їдемо?';
+                document.getElementById('search').value = '';  // Очистити поле вводу
+                autocompleteResults.style.display = 'none';  // Сховати підказки
+                autocompleteResults.innerHTML = '';  // Очистити підказки
                 
             } else if (currentState === 'destination') {
                 // Зберігаємо destination
@@ -640,6 +643,9 @@
                 currentState = 'confirm';
                 document.getElementById('center-marker').style.display = 'none';
                 document.getElementById('search').placeholder = '✅ Підтвердити замовлення';
+                document.getElementById('search').value = '';  // Очистити поле вводу
+                autocompleteResults.style.display = 'none';  // Сховати підказки
+                autocompleteResults.innerHTML = '';  // Очистити підказки
                 
             } else if (currentState === 'confirm') {
                 // Відправляємо дані
@@ -811,6 +817,7 @@
         document.addEventListener('click', (e) => {
             if (!searchInput.contains(e.target) && !autocompleteResults.contains(e.target)) {
                 autocompleteResults.style.display = 'none';
+                autocompleteResults.innerHTML = '';  // Також очистити вміст
             }
         });
         
