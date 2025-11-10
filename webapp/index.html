@@ -1573,6 +1573,29 @@
         }).addTo(map);
         */
         
+        // 🔍 PROXY ENDPOINT для geocoding (винесено з закоментованого блоку)
+        const PROXY_ENDPOINT_PATH = '/api/webapp/geocode';
+        
+        // 🔍 Функція для побудови URL до proxy (винесено з закоментованого блоку)
+        const buildProxyUrl = (query, paramsObject) => {
+            const url = new URL(PROXY_ENDPOINT_PATH, window.location.origin);
+            url.searchParams.set('q', query);
+            
+            // 🎯 ДОДАТИ USER_ID для server-side фільтрації
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (userId) {
+                url.searchParams.set('user_id', userId);
+                debugLog(`🎯 Додано user_id=${userId} для фільтрації`, 'info');
+            }
+            
+            Object.entries(paramsObject || {}).forEach(([key, value]) => {
+                if (value !== undefined && value !== null && `${value}`.trim() !== '') {
+                    url.searchParams.append(key, value);
+                }
+            });
+            return url;
+        };
+        
         // ❌ DRAGGABLE SEARCH BOX закоментовано (для старого geocoder)
         /* // 🎯 DRAGGABLE SEARCH BOX
         setTimeout(() => {
