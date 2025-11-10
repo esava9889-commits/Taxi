@@ -361,20 +361,24 @@
             animation: fadeOut 1s ease-out 3s forwards;
         }
         
-        /* Великий надпис URBAN */
+        /* Великий надпис Urban */
         .splash-title {
             font-size: 80px;
-            font-weight: 900;
+            font-weight: 700;
             color: #FFD700;
-            font-family: 'Segoe UI', Roboto, sans-serif;
-            letter-spacing: 20px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 8px;
             text-shadow: 
                 0 0 20px rgba(255, 215, 0, 0.8),
                 0 0 40px rgba(255, 215, 0, 0.6),
                 0 0 60px rgba(255, 215, 0, 0.4);
-            animation: titlePulse 2s ease-in-out infinite, titleSlideIn 1s ease-out;
             text-align: center;
             padding: 0 20px;
+            overflow: hidden;
+            border-right: 4px solid #FFD700;
+            white-space: nowrap;
+            width: 0;
+            animation: typeUrban 1.5s steps(5) 0.5s forwards, blinkCursor 0.75s step-end infinite, removeCursor 0.1s 2s forwards;
         }
         
         /* Назва міста під надписом */
@@ -382,9 +386,13 @@
             font-size: 32px;
             font-weight: 600;
             color: rgba(255, 215, 0, 0.9);
-            font-family: 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Courier New', monospace;
             text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
-            animation: cityFadeIn 1.5s ease-out 0.5s backwards;
+            overflow: hidden;
+            border-right: 3px solid rgba(255, 215, 0, 0.9);
+            white-space: nowrap;
+            width: 0;
+            animation: typeCity 1s steps(20) 2.2s forwards, blinkCursorCity 0.75s step-end 2.2s infinite, removeCursorCity 0.1s 3.2s forwards;
         }
         
         /* Колесо що котиться */
@@ -433,31 +441,56 @@
             }
         }
         
-        /* Анімація появи заголовка */
-        @keyframes titleSlideIn {
+        /* Анімація typing для Urban */
+        @keyframes typeUrban {
             from {
-                opacity: 0;
-                transform: translateY(-50px) scale(0.8);
+                width: 0;
             }
             to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
+                width: 320px;  /* Приблизна ширина "Urban" */
             }
         }
         
-        /* Пульсація заголовка */
-        @keyframes titlePulse {
-            0%, 100% {
-                text-shadow: 
-                    0 0 20px rgba(255, 215, 0, 0.8),
-                    0 0 40px rgba(255, 215, 0, 0.6),
-                    0 0 60px rgba(255, 215, 0, 0.4);
+        /* Анімація typing для назви міста */
+        @keyframes typeCity {
+            from {
+                width: 0;
+            }
+            to {
+                width: 100%;
+                max-width: 500px;
+            }
+        }
+        
+        /* Мигаючий курсор */
+        @keyframes blinkCursor {
+            from, to {
+                border-color: transparent;
             }
             50% {
-                text-shadow: 
-                    0 0 30px rgba(255, 215, 0, 1),
-                    0 0 60px rgba(255, 215, 0, 0.8),
-                    0 0 90px rgba(255, 215, 0, 0.6);
+                border-color: #FFD700;
+            }
+        }
+        
+        @keyframes blinkCursorCity {
+            from, to {
+                border-color: transparent;
+            }
+            50% {
+                border-color: rgba(255, 215, 0, 0.9);
+            }
+        }
+        
+        /* Прибрати курсор після завершення */
+        @keyframes removeCursor {
+            to {
+                border-right: none;
+            }
+        }
+        
+        @keyframes removeCursorCity {
+            to {
+                border-right: none;
             }
         }
         
@@ -485,13 +518,27 @@
         .splash-screen.hidden {
             display: none;
         }
+        
+        /* Анімація поступового прокладання маршруту */
+        @keyframes drawRoute {
+            from {
+                stroke-dashoffset: var(--route-length);
+            }
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        
+        .animated-route {
+            filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.6));
+        }
     </style>
 </head>
 <body>
     <!-- 🎬 SPLASH SCREEN -->
     <div class="splash-screen" id="splash-screen">
-        <div class="splash-title">URBAN</div>
-        <div class="splash-city" id="splash-city">Завантаження...</div>
+        <div class="splash-title">Urban</div>
+        <div class="splash-city" id="splash-city"></div>
         <div class="splash-wheel-container">
             <div class="splash-wheel"></div>
         </div>
@@ -584,11 +631,15 @@
                             // Зберегти назву міста для фільтрації пошуку
                             userCity = data.coordinates.city || data.city;
                             console.log('🏙️ Місто клієнта:', userCity);
+                            
+                            // Встановити назву міста в splash screen
+                            document.getElementById('splash-city').textContent = userCity || 'Україна';
                         }
                     }
                 }
             } catch (e) {
                 // Помилка - залишаємо Київ
+                document.getElementById('splash-city').textContent = 'Київ';
             }
         })();
         
@@ -626,8 +677,20 @@
                     routeLine = L.polyline(coords, {
                         color: '#2196F3',
                         weight: 6,
-                        opacity: 0.9
+                        opacity: 0.9,
+                        className: 'animated-route'
                     }).addTo(map);
+                    
+                    // Анімація поступового прокладання маршруту
+                    setTimeout(() => {
+                        const pathElement = routeLine.getElement();
+                        if (pathElement) {
+                            const length = pathElement.getTotalLength();
+                            pathElement.style.strokeDasharray = length;
+                            pathElement.style.strokeDashoffset = length;
+                            pathElement.style.animation = `drawRoute 2s ease-in-out forwards`;
+                        }
+                    }, 100);
                     
                     map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
                     
