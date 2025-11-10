@@ -2,8 +2,8 @@
 # Документація: https://render.com/docs/blueprint-spec
 
 services:
-  # Telegram Taxi Bot Worker Service
-  - type: worker
+  # Telegram Taxi Bot Web Service (з HTTP API та WebApp)
+  - type: web
     name: telegram-taxi-bot
     env: python
     # План: free, starter ($7/mo), standard, pro
@@ -25,6 +25,10 @@ services:
     
     # Змінні середовища
     envVars:
+      # Порт для HTTP сервера (автоматично встановлюється Render)
+      - key: PORT
+        value: "10000"
+      
       # ОБОВ'ЯЗКОВО: Токен бота від @BotFather
       - key: BOT_TOKEN
         sync: false  # Вводиться вручну в Render Dashboard
@@ -55,8 +59,5 @@ services:
       - key: TZ
         value: "Europe/Kiev"
     
-    # Persistent disk для збереження бази даних
-    disk:
-      name: taxi-bot-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1  # 1 GB безкоштовно
+    # ВАЖЛИВО: Web service використовує PostgreSQL (DATABASE_URL)
+    # Persistent disk не підтримується для web service
