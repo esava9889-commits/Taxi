@@ -306,9 +306,26 @@
         }
         
         // Оновлення панелі адрес
+        let lastNominatimCall = 0;
         async function updateAddressPanel(type, lat, lng) {
             try {
-                const response = await fetch(`/api/webapp/geocode?lat=${lat}&lon=${lng}&reverse=true`);
+                // Rate limiting для Nominatim (1 запит в секунду)
+                const now = Date.now();
+                const timeSinceLastCall = now - lastNominatimCall;
+                if (timeSinceLastCall < 1000) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastCall));
+                }
+                lastNominatimCall = Date.now();
+                
+                // Використовуємо Nominatim для reverse geocoding
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+                    {
+                        headers: {
+                            'User-Agent': 'TaxiBot WebApp/1.0'
+                        }
+                    }
+                );
                 const data = await response.json();
                 
                 let address = 'Завантаження...';
@@ -327,6 +344,13 @@
                 }
             } catch (e) {
                 console.error('Помилка отримання адреси:', e);
+                // Fallback на координати
+                const fallbackAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                if (type === 'pickup') {
+                    document.getElementById('pickup-address-text').textContent = fallbackAddress;
+                } else {
+                    document.getElementById('dest-address-text').textContent = fallbackAddress;
+                }
             }
         }
         
