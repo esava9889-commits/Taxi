@@ -186,7 +186,7 @@
             position: fixed;
             bottom: 20px;
             left: 20px;
-            right: 80px;
+            right: 20px;
             z-index: 1000;
             display: flex;
             gap: 10px;
@@ -242,9 +242,6 @@
         }
         
         .locate-button {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
             width: 50px;
             height: 50px;
             background: linear-gradient(135deg, #FFD700, #FFA500);
@@ -252,7 +249,6 @@
             border-radius: 50%;
             box-shadow: 0 4px 20px rgba(255, 215, 0, 0.5), 0 0 25px rgba(255, 215, 0, 0.3);
             cursor: pointer;
-            z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -268,6 +264,17 @@
         
         .locate-button:active {
             transform: scale(0.95);
+        }
+        
+        /* КОНТЕЙНЕР ДЛЯ КНОПОК СПРАВА */
+        .top-buttons-container {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
         /* 🚗 КАСТОМНИЙ LOADER "URBAN" - ТЕМНИЙ З ЖОВТИМ */
@@ -373,9 +380,6 @@
         
         /* Кнопка скидання */
         .reset-button {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
             width: 50px;
             height: 50px;
             background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(45, 45, 45, 0.95));
@@ -383,7 +387,6 @@
             border-radius: 50%;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 215, 0, 0.3);
             cursor: pointer;
-            z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -481,6 +484,27 @@
         .selected-addresses .address-value {
             color: rgba(255, 215, 0, 0.9);
             flex: 1;
+        }
+        
+        /* Кнопка редагування адреси ⚙️ */
+        .edit-address-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0 5px;
+            opacity: 0.7;
+            transition: all 0.2s ease;
+            margin-left: 5px;
+        }
+        
+        .edit-address-btn:hover {
+            opacity: 1;
+            transform: scale(1.2);
+        }
+        
+        .edit-address-btn:active {
+            transform: scale(0.9);
         }
         
         /* 🔍 СТИЛІ ДЛЯ ПОШУКУ ЗВЕРХУ - СХОВАТИ */
@@ -648,10 +672,12 @@
         <div class="address-line" id="pickup-address-line" style="display: none;">
             <span class="address-label">📍 Посадка:</span>
             <span class="address-value" id="pickup-address-text"></span>
+            <button class="edit-address-btn" id="edit-pickup-btn" title="Змінити адресу посадки">⚙️</button>
         </div>
         <div class="address-line" id="dest-address-line" style="display: none;">
             <span class="address-label">🏁 Призначення:</span>
             <span class="address-value" id="dest-address-text"></span>
+            <button class="edit-address-btn" id="edit-dest-btn" title="Змінити адресу призначення">⚙️</button>
         </div>
     </div>
     
@@ -671,15 +697,15 @@
         <button class="confirm-button" id="confirm-btn" title="Підтвердити">✅</button>
     </div>
     
-    <!-- Кнопка скидання -->
-    <button class="reset-button" id="reset-btn" title="Почати спочатку">
-        🔄
-    </button>
-    
-    <!-- Кнопка геолокації -->
-    <button class="locate-button" id="locate-btn" title="Моя геолокація">
-        📍
-    </button>
+    <!-- Кнопки справа: геолокація і скидання -->
+    <div class="top-buttons-container">
+        <button class="locate-button" id="locate-btn" title="Моя геолокація">
+            📍
+        </button>
+        <button class="reset-button" id="reset-btn" title="Почати спочатку">
+            🔄
+        </button>
+    </div>
     
     <!-- 🚗 Кастомний loader "Urban" -->
     <div class="loading" id="loading">
@@ -1956,7 +1982,97 @@
                     tg.HapticFeedback.impactOccurred('medium');
                 }
             }
+        }
+        
+        // 🛠️ ОБРОБНИКИ КНОПОК РЕДАГУВАННЯ АДРЕС ⚙️
+        document.getElementById('edit-pickup-btn').addEventListener('click', () => {
+            if (currentState === 'destination' || currentState === 'confirm') {
+                // Видалити pickup маркер
+                if (pickupMarker) {
+                    map.removeLayer(pickupMarker);
+                    pickupMarker = null;
+                }
+                
+                pickupCoords = null;
+                savedPickupAddress = null;
+                currentState = 'pickup';
+                
+                centerMarker.style.display = 'block';
+                updateCenterMarker();
+                updateSearchPlaceholder('pickup');
+                updateAddressPanel();
+                
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                    routeLine = null;
+                }
+                
+                if (destinationMarker) {
+                    map.removeLayer(destinationMarker);
+                    destinationMarker = null;
+                }
+                destinationCoords = null;
+                savedDestAddress = null;
+                
+                const routeInfo = document.getElementById('route-info');
+                if (routeInfo) {
+                    routeInfo.style.display = 'none';
+                }
+                
+                const searchInput = document.getElementById('bottom-search');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.focus();
+                }
+                
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('warning');
+                }
+                
+                debugLog('⚙️ Редагування адреси посадки', 'info');
+            }
         });
+        
+        document.getElementById('edit-dest-btn').addEventListener('click', () => {
+            if (currentState === 'confirm') {
+                if (destinationMarker) {
+                    map.removeLayer(destinationMarker);
+                    destinationMarker = null;
+                }
+                
+                destinationCoords = null;
+                savedDestAddress = null;
+                currentState = 'destination';
+                
+                centerMarker.style.display = 'block';
+                updateCenterMarker();
+                updateSearchPlaceholder('destination');
+                updateAddressPanel();
+                
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                    routeLine = null;
+                }
+                
+                const routeInfo = document.getElementById('route-info');
+                if (routeInfo) {
+                    routeInfo.style.display = 'none';
+                }
+                
+                const searchInput = document.getElementById('bottom-search');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.disabled = false;
+                    searchInput.focus();
+                }
+                
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('warning');
+                }
+                
+                debugLog('⚙️ Редагування адреси призначення', 'info');
+            }
+        }););
         
         // Обробка закриття WebApp
         tg.onEvent('backButtonClicked', () => {
