@@ -114,6 +114,62 @@
             box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
         }
         
+        /* Панель обраних адрес */
+        .selected-addresses {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(26, 26, 26, 0.95);
+            border: 2px solid #FFD700;
+            border-radius: 16px;
+            padding: 12px;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .address-line {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 8px;
+        }
+        
+        .address-line:last-child {
+            margin-bottom: 0;
+        }
+        
+        .address-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #FFD700;
+            white-space: nowrap;
+        }
+        
+        .address-value {
+            flex: 1;
+            font-size: 13px;
+            color: #FFF;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .edit-address-btn {
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 215, 0, 0.2);
+            border: 1px solid #FFD700;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .edit-address-btn:hover {
+            background: rgba(255, 215, 0, 0.3);
+        }
+        
         .loading {
             position: fixed;
             top: 50%;
@@ -132,6 +188,19 @@
 <body>
     <div id="map"></div>
     <div class="center-marker" id="center-marker">📍</div>
+    
+    <div class="selected-addresses" id="selected-addresses">
+        <div class="address-line" id="pickup-address-line">
+            <span class="address-label">📍</span>
+            <span class="address-value" id="pickup-address-text">Не обрано</span>
+            <button class="edit-address-btn" id="edit-pickup-btn">⚙️</button>
+        </div>
+        <div class="address-line" id="dest-address-line" style="display: none;">
+            <span class="address-label">🏁</span>
+            <span class="address-value" id="dest-address-text">Не обрано</span>
+            <button class="edit-address-btn" id="edit-dest-btn">⚙️</button>
+        </div>
+    </div>
     
     <div class="autocomplete-results" id="autocomplete-results"></div>
     
@@ -236,6 +305,31 @@
             }
         }
         
+        // Оновлення панелі адрес
+        async function updateAddressPanel(type, lat, lng) {
+            try {
+                const response = await fetch(`/api/webapp/geocode?lat=${lat}&lon=${lng}&reverse=true`);
+                const data = await response.json();
+                
+                let address = 'Завантаження...';
+                if (data && data.display_name) {
+                    // Коротка адреса: вулиця + будинок
+                    const parts = data.display_name.split(',');
+                    address = parts.slice(0, 2).join(',').trim();
+                }
+                
+                if (type === 'pickup') {
+                    document.getElementById('pickup-address-text').textContent = address;
+                    document.getElementById('selected-addresses').style.display = 'block';
+                } else if (type === 'destination') {
+                    document.getElementById('dest-address-text').textContent = address;
+                    document.getElementById('dest-address-line').style.display = 'flex';
+                }
+            } catch (e) {
+                console.error('Помилка отримання адреси:', e);
+            }
+        }
+        
         // Кнопка підтвердження
         document.getElementById('confirm').addEventListener('click', async () => {
             const center = map.getCenter();
@@ -251,6 +345,9 @@
                 pickupMarker = L.marker([center.lat, center.lng], {
                     icon: createMarker(true)
                 }).addTo(map);
+                
+                // Оновити панель
+                updateAddressPanel('pickup', center.lat, center.lng);
                 
                 // Переходимо до destination
                 currentState = 'destination';
@@ -268,6 +365,9 @@
                 destinationMarker = L.marker([center.lat, center.lng], {
                     icon: createMarker(false)
                 }).addTo(map);
+                
+                // Оновити панель
+                updateAddressPanel('destination', center.lat, center.lng);
                 
                 // Будуємо маршрут
                 await buildRoute(
