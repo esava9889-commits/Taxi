@@ -88,15 +88,15 @@ def admin_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def statistics_menu_keyboard() -> InlineKeyboardMarkup:
-    """Підменю статистики з кнопками"""
+    """Кнопки під статистикою"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📈 Моніторинг", callback_data="stats:monitoring"),
+                InlineKeyboardButton(text="🔄 Оновити", callback_data="stats:refresh"),
                 InlineKeyboardButton(text="⚠️ Помилки", callback_data="stats:errors"),
             ],
             [
-                InlineKeyboardButton(text="🔙 Назад", callback_data="stats:back"),
+                InlineKeyboardButton(text="🗑 Згорнути", callback_data="stats:collapse"),
             ],
         ]
     )
@@ -239,112 +239,211 @@ def create_router(config: AppConfig) -> Router:
 
     @router.message(F.text == "📊 Статистика")
     async def show_statistics(message: Message) -> None:
-        """Головне меню статистики з кнопками"""
+        """Об'єднана статистика + моніторинг"""
         if not message.from_user or not is_admin(message.from_user.id):
             return
         
         from app.storage.db_connection import db_manager
+        from app.utils.metrics import get_metrics_collector
         
         try:
+            # Отримати метрики з системи моніторингу
+            collector = get_metrics_collector()
+            if collector:
+                await collector.update_from_db()
+                metrics = collector.get_metrics()
+            else:
+                metrics = None
+            
+            # Отримати детальну статистику з БД
             async with db_manager.connect(config.database_path) as db:
-                # Total orders
+                # Orders
                 async with db.execute("SELECT COUNT(*) FROM orders") as cur:
                     total_orders = (await cur.fetchone())[0]
                 
-                # Completed orders
                 async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'") as cur:
                     completed_orders = (await cur.fetchone())[0]
                 
-                # Active drivers
-                async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'approved'") as cur:
-                    active_drivers = (await cur.fetchone())[0]
+                async with db.execute("SELECT COUNT(*) FROM orders WHERE status IN ('pending', 'offered', 'accepted', 'in_progress')") as cur:
+                    active_orders = (await cur.fetchone())[0]
                 
-                # Pending driver applications
+                async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'cancelled'") as cur:
+                    cancelled_orders = (await cur.fetchone())[0]
+                
+                # Drivers
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'approved'") as cur:
+                    total_drivers = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE online = ? AND status = 'approved'", (True,)) as cur:
+                    online_drivers = (await cur.fetchone())[0]
+                
                 async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'pending'") as cur:
                     pending_drivers = (await cur.fetchone())[0]
                 
-                # Total revenue
+                # Finance
                 async with db.execute("SELECT SUM(fare_amount) FROM orders WHERE status = 'completed'") as cur:
                     row = await cur.fetchone()
                     total_revenue = row[0] if row[0] else 0.0
                 
-                # Total commission
                 async with db.execute("SELECT SUM(commission) FROM orders WHERE status = 'completed'") as cur:
                     row = await cur.fetchone()
                     total_commission = row[0] if row[0] else 0.0
                 
-                # Unpaid commissions
                 async with db.execute("SELECT SUM(commission) FROM payments WHERE commission_paid = 0") as cur:
                     row = await cur.fetchone()
                     unpaid_commission = row[0] if row[0] else 0.0
                 
-                # Total users
+                # Users
                 async with db.execute("SELECT COUNT(*) FROM users") as cur:
                     total_users = (await cur.fetchone())[0]
-                
-                text = (
-                    "📊 <b>Статистика системи</b>\n\n"
-                    f"📦 Всього замовлень: {total_orders}\n"
-                    f"✅ Виконано: {completed_orders}\n"
-                    f"🚗 Активних водіїв: {active_drivers}\n"
-                    f"⏳ Водіїв на модерації: {pending_drivers}\n\n"
-                    f"💵 Загальний дохід: {total_revenue:.2f} грн\n"
-                    f"💰 Загальна комісія: {total_commission:.2f} грн\n"
-                    f"⚠️ Несплачена комісія: {unpaid_commission:.2f} грн\n"
-                    f"👥 Всього користувачів: {total_users}\n\n"
-                    f"<i>Оберіть що переглянути:</i>"
-                )
-                
-                # Відправити з inline кнопками
-                await message.answer(
-                    text,
-                    reply_markup=statistics_menu_keyboard()
-                )
+            
+            # Форматувати повідомлення
+            text = "📊 <b>Статистика системи</b>\n\n"
+            
+            # Uptime (з метрик)
+            if metrics:
+                text += f"⏱ <b>Час роботи:</b> {metrics.get_uptime()}\n\n"
+            
+            # Користувачі та водії
+            text += "👥 <b>Користувачі:</b>\n"
+            text += f"  • Всього: {total_users}\n"
+            text += f"  • Водіїв: {total_drivers}\n"
+            text += f"  • Онлайн водіїв: {online_drivers} 🟢\n"
+            text += f"  • На модерації: {pending_drivers}\n\n"
+            
+            # Замовлення
+            text += "🚖 <b>Замовлення:</b>\n"
+            text += f"  • Всього: {total_orders}\n"
+            text += f"  • Активних: {active_orders} 🔵\n"
+            text += f"  • Завершено: {completed_orders} ✅\n"
+            text += f"  • Скасовано: {cancelled_orders}\n\n"
+            
+            # Фінанси
+            text += "💰 <b>Фінанси:</b>\n"
+            text += f"  • Дохід: {total_revenue:.2f} грн\n"
+            text += f"  • Комісія: {total_commission:.2f} грн\n"
+            text += f"  • Несплачено: {unpaid_commission:.2f} грн"
+            
+            # Продуктивність (з метрик)
+            if metrics and metrics.total_requests > 0:
+                text += f"\n\n⚡ <b>Продуктивність:</b>\n"
+                text += f"  • Час відповіді: {metrics.avg_response_time:.2f}с\n"
+                text += f"  • Запитів/хв: {metrics.requests_per_minute:.1f}\n"
+                text += f"  • Помилок/год: {metrics.errors_per_hour:.1f}"
+            
+            # Відправити з кнопками
+            await message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=statistics_menu_keyboard()
+            )
         
         except Exception as e:
             logger.error(f"❌ Помилка отримання статистики: {e}")
             import traceback
             logger.error(traceback.format_exc())
             await message.answer(
-                "❌ Помилка отримання статистики. Переконайтесь що DATABASE_URL налаштовано на Render.",
+                "❌ Помилка отримання статистики.",
                 reply_markup=admin_menu_keyboard()
             )
     
-    @router.callback_query(F.data == "stats:monitoring")
-    async def show_monitoring_callback(call: CallbackQuery) -> None:
-        """Показати моніторинг через callback"""
+    @router.callback_query(F.data == "stats:refresh")
+    async def stats_refresh(call: CallbackQuery) -> None:
+        """Оновити статистику"""
         if not call.from_user or not is_admin(call.from_user.id):
             await call.answer("❌ Тільки для адмінів")
             return
         
+        from app.storage.db_connection import db_manager
+        from app.utils.metrics import get_metrics_collector
+        
         try:
-            from app.utils.metrics import get_metrics_collector
-            
+            # Оновити метрики
             collector = get_metrics_collector()
-            if not collector:
-                await call.message.answer(
-                    "❌ Система метрик не ініціалізована"
-                )
-                await call.answer()
-                return
+            if collector:
+                await collector.update_from_db()
+                metrics = collector.get_metrics()
+            else:
+                metrics = None
             
-            # Оновити з БД
-            await collector.update_from_db()
+            # Отримати свіжу статистику
+            async with db_manager.connect(config.database_path) as db:
+                async with db.execute("SELECT COUNT(*) FROM orders") as cur:
+                    total_orders = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'completed'") as cur:
+                    completed_orders = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM orders WHERE status IN ('pending', 'offered', 'accepted', 'in_progress')") as cur:
+                    active_orders = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM orders WHERE status = 'cancelled'") as cur:
+                    cancelled_orders = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'approved'") as cur:
+                    total_drivers = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE online = ? AND status = 'approved'", (True,)) as cur:
+                    online_drivers = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT COUNT(*) FROM drivers WHERE status = 'pending'") as cur:
+                    pending_drivers = (await cur.fetchone())[0]
+                
+                async with db.execute("SELECT SUM(fare_amount) FROM orders WHERE status = 'completed'") as cur:
+                    row = await cur.fetchone()
+                    total_revenue = row[0] if row[0] else 0.0
+                
+                async with db.execute("SELECT SUM(commission) FROM orders WHERE status = 'completed'") as cur:
+                    row = await cur.fetchone()
+                    total_commission = row[0] if row[0] else 0.0
+                
+                async with db.execute("SELECT SUM(commission) FROM payments WHERE commission_paid = 0") as cur:
+                    row = await cur.fetchone()
+                    unpaid_commission = row[0] if row[0] else 0.0
+                
+                async with db.execute("SELECT COUNT(*) FROM users") as cur:
+                    total_users = (await cur.fetchone())[0]
             
-            # Отримати метрики
-            metrics = collector.get_metrics()
+            # Форматувати
+            text = "📊 <b>Статистика системи</b>\n\n"
             
-            # Відправити як HTML
-            await call.message.answer(
-                metrics.to_human_readable(),
-                parse_mode="HTML"
+            if metrics:
+                text += f"⏱ <b>Час роботи:</b> {metrics.get_uptime()}\n\n"
+            
+            text += "👥 <b>Користувачі:</b>\n"
+            text += f"  • Всього: {total_users}\n"
+            text += f"  • Водіїв: {total_drivers}\n"
+            text += f"  • Онлайн водіїв: {online_drivers} 🟢\n"
+            text += f"  • На модерації: {pending_drivers}\n\n"
+            
+            text += "🚖 <b>Замовлення:</b>\n"
+            text += f"  • Всього: {total_orders}\n"
+            text += f"  • Активних: {active_orders} 🔵\n"
+            text += f"  • Завершено: {completed_orders} ✅\n"
+            text += f"  • Скасовано: {cancelled_orders}\n\n"
+            
+            text += "💰 <b>Фінанси:</b>\n"
+            text += f"  • Дохід: {total_revenue:.2f} грн\n"
+            text += f"  • Комісія: {total_commission:.2f} грн\n"
+            text += f"  • Несплачено: {unpaid_commission:.2f} грн"
+            
+            if metrics and metrics.total_requests > 0:
+                text += f"\n\n⚡ <b>Продуктивність:</b>\n"
+                text += f"  • Час відповіді: {metrics.avg_response_time:.2f}с\n"
+                text += f"  • Запитів/хв: {metrics.requests_per_minute:.1f}\n"
+                text += f"  • Помилок/год: {metrics.errors_per_hour:.1f}"
+            
+            # Оновити повідомлення
+            await call.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=statistics_menu_keyboard()
             )
-            await call.answer("✅ Метрики оновлено")
+            await call.answer("✅ Оновлено")
         
         except Exception as e:
-            logger.error(f"❌ Помилка отримання метрик: {e}")
-            await call.message.answer(f"❌ Помилка: {e}")
-            await call.answer()
+            logger.error(f"❌ Помилка оновлення статистики: {e}")
+            await call.answer(f"❌ Помилка: {str(e)[:100]}", show_alert=True)
     
     @router.callback_query(F.data == "stats:errors")
     async def show_errors_callback(call: CallbackQuery) -> None:
@@ -393,7 +492,14 @@ def create_router(config: AppConfig) -> Router:
             if stats['total_errors'] == 0:
                 text += "\n✅ <b>Помилок немає - все працює ідеально!</b>"
             
-            await call.message.answer(text, parse_mode="HTML")
+            # Кнопка згорнути
+            collapse_keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🗑 Згорнути", callback_data="stats:collapse")]
+                ]
+            )
+            
+            await call.message.answer(text, parse_mode="HTML", reply_markup=collapse_keyboard)
             await call.answer("✅ Статистика помилок")
         
         except Exception as e:
@@ -401,19 +507,19 @@ def create_router(config: AppConfig) -> Router:
             await call.message.answer(f"❌ Помилка: {e}")
             await call.answer()
     
-    @router.callback_query(F.data == "stats:back")
-    async def stats_back(call: CallbackQuery) -> None:
-        """Повернутись до адмін-панелі"""
+    @router.callback_query(F.data == "stats:collapse")
+    async def stats_collapse(call: CallbackQuery) -> None:
+        """Згорнути (видалити повідомлення)"""
         if not call.from_user or not is_admin(call.from_user.id):
             await call.answer("❌ Тільки для адмінів")
             return
         
-        await call.message.delete()
-        await call.message.answer(
-            "⚙️ <b>Адмін-панель</b>",
-            reply_markup=admin_menu_keyboard()
-        )
-        await call.answer()
+        try:
+            await call.message.delete()
+            await call.answer("🗑 Згорнуто")
+        except Exception as e:
+            logger.error(f"Помилка видалення повідомлення: {e}")
+            await call.answer("✅ Готово")
 
     @router.message(Command("monitoring"))
     @router.message(Command("metrics"))
