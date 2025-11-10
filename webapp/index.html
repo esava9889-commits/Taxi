@@ -58,6 +58,37 @@
             color: #FFD700;
         }
         
+        /* Автокомпліт */
+        .autocomplete-results {
+            position: fixed;
+            bottom: 90px;
+            left: 20px;
+            right: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: rgba(26, 26, 26, 0.98);
+            border: 2px solid #FFD700;
+            border-radius: 16px;
+            z-index: 999;
+            display: none;
+        }
+        
+        .autocomplete-item {
+            padding: 14px;
+            border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+            cursor: pointer;
+            color: #FFD700;
+            font-size: 14px;
+        }
+        
+        .autocomplete-item:hover {
+            background: rgba(255, 215, 0, 0.1);
+        }
+        
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        
         .confirm-btn {
             width: 50px;
             height: 50px;
@@ -86,6 +117,8 @@
 <body>
     <div id="map"></div>
     <div class="center-marker" id="center-marker">📍</div>
+    
+    <div class="autocomplete-results" id="autocomplete-results"></div>
     
     <div class="search-container">
         <input type="text" class="search-input" id="search" placeholder="📍 Звідки їдемо?" autocomplete="off">
@@ -265,6 +298,59 @@
                 } catch (e) {
                     alert('Помилка відправки: ' + e.message);
                 }
+            }
+        });
+        
+        // Пошук адрес
+        const searchInput = document.getElementById('search');
+        const autocompleteResults = document.getElementById('autocomplete-results');
+        let searchTimeout;
+        
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            
+            if (query.length < 3) {
+                autocompleteResults.style.display = 'none';
+                autocompleteResults.innerHTML = '';
+                return;
+            }
+            
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/webapp/geocode?q=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+                    
+                    if (data.length === 0) {
+                        autocompleteResults.innerHTML = '<div class="autocomplete-item">🔍 Нічого не знайдено</div>';
+                        autocompleteResults.style.display = 'block';
+                        return;
+                    }
+                    
+                    autocompleteResults.innerHTML = '';
+                    data.slice(0, 5).forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'autocomplete-item';
+                        div.textContent = item.display_name;
+                        div.addEventListener('click', () => {
+                            map.setView([item.lat, item.lon], 16);
+                            searchInput.value = item.display_name;
+                            autocompleteResults.style.display = 'none';
+                        });
+                        autocompleteResults.appendChild(div);
+                    });
+                    
+                    autocompleteResults.style.display = 'block';
+                } catch (e) {
+                    console.error('Помилка пошуку:', e);
+                }
+            }, 500);
+        });
+        
+        // Закрити autocomplete при кліку поза ним
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !autocompleteResults.contains(e.target)) {
+                autocompleteResults.style.display = 'none';
             }
         });
         
