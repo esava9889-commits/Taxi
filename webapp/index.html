@@ -589,11 +589,23 @@
                                                 white-space: nowrap;
                                                 font-family: 'Segoe UI', Roboto, sans-serif;
                                                 backdrop-filter: blur(10px);
+                                                display: inline-block;
                                             ">🏙️ ${userCity}</div>`,
-                                            iconSize: [140, 45],
-                                            iconAnchor: [70, 22]
+                                            iconSize: null,  // Автоматичний розмір
+                                            iconAnchor: null  // Автоматичне центрування
                                         })
                                     }).addTo(map);
+                                    
+                                    // Центрувати маркер після рендерингу
+                                    setTimeout(() => {
+                                        const markerElement = cityMarker.getElement();
+                                        if (markerElement) {
+                                            const width = markerElement.offsetWidth;
+                                            const height = markerElement.offsetHeight;
+                                            cityMarker.options.icon.options.iconAnchor = [width / 2, height / 2];
+                                            cityMarker.setIcon(cityMarker.options.icon);
+                                        }
+                                    }, 100);
                                     
                                     // Видалити маркер через 4 секунди
                                     setTimeout(() => {
@@ -627,6 +639,9 @@
             const loadingText = document.getElementById('loading-text');
             loadingText.textContent = 'Urban';
             loading.style.display = 'block';
+            
+            // Почекати поки анімація "Urban" завершиться (1.5s typing + 0.3s запас)
+            await new Promise(resolve => setTimeout(resolve, 1800));
             
             try {
                 const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
