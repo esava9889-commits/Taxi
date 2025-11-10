@@ -181,8 +181,68 @@
             }
         }
         
+        /* 🔍 НОВИЙ ПОШУК ВНИЗУ + КНОПКА ✅ */
+        .bottom-search-container {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 80px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .bottom-search-input {
+            flex: 1;
+            background: linear-gradient(145deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98));
+            border: 2px solid #FFD700;
+            border-radius: 16px;
+            padding: 14px 18px;
+            color: #FFD700;
+            font-size: 16px;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.2);
+            outline: none;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .bottom-search-input::placeholder {
+            color: rgba(255, 215, 0, 0.6);
+        }
+        
+        .bottom-search-input:focus {
+            border-color: #FFD700;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 215, 0, 0.4);
+        }
+        
+        .confirm-button {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            border: 2px solid rgba(76, 175, 80, 0.5);
+            border-radius: 50%;
+            box-shadow: 0 4px 20px rgba(76, 175, 80, 0.5), 0 0 25px rgba(76, 175, 80, 0.3);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        
+        .confirm-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px rgba(76, 175, 80, 0.7), 0 0 40px rgba(76, 175, 80, 0.5);
+        }
+        
+        .confirm-button:active {
+            transform: scale(0.95);
+        }
+        
         .locate-button {
-            position: absolute;
+            position: fixed;
             bottom: 20px;
             right: 20px;
             width: 50px;
@@ -423,36 +483,9 @@
             flex: 1;
         }
         
-        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ - ЧОРНО-ЗОЛОТИЙ СТИЛЬ */
-        /* Коли показується панель адрес - зсунути пошук вниз */
+        /* 🔍 СТИЛІ ДЛЯ ПОШУКУ ЗВЕРХУ - СХОВАТИ */
         .leaflet-control-geocoder {
-            border: none !important;
-            border-radius: 16px !important;
-            background: linear-gradient(145deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98)) !important;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.2) !important;
-            width: calc(100vw - 20px) !important;
-            max-width: calc(100vw - 20px) !important;
-            min-width: calc(100vw - 20px) !important;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            backdrop-filter: blur(14px);
-            border: 2px solid #FFD700 !important;
-            position: fixed !important;
-            left: 10px !important;
-            top: 10px !important;
-            cursor: move !important;
-            touch-action: none !important;
-            z-index: 1001 !important;
-            transition: top 0.3s ease;
-        }
-        
-        /* Зсунути пошук вниз коли панель адрес показується */
-        .leaflet-control-geocoder.with-addresses {
-            top: 80px !important;
-        }
-        
-        .leaflet-control-geocoder.dragging {
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 50px rgba(255, 215, 0, 0.4) !important;
-            transition: none !important;
+            display: none !important;
         }
 
         .leaflet-control-geocoder-form {
@@ -632,6 +665,12 @@
         Час: ~0 хв
     </div>
     
+    <!-- 🔍 НОВИЙ ПОШУК ВНИЗУ + КНОПКА ✅ -->
+    <div class="bottom-search-container">
+        <input type="text" class="bottom-search-input" id="bottom-search" placeholder="📍 Звідки їдемо?" autocomplete="off">
+        <button class="confirm-button" id="confirm-btn" title="Підтвердити">✅</button>
+    </div>
+    
     <!-- Кнопка скидання -->
     <button class="reset-button" id="reset-btn" title="Почати спочатку">
         🔄
@@ -674,10 +713,8 @@
         let pickupCoords = null;
         let destinationCoords = null;
         
-        tg.MainButton.setText('✅ Підтвердити місце посадки');
-        tg.MainButton.color = '#FFD700'; // Золота кнопка
-        tg.MainButton.textColor = '#1a1a1a'; // Чорний текст
-        tg.MainButton.show(); // ✅ ПОКАЗАТИ ОДРАЗУ (бо маркер вже є в центрі)
+        // ❌ Telegram MainButton більше не використовується - замінено на кастомну кнопку ✅ внизу
+        tg.MainButton.hide();
         
         // Застосувати тему Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
@@ -859,7 +896,6 @@
             const destLine = document.getElementById('dest-address-line');
             const pickupText = document.getElementById('pickup-address-text');
             const destText = document.getElementById('dest-address-text');
-            const geocoderControl = document.querySelector('.leaflet-control-geocoder');
             
             // Оновити текст адрес
             if (savedPickupAddress) {
@@ -879,16 +915,8 @@
             // Показати/сховати панель
             if (savedPickupAddress || savedDestAddress) {
                 panel.style.display = 'block';
-                // Зсунути пошук вниз
-                if (geocoderControl) {
-                    geocoderControl.classList.add('with-addresses');
-                }
             } else {
                 panel.style.display = 'none';
-                // Повернути пошук вгору
-                if (geocoderControl) {
-                    geocoderControl.classList.remove('with-addresses');
-                }
             }
         }
         
@@ -1049,15 +1077,15 @@
             }
         }
         
-        // Функція оновлення placeholder в пошуку
+        // Функція оновлення placeholder в новому пошуку внизу
         function updateSearchPlaceholder(state) {
-            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
+            const searchInput = document.getElementById('bottom-search');
             if (!searchInput) return;
             
             if (state === 'pickup') {
-                searchInput.placeholder = '📍 Звідки їдемо? (наприклад: Київ, Хрещатик 1)';
+                searchInput.placeholder = '📍 Звідки їдемо?';
             } else if (state === 'destination') {
-                searchInput.placeholder = '🎯 Куди їдемо? (наприклад: Львів, пл. Ринок)';
+                searchInput.placeholder = '🎯 Куди їдемо?';
             } else if (state === 'confirm') {
                 searchInput.placeholder = '✅ Підтвердіть замовлення';
                 searchInput.disabled = true;  // Вимкнути пошук на етапі підтвердження
@@ -1113,12 +1141,16 @@
             savedDestAddress = null;
             
             // Оновити UI
-            tg.MainButton.setText('✅ Підтвердити місце посадки');
-            tg.MainButton.show();  // ✅ ПОКАЗАТИ (бо центральний маркер є)
             centerMarker.style.display = 'block';  // Показати центральний маркер
             updateCenterMarker();  // Оновити емоджі
             updateSearchPlaceholder('pickup');
             updateAddressPanel();  // 📍 ОНОВИТИ панель адрес (сховати)
+            
+            // Очистити поле пошуку
+            const searchInput = document.getElementById('bottom-search');
+            if (searchInput) {
+                searchInput.value = '';
+            }
             
             const routeInfo = document.getElementById('route-info');
             if (routeInfo) {
@@ -1598,9 +1630,69 @@
         // ❌ ВИМКНУТИ клік по карті - тепер використовуємо центральний маркер!
         // Клік по карті більше не потрібен, бо користувач рухає карту під маркером
         
-        // Обробник кнопки (3 стани) - НОВА ЛОГІКА З ЦЕНТРАЛЬНИМ МАРКЕРОМ
-        tg.MainButton.offClick();
-        tg.MainButton.onClick(async () => {
+        // 🔍 НОВИЙ ПОШУК - обробка вводу адрес
+        const searchInput = document.getElementById('bottom-search');
+        let searchTimeout = null;
+        let searchResults = [];
+        
+        searchInput.addEventListener('input', async (e) => {
+            const query = e.target.value.trim();
+            
+            // Очистити попередній таймер
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            
+            // Якщо запит порожній - нічого не робити
+            if (!query) {
+                searchResults = [];
+                return;
+            }
+            
+            // Затримка перед пошуком (debounce)
+            searchTimeout = setTimeout(async () => {
+                try {
+                    debugLog(`🔍 Пошук: ${query}`, 'info');
+                    const url = buildProxyUrl(query);
+                    const response = await fetch(url);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        searchResults = data;
+                        
+                        if (data && data.length > 0) {
+                            // Взяти перший результат і центрувати карту на ньому
+                            const result = data[0];
+                            const lat = parseFloat(result.lat);
+                            const lon = parseFloat(result.lon);
+                            
+                            map.setView([lat, lon], 16, {
+                                animate: true,
+                                duration: 0.5
+                            });
+                            
+                            debugLog(`✅ Знайдено: ${result.display_name}`, 'success');
+                        } else {
+                            debugLog(`⚠️ Нічого не знайдено для: ${query}`, 'warning');
+                        }
+                    }
+                } catch (error) {
+                    debugLog(`❌ Помилка пошуку: ${error.message}`, 'error');
+                }
+            }, 500); // Затримка 500ms
+        });
+        
+        // Обробник Enter в пошуку
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                // Тригер кнопки підтвердження
+                document.getElementById('confirm-btn').click();
+            }
+        });
+        
+        // Обробник кнопки ✅ (3 стани) - НОВА ЛОГІКА З ЦЕНТРАЛЬНИМ МАРКЕРОМ
+        document.getElementById('confirm-btn').addEventListener('click', async () => {
             if (currentState === 'pickup') {
                 // СТАН 1: Підтверджуємо pickup → зберігаємо центр карти як pickup
                 const center = map.getCenter();
@@ -1647,13 +1739,16 @@
                 
                 // Перейти до вибору destination
                 currentState = 'destination';
-                tg.MainButton.setText('✅ Підтвердити місце призначення');
                 
                 // Оновити емоджі центрального маркера на 🏁
                 updateCenterMarker();
                 
                 // Оновити placeholder пошуку
                 updateSearchPlaceholder('destination');
+                
+                // Очистити поле пошуку
+                searchInput.value = '';
+                searchInput.focus(); // Фокус на пошуку для швидкого введення
                 
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.impactOccurred('medium');
@@ -1716,13 +1811,15 @@
                 
                 // Перейти до підтвердження
                 currentState = 'confirm';
-                tg.MainButton.setText('✅ Підтвердити замовлення');
                 
                 // Сховати центральний маркер
                 updateCenterMarker();
                 
                 // Оновити placeholder пошуку
                 updateSearchPlaceholder('confirm');
+                
+                // Очистити поле пошуку
+                searchInput.value = '';
                 
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.impactOccurred('medium');
