@@ -2814,7 +2814,7 @@ async def count_online_drivers(db_path: str) -> int:
     """Підрахувати кількість онлайн водіїв"""
     async with db_manager.connect(db_path) as db:
         async with db.execute(
-            "SELECT COUNT(*) FROM drivers WHERE is_online = ? AND status = ?",
+            "SELECT COUNT(*) FROM drivers WHERE online = ? AND status = ?",
             (True, "approved")
         ) as cursor:
             row = await cursor.fetchone()

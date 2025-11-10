@@ -76,8 +76,7 @@ async def set_admin_payment_card(database_path: str, card_number: str) -> None:
 def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="📈 Моніторинг")],
-            [KeyboardButton(text="👥 Модерація водіїв"), KeyboardButton(text="⚠️ Помилки")],
+            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="👥 Модерація водіїв")],
             [KeyboardButton(text="💰 Тарифи"), KeyboardButton(text="🚗 Водії")],
             [KeyboardButton(text="👤 Клієнти"), KeyboardButton(text="📢 Розсилка")],
             [KeyboardButton(text="⚙️ Налаштування")],
@@ -85,6 +84,21 @@ def admin_menu_keyboard() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         one_time_keyboard=False,
         input_field_placeholder="Адмін-панель",
+    )
+
+
+def statistics_menu_keyboard() -> InlineKeyboardMarkup:
+    """Підменю статистики з кнопками"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📈 Моніторинг", callback_data="stats:monitoring"),
+                InlineKeyboardButton(text="⚠️ Помилки", callback_data="stats:errors"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Назад", callback_data="stats:back"),
+            ],
+        ]
     )
 
 
@@ -225,6 +239,7 @@ def create_router(config: AppConfig) -> Router:
 
     @router.message(F.text == "📊 Статистика")
     async def show_statistics(message: Message) -> None:
+        """Головне меню статистики з кнопками"""
         if not message.from_user or not is_admin(message.from_user.id):
             return
         
@@ -276,10 +291,15 @@ def create_router(config: AppConfig) -> Router:
                     f"💵 Загальний дохід: {total_revenue:.2f} грн\n"
                     f"💰 Загальна комісія: {total_commission:.2f} грн\n"
                     f"⚠️ Несплачена комісія: {unpaid_commission:.2f} грн\n"
-                    f"👥 Всього користувачів: {total_users}"
+                    f"👥 Всього користувачів: {total_users}\n\n"
+                    f"<i>Оберіть що переглянути:</i>"
                 )
                 
-                await message.answer(text, reply_markup=admin_menu_keyboard())
+                # Відправити з inline кнопками
+                await message.answer(
+                    text,
+                    reply_markup=statistics_menu_keyboard()
+                )
         
         except Exception as e:
             logger.error(f"❌ Помилка отримання статистики: {e}")
@@ -289,13 +309,12 @@ def create_router(config: AppConfig) -> Router:
                 "❌ Помилка отримання статистики. Переконайтесь що DATABASE_URL налаштовано на Render.",
                 reply_markup=admin_menu_keyboard()
             )
-
-    @router.message(Command("monitoring"))
-    @router.message(Command("metrics"))
-    @router.message(F.text == "📈 Моніторинг")
-    async def show_monitoring(message: Message) -> None:
-        """Показати метрики з системи моніторингу"""
-        if not message.from_user or not is_admin(message.from_user.id):
+    
+    @router.callback_query(F.data == "stats:monitoring")
+    async def show_monitoring_callback(call: CallbackQuery) -> None:
+        """Показати моніторинг через callback"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Тільки для адмінів")
             return
         
         try:
@@ -303,37 +322,35 @@ def create_router(config: AppConfig) -> Router:
             
             collector = get_metrics_collector()
             if not collector:
-                await message.answer(
-                    "❌ Система метрик не ініціалізована",
-                    reply_markup=admin_menu_keyboard()
+                await call.message.answer(
+                    "❌ Система метрик не ініціалізована"
                 )
+                await call.answer()
                 return
             
-            # Спочатку оновити з БД
+            # Оновити з БД
             await collector.update_from_db()
             
             # Отримати метрики
             metrics = collector.get_metrics()
             
             # Відправити як HTML
-            await message.answer(
+            await call.message.answer(
                 metrics.to_human_readable(),
-                parse_mode="HTML",
-                reply_markup=admin_menu_keyboard()
+                parse_mode="HTML"
             )
+            await call.answer("✅ Метрики оновлено")
         
         except Exception as e:
             logger.error(f"❌ Помилка отримання метрик: {e}")
-            await message.answer(
-                f"❌ Помилка отримання метрик: {e}",
-                reply_markup=admin_menu_keyboard()
-            )
+            await call.message.answer(f"❌ Помилка: {e}")
+            await call.answer()
     
-    @router.message(Command("errors"))
-    @router.message(F.text == "⚠️ Помилки")
-    async def show_errors(message: Message) -> None:
-        """Показати статистику помилок"""
-        if not message.from_user or not is_admin(message.from_user.id):
+    @router.callback_query(F.data == "stats:errors")
+    async def show_errors_callback(call: CallbackQuery) -> None:
+        """Показати помилки через callback"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Тільки для адмінів")
             return
         
         try:
@@ -376,18 +393,108 @@ def create_router(config: AppConfig) -> Router:
             if stats['total_errors'] == 0:
                 text += "\n✅ <b>Помилок немає - все працює ідеально!</b>"
             
-            await message.answer(
-                text,
-                parse_mode="HTML",
-                reply_markup=admin_menu_keyboard()
-            )
+            await call.message.answer(text, parse_mode="HTML")
+            await call.answer("✅ Статистика помилок")
         
         except Exception as e:
             logger.error(f"❌ Помилка отримання статистики помилок: {e}")
+            await call.message.answer(f"❌ Помилка: {e}")
+            await call.answer()
+    
+    @router.callback_query(F.data == "stats:back")
+    async def stats_back(call: CallbackQuery) -> None:
+        """Повернутись до адмін-панелі"""
+        if not call.from_user or not is_admin(call.from_user.id):
+            await call.answer("❌ Тільки для адмінів")
+            return
+        
+        await call.message.delete()
+        await call.message.answer(
+            "⚙️ <b>Адмін-панель</b>",
+            reply_markup=admin_menu_keyboard()
+        )
+        await call.answer()
+
+    @router.message(Command("monitoring"))
+    @router.message(Command("metrics"))
+    async def show_monitoring_command(message: Message) -> None:
+        """Швидка команда для моніторингу"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        try:
+            from app.utils.metrics import get_metrics_collector
+            
+            collector = get_metrics_collector()
+            if not collector:
+                await message.answer("❌ Система метрик не ініціалізована")
+                return
+            
+            # Оновити з БД
+            await collector.update_from_db()
+            
+            # Отримати метрики
+            metrics = collector.get_metrics()
+            
+            # Відправити
             await message.answer(
-                f"❌ Помилка: {e}",
-                reply_markup=admin_menu_keyboard()
+                metrics.to_human_readable(),
+                parse_mode="HTML"
             )
+        
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання метрик: {e}")
+            await message.answer(f"❌ Помилка: {e}")
+    
+    @router.message(Command("errors"))
+    async def show_errors_command(message: Message) -> None:
+        """Швидка команда для помилок"""
+        if not message.from_user or not is_admin(message.from_user.id):
+            return
+        
+        try:
+            from app.utils.error_handler import get_error_stats
+            
+            stats = get_error_stats()
+            
+            # Форматувати
+            text = "⚠️ <b>Статистика помилок</b>\n\n"
+            text += f"<b>Всього помилок:</b> {stats['total_errors']}\n"
+            text += f"<b>Критичних:</b> {stats['critical_errors']}\n\n"
+            
+            if stats['errors_by_type']:
+                text += "<b>Топ-5 типів помилок:</b>\n"
+                sorted_errors = sorted(
+                    stats['errors_by_type'].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:5]
+                
+                for error_type, count in sorted_errors:
+                    text += f"  • {error_type}: {count}\n"
+                text += "\n"
+            
+            if stats['last_10_errors']:
+                text += "<b>Останні 5 помилок:</b>\n"
+                for error in stats['last_10_errors'][-5:]:
+                    severity_emoji = {
+                        'LOW': '🟢',
+                        'MEDIUM': '🟡',
+                        'HIGH': '🟠',
+                        'CRITICAL': '🔴'
+                    }.get(error['severity'], '⚪️')
+                    
+                    timestamp = error['timestamp'].split('T')[1].split('.')[0] if 'T' in error['timestamp'] else error['timestamp']
+                    text += f"{severity_emoji} <code>{error['type']}</code> [{timestamp}]\n"
+            
+            if stats['total_errors'] == 0:
+                text += "\n✅ <b>Помилок немає - все працює ідеально!</b>"
+            
+            await message.answer(text, parse_mode="HTML")
+        
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання статистики помилок: {e}")
+            await message.answer(f"❌ Помилка: {e}")
 
     @router.message(F.text == "👥 Модерація водіїв")
     async def moderate_drivers(message: Message) -> None:
