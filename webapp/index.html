@@ -2006,9 +2006,9 @@
                 updateSearchPlaceholder('pickup');
                 updateAddressPanel();
                 
-                if (routeLine) {
-                    map.removeLayer(routeLine);
-                    routeLine = null;
+                if (routePolyline) {
+                    map.removeLayer(routePolyline);
+                    routePolyline = null;
                 }
                 
                 if (destinationMarker) {
@@ -2053,9 +2053,9 @@
                 updateSearchPlaceholder('destination');
                 updateAddressPanel();
                 
-                if (routeLine) {
-                    map.removeLayer(routeLine);
-                    routeLine = null;
+                if (routePolyline) {
+                    map.removeLayer(routePolyline);
+                    routePolyline = null;
                 }
                 
                 const routeInfo = document.getElementById('route-info');
@@ -2076,7 +2076,7 @@
                 
                 debugLog('⚙️ Редагування адреси призначення', 'info');
             }
-        }););
+        });
         
         // Обробка закриття WebApp
         tg.onEvent('backButtonClicked', () => {
