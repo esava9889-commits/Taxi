@@ -342,6 +342,36 @@
             transform: scale(0.95);
         }
         
+        /* 🎯 ЦЕНТРАЛЬНИЙ КУРСОР-МАРКЕР (фіксований в центрі екрану) */
+        .center-marker {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            z-index: 1001;
+            pointer-events: none;
+            transform: translate(-50%, -100%); /* Зміщення щоб низ маркера був в центрі */
+            font-size: 48px;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+            animation: markerBounce 0.6s ease-out, float 2s ease-in-out infinite;
+            transition: font-size 0.3s ease;
+        }
+        
+        /* Анімація плавного "плавання" маркера */
+        @keyframes float {
+            0%, 100% {
+                transform: translate(-50%, -100%) translateY(0);
+            }
+            50% {
+                transform: translate(-50%, -100%) translateY(-8px);
+            }
+        }
+        
+        /* При перетягуванні карти - маркер трохи збільшується */
+        .center-marker.dragging {
+            font-size: 52px;
+            animation: none;
+        }
+        
         /* 🎨 Анімація для маршруту - БЛАКИТНИЙ З GLOW */
         .route-line {
             stroke-dasharray: 10, 5;
@@ -535,6 +565,9 @@
 <body>
     <div id="map"></div>
     
+    <!-- 🎯 ЦЕНТРАЛЬНИЙ КУРСОР-МАРКЕР -->
+    <div class="center-marker" id="center-marker">📍</div>
+    
     <!-- Інформація про маршрут -->
     <div class="route-info" id="route-info" style="display: none;">
         <strong>📏 Маршрут:</strong><br>
@@ -587,7 +620,7 @@
         tg.MainButton.setText('✅ Підтвердити місце посадки');
         tg.MainButton.color = '#FFD700'; // Золота кнопка
         tg.MainButton.textColor = '#1a1a1a'; // Чорний текст
-        tg.MainButton.hide(); // Спочатку сховати
+        tg.MainButton.show(); // ✅ ПОКАЗАТИ ОДРАЗУ (бо маркер вже є в центрі)
         
         // Застосувати тему Telegram
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
@@ -723,6 +756,32 @@
             centerMapOnClientCity();
         }, 500);
         
+        // 🎯 ЛОГІКА ЦЕНТРАЛЬНОГО МАРКЕРА
+        const centerMarker = document.getElementById('center-marker');
+        
+        // Оновити емоджі маркера залежно від стану
+        function updateCenterMarker() {
+            if (currentState === 'pickup') {
+                centerMarker.textContent = '📍';
+            } else if (currentState === 'destination') {
+                centerMarker.textContent = '🏁';
+            } else if (currentState === 'confirm') {
+                centerMarker.style.display = 'none';  // Сховати при підтвердженні
+            }
+        }
+        
+        // Анімація при перетягуванні карти
+        let isDragging = false;
+        map.on('movestart', () => {
+            isDragging = true;
+            centerMarker.classList.add('dragging');
+        });
+        
+        map.on('moveend', () => {
+            isDragging = false;
+            centerMarker.classList.remove('dragging');
+        });
+        
         // Змінні для зберігання маркерів та маршруту
         let pickupMarker = null;       // Зелений маркер pickup
         let destinationMarker = null;  // Синій маркер destination
@@ -732,27 +791,20 @@
         let clientCityCoords = null;   // {lat, lon, city}
         let clientCityName = null;     // Назва міста
         
-        // Функція створення кастомного маркера
+        // Функція створення кастомного маркера з ЕМОДЖІ
         const createMarkerIcon = (isPickup = false) => {
-            const color = isPickup ? '#4CAF50' : '#2196F3';  // Зелений для pickup, синій для destination
-            const label = isPickup ? 'A' : 'B';
+            const emoji = isPickup ? '📍' : '🏁';  // 📍 для pickup, 🏁 для destination
             return L.divIcon({
                 className: 'marker-icon',
                 html: `
-                    <div class="pulse" style="background: ${color}; border-color: ${color};">
-                        <div style="
-                            position: absolute;
-                            top: 50%;
-                            left: 50%;
-                            transform: translate(-50%, -50%);
-                            color: white;
-                            font-weight: bold;
-                            font-size: 14px;
-                        ">${label}</div>
-                    </div>
+                    <div style="
+                        font-size: 42px;
+                        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+                        animation: markerBounce 0.6s ease-out;
+                    ">${emoji}</div>
                 `,
-                iconSize: [35, 35],
-                iconAnchor: [17, 17]
+                iconSize: [42, 42],
+                iconAnchor: [21, 42]  // Низ емоджі - це точка на карті
             });
         };
         
@@ -958,7 +1010,9 @@
             
             // Оновити UI
             tg.MainButton.setText('✅ Підтвердити місце посадки');
-            tg.MainButton.hide();
+            tg.MainButton.show();  // ✅ ПОКАЗАТИ (бо центральний маркер є)
+            centerMarker.style.display = 'block';  // Показати центральний маркер
+            updateCenterMarker();  // Оновити емоджі
             updateSearchPlaceholder('pickup');
             
             const routeInfo = document.getElementById('route-info');
@@ -1317,70 +1371,15 @@
             const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
             if (searchInput) {
                 searchInput.blur();  // Згорнути клавіатуру
+                searchInput.value = '';  // Очистити
             }
             
-            if (currentState === 'pickup') {
-                // Видалити старий маркер pickup
-                if (pickupMarker) {
-                    map.removeLayer(pickupMarker);
-                }
-                
-                // Додати маркер pickup (зелений)
-                pickupMarker = L.marker(latlng, {
-                    icon: createMarkerIcon(true)
-                }).addTo(map);
-                
-                // Зберегти координати
-                pickupCoords = { lat: latlng.lat, lng: latlng.lng };
-                
-                debugLog(`🟢 Pickup збережено`, 'success');
-                
-                // Показати кнопку
-                tg.MainButton.show();
-                
-                // ✅ ОЧИСТИТИ поле пошуку після вибору pickup
-                if (searchInput) {
-                    searchInput.value = '';
-                    searchInput.placeholder = '🎯 Куди їдемо? (наприклад: Львів, пл. Ринок)';
-                }
-                
-            } else if (currentState === 'destination') {
-                // Видалити старий маркер destination
-                if (destinationMarker) {
-                    map.removeLayer(destinationMarker);
-                }
-                
-                // Додати маркер destination (синій)
-                destinationMarker = L.marker(latlng, {
-                    icon: createMarkerIcon(false)
-                }).addTo(map);
-                
-                // Зберегти координати
-                destinationCoords = { lat: latlng.lat, lng: latlng.lng };
-                
-                debugLog(`🔵 Destination збережено`, 'success');
-                
-                // МАЛЮВАТИ маршрут відразу після вибору destination!
-                if (pickupCoords && destinationCoords) {
-                    debugLog('🗺️ Будую маршрут...', 'info');
-                    loadAndShowRoute(
-                        pickupCoords.lat, pickupCoords.lng,
-                        destinationCoords.lat, destinationCoords.lng
-                    );
-                }
-                
-                // Показати кнопку
-                tg.MainButton.show();
-                
-                // ✅ ОЧИСТИТИ поле пошуку після вибору destination
-                const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
-                if (searchInput) {
-                    searchInput.value = '';
-                }
-            }
-            
-            // Центрувати карту
-            map.setView(latlng, 16);
+            // 🎯 НОВА ЛОГІКА: просто переміщуємо карту до вибраної точки
+            // Користувач потім підтвердить центральним маркером
+            map.setView(latlng, 16, {
+                animate: true,
+                duration: 0.5
+            });
             
             // Вібрація
             if (tg.HapticFeedback) {
@@ -1471,87 +1470,34 @@
             }
         }, 500);
         
-        // Обробник кліку по карті
-        map.on('click', (e) => {
-            const { lat, lng } = e.latlng;
-            
-            if (currentState === 'pickup') {
-                // Видалити старий маркер pickup якщо є
-                if (pickupMarker) {
-                    map.removeLayer(pickupMarker);
-                }
-                
-                // Додати маркер pickup (зелений)
-                pickupMarker = L.marker([lat, lng], {
-                    icon: createMarkerIcon(true)
-                }).addTo(map);
-                
-                // Зберегти координати pickup
-                pickupCoords = { lat, lng };
-                
-                // Показати кнопку
-                tg.MainButton.show();
-                
-                // ✅ ОЧИСТИТИ поле пошуку після вибору pickup кліком
-                const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
-                if (searchInput) {
-                    searchInput.value = '';
-                    searchInput.placeholder = '🎯 Куди їдемо? (наприклад: Львів, пл. Ринок)';
-                }
-                
-            } else if (currentState === 'destination') {
-                // Видалити старий маркер destination якщо є
-                if (destinationMarker) {
-                    map.removeLayer(destinationMarker);
-                }
-                
-                // Додати маркер destination (синій)
-                destinationMarker = L.marker([lat, lng], {
-                    icon: createMarkerIcon(false)
-                }).addTo(map);
-                
-                // Зберегти координати destination
-                destinationCoords = { lat, lng };
-                
-                debugLog(`🔵 Destination (клік) збережено`, 'success');
-                
-                // МАЛЮВАТИ маршрут відразу після вибору destination!
-                if (pickupCoords && destinationCoords) {
-                    debugLog('🗺️ Будую маршрут після кліку...', 'info');
-                    loadAndShowRoute(
-                        pickupCoords.lat, pickupCoords.lng,
-                        destinationCoords.lat, destinationCoords.lng
-                    );
-                }
-                
-                // Показати кнопку
-                tg.MainButton.show();
-                
-                // ✅ ОЧИСТИТИ поле пошуку після вибору destination кліком
-                const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
-                if (searchInput) {
-                    searchInput.value = '';
-                }
-            }
-            
-            // Вібрація
-            if (tg.HapticFeedback) {
-                tg.HapticFeedback.impactOccurred('light');
-            }
-        });
+        // ❌ ВИМКНУТИ клік по карті - тепер використовуємо центральний маркер!
+        // Клік по карті більше не потрібен, бо користувач рухає карту під маркером
         
-        // Обробник кнопки (3 стани)
+        // Обробник кнопки (3 стани) - НОВА ЛОГІКА З ЦЕНТРАЛЬНИМ МАРКЕРОМ
         tg.MainButton.offClick();
         tg.MainButton.onClick(async () => {
             if (currentState === 'pickup') {
-                // СТАН 1: Підтверджуємо pickup → переходимо до destination
-                if (!pickupCoords) return;
+                // СТАН 1: Підтверджуємо pickup → зберігаємо центр карти як pickup
+                const center = map.getCenter();
+                pickupCoords = { lat: center.lat, lng: center.lng };
                 
+                // Додати маркер 📍 на карту в цій точці
+                if (pickupMarker) {
+                    map.removeLayer(pickupMarker);
+                }
+                pickupMarker = L.marker([center.lat, center.lng], {
+                    icon: createMarkerIcon(true)
+                }).addTo(map);
+                
+                debugLog(`📍 Pickup підтверджено: ${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`, 'success');
                 debugLog('➡️ Перехід: pickup → destination', 'info');
                 
+                // Перейти до вибору destination
                 currentState = 'destination';
                 tg.MainButton.setText('✅ Підтвердити місце призначення');
-                tg.MainButton.hide();  // Сховати поки не обере destination
+                
+                // Оновити емоджі центрального маркера на 🏁
+                updateCenterMarker();
                 
                 // Оновити placeholder пошуку
                 updateSearchPlaceholder('destination');
@@ -1561,16 +1507,38 @@
                 }
                 
             } else if (currentState === 'destination') {
-                // СТАН 2: Підтверджуємо destination (маршрут вже намальовано!)
-                if (!destinationCoords) return;
+                // СТАН 2: Підтверджуємо destination → зберігаємо центр карти як destination
+                const center = map.getCenter();
+                destinationCoords = { lat: center.lat, lng: center.lng };
                 
+                // Додати маркер 🏁 на карту в цій точці
+                if (destinationMarker) {
+                    map.removeLayer(destinationMarker);
+                }
+                destinationMarker = L.marker([center.lat, center.lng], {
+                    icon: createMarkerIcon(false)
+                }).addTo(map);
+                
+                debugLog(`🏁 Destination підтверджено: ${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`, 'success');
                 debugLog('➡️ Перехід: destination → confirm', 'info');
                 debugLog(`📍 Pickup: ${pickupCoords.lat.toFixed(6)}, ${pickupCoords.lng.toFixed(6)}`, 'info');
-                debugLog(`📍 Destination: ${destinationCoords.lat.toFixed(6)}, ${destinationCoords.lng.toFixed(6)}`, 'info');
+                debugLog(`🏁 Destination: ${destinationCoords.lat.toFixed(6)}, ${destinationCoords.lng.toFixed(6)}`, 'info');
                 
-                // Маршрут вже намальовано при виборі точки, просто переходимо до confirm
+                // Намалювати маршрут
+                if (pickupCoords && destinationCoords) {
+                    debugLog('🗺️ Будую маршрут...', 'info');
+                    await loadAndShowRoute(
+                        pickupCoords.lat, pickupCoords.lng,
+                        destinationCoords.lat, destinationCoords.lng
+                    );
+                }
+                
+                // Перейти до підтвердження
                 currentState = 'confirm';
                 tg.MainButton.setText('✅ Підтвердити замовлення');
+                
+                // Сховати центральний маркер
+                updateCenterMarker();
                 
                 // Оновити placeholder пошуку
                 updateSearchPlaceholder('confirm');
@@ -1637,7 +1605,7 @@
             }
         });
         
-        // Кнопка "Моя геолокація"
+        // Кнопка "Моя геолокація" - НОВА ЛОГІКА
         document.getElementById('locate-btn').addEventListener('click', () => {
             const loading = document.getElementById('loading');
             loading.style.display = 'block';
@@ -1661,57 +1629,12 @@
                         
                         debugLog(`✅ Геолокація отримана: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`, 'success');
                         
-                        // Перемістити карту до поточної локації
-                        map.setView([latitude, longitude], 15);
-                        
-                        // Додати маркер залежно від стану
-                        if (currentState === 'pickup') {
-                            if (pickupMarker) {
-                                map.removeLayer(pickupMarker);
-                            }
-                            pickupMarker = L.marker([latitude, longitude], {
-                                icon: createMarkerIcon(true)
-                            }).addTo(map);
-                            pickupCoords = { lat: latitude, lng: longitude };
-                            
-                            debugLog(`🟢 Pickup (геолокація) збережено`, 'success');
-                            
-                            // ✅ ОЧИСТИТИ поле пошуку після вибору pickup геолокацією
-                            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
-                            if (searchInput) {
-                                searchInput.value = '';
-                                searchInput.placeholder = '🎯 Куди їдемо? (наприклад: Львів, пл. Ринок)';
-                            }
-                            
-                        } else if (currentState === 'destination') {
-                            if (destinationMarker) {
-                                map.removeLayer(destinationMarker);
-                            }
-                            destinationMarker = L.marker([latitude, longitude], {
-                                icon: createMarkerIcon(false)
-                            }).addTo(map);
-                            destinationCoords = { lat: latitude, lng: longitude };
-                            
-                            debugLog(`🔵 Destination (геолокація) збережено`, 'success');
-                            
-                            // МАЛЮВАТИ маршрут відразу після вибору destination!
-                            if (pickupCoords && destinationCoords) {
-                                debugLog('🗺️ Будую маршрут після геолокації...', 'info');
-                                loadAndShowRoute(
-                                    pickupCoords.lat, pickupCoords.lng,
-                                    destinationCoords.lat, destinationCoords.lng
-                                );
-                            }
-                            
-                            // ✅ ОЧИСТИТИ поле пошуку після вибору destination геолокацією
-                            const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
-                            if (searchInput) {
-                                searchInput.value = '';
-                            }
-                        }
-                        
-                        // Показати кнопку
-                        tg.MainButton.show();
+                        // 🎯 НОВА ЛОГІКА: просто переміщуємо карту до геолокації
+                        // Користувач потім підтвердить центральним маркером
+                        map.setView([latitude, longitude], 16, {
+                            animate: true,
+                            duration: 0.5
+                        });
                         
                         if (tg.HapticFeedback) {
                             tg.HapticFeedback.notificationOccurred('success');
