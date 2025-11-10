@@ -690,15 +690,16 @@ async def webapp_geocode_proxy(request: web.Request) -> web.Response:
             "User-Agent": NOMINATIM_USER_AGENT,
         }
 
-        # ✅ SSL FIX: додати ssl=False для обходу SSL помилок
+        # ✅ SSL FIX: використати ssl=False для повного відключення SSL верифікації
         import ssl
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
         
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        # Спробувати з різними SSL налаштуваннями
+        ssl_context = False  # Спочатку повністю вимкнути SSL верифікацію
+        
+        connector = aiohttp.TCPConnector(ssl=ssl_context, force_close=True, limit=10)
+        
         async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(NOMINATIM_SEARCH_URL, params=proxy_params, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+            async with session.get(NOMINATIM_SEARCH_URL, params=proxy_params, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 body_text = await resp.text()
 
                 if resp.status != 200:
@@ -742,6 +743,29 @@ async def webapp_geocode_proxy(request: web.Request) -> web.Response:
         logger.info(f"✅ Proxy geocode: '{query}' → {len(data)} результат(и)")
         return web.json_response(data)
 
+    except aiohttp.ClientConnectorError as e:
+        logger.error("❌ Proxy geocode: cannot connect to Nominatim: %s", e)
+        
+        # 🔄 FALLBACK: Спробувати з базовим SSL context
+        try:
+            logger.info("🔄 Retry з базовим SSL context...")
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            connector = aiohttp.TCPConnector(ssl=ssl_context, force_close=True)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.get(NOMINATIM_SEARCH_URL, params=proxy_params, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        logger.info(f"✅ Proxy geocode (retry): '{query}' → {len(data) if isinstance(data, list) else 0} результат(и)")
+                        return web.json_response(data)
+        except Exception as retry_error:
+            logger.error("❌ Retry також не вдався: %s", retry_error)
+        
+        return web.json_response({"error": "Cannot connect to Nominatim", "details": str(e)}, status=503)
+    
     except Exception as e:  # noqa: BLE001
         logger.error("❌ Proxy geocode: critical error: %s", e, exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
