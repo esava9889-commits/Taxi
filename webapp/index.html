@@ -1196,6 +1196,8 @@
             console.log('🔄 Карту скинуто');
         }
         
+        // ❌ GEOCODER КОД ЗАКОМЕНТОВАНО - викликав білий екран
+        /* СТАРИЙ GEOCODER
         // 🔍 ПОШУК АДРЕС (Geocoder) з покращеними налаштуваннями
         const geocoder = L.Control.Geocoder.nominatim({
             serviceUrl: 'https://nominatim.openstreetmap.org',
@@ -1569,8 +1571,10 @@
                 tg.HapticFeedback.impactOccurred('medium');
             }
         }).addTo(map);
+        */
         
-        // 🎯 DRAGGABLE SEARCH BOX
+        // ❌ DRAGGABLE SEARCH BOX закоментовано (для старого geocoder)
+        /* // 🎯 DRAGGABLE SEARCH BOX
         setTimeout(() => {
             const geocoderElement = document.querySelector('.leaflet-control-geocoder');
             const searchInput = document.querySelector('.leaflet-control-geocoder-form input');
@@ -1651,7 +1655,7 @@
                     }
                 });
             }
-        }, 500);
+        }, 500); */
         
         // ❌ ВИМКНУТИ клік по карті - тепер використовуємо центральний маркер!
         // Клік по карті більше не потрібен, бо користувач рухає карту під маркером
