@@ -1619,11 +1619,24 @@
                 
                 // 📍 ОТРИМАТИ АДРЕСУ для відображення в панелі
                 try {
-                    const response = await fetch(`/api/webapp/geocode?q=${center.lat},${center.lng}&format=json&limit=1`);
+                    const response = await fetch(`/api/webapp/geocode?q=${center.lat},${center.lng}&format=json&limit=1&addressdetails=1`);
                     if (response.ok) {
                         const data = await response.json();
                         if (data && data.length > 0) {
-                            savedPickupAddress = data[0].display_name;
+                            // 🎯 КОРОТКА АДРЕСА: тільки вулиця + номер будинку
+                            const address = data[0].address || {};
+                            const road = address.road || address.street || '';
+                            const houseNumber = address.house_number || '';
+                            
+                            if (road && houseNumber) {
+                                savedPickupAddress = `${road}, ${houseNumber}`;
+                            } else if (road) {
+                                savedPickupAddress = road;
+                            } else {
+                                // Fallback якщо немає структурованої адреси
+                                savedPickupAddress = data[0].display_name.split(',')[0];
+                            }
+                            
                             updateAddressPanel();
                             debugLog(`📍 Pickup адреса: ${savedPickupAddress}`, 'success');
                         }
@@ -1666,11 +1679,24 @@
                 
                 // 📍 ОТРИМАТИ АДРЕСУ для відображення в панелі
                 try {
-                    const response = await fetch(`/api/webapp/geocode?q=${center.lat},${center.lng}&format=json&limit=1`);
+                    const response = await fetch(`/api/webapp/geocode?q=${center.lat},${center.lng}&format=json&limit=1&addressdetails=1`);
                     if (response.ok) {
                         const data = await response.json();
                         if (data && data.length > 0) {
-                            savedDestAddress = data[0].display_name;
+                            // 🎯 КОРОТКА АДРЕСА: тільки вулиця + номер будинку
+                            const address = data[0].address || {};
+                            const road = address.road || address.street || '';
+                            const houseNumber = address.house_number || '';
+                            
+                            if (road && houseNumber) {
+                                savedDestAddress = `${road}, ${houseNumber}`;
+                            } else if (road) {
+                                savedDestAddress = road;
+                            } else {
+                                // Fallback якщо немає структурованої адреси
+                                savedDestAddress = data[0].display_name.split(',')[0];
+                            }
+                            
                             updateAddressPanel();
                             debugLog(`🏁 Destination адреса: ${savedDestAddress}`, 'success');
                         }
