@@ -1111,22 +1111,25 @@
         }
         
         // Перевірити відхилення від маршруту і перебудувати якщо потрібно
+        // ЦЕ ТАКОЖ ЗАБЕЗПЕЧУЄ "ЗНИКНЕННЯ" ЛІНІЇ - маршрут перебудовується від поточної позиції водія
         async function checkRouteDeviation(newLat, newLon, oldLat, oldLon) {
-            // Не перебудовувати якщо немає статусу accepted
-            if (orderData.status !== 'accepted') {
+            // Перебудовувати для accepted (їде до клієнта) та in_progress (везе клієнта)
+            if (orderData.status !== 'accepted' && orderData.status !== 'in_progress') {
                 return;
             }
             
             // Розрахувати відстань від попередньої точки
             const movedDistance = calculateDistance(oldLat, oldLon, newLat, newLon) * 1000; // в метрах
             
-            // Перебудувати тільки якщо рухаємось (>20м) і минуло >10 секунд з останньої перебудови
+            // Перебудувати маршрут частіше для ефекту "зникнення" пройденої частини
+            // Тільки якщо рухаємось (>15м) і минуло >8 секунд
             const now = Date.now();
             const timeSinceRebuild = (now - lastRouteRebuild) / 1000; // секунди
             
-            if (movedDistance > 20 && timeSinceRebuild > 10) {
-                console.log(`🔄 Відхилення: ${Math.round(movedDistance)}м, перебудовуємо маршрут...`);
+            if (movedDistance > 15 && timeSinceRebuild > 8) {
+                console.log(`🔄 Оновлення маршруту: ${Math.round(movedDistance)}м, пройдено частину шляху`);
                 lastRouteRebuild = now;
+                // Маршрут буде побудований від НОВОЇ позиції водія → стара частина зникне
                 await buildRouteForDriver();
             }
         }
@@ -1167,15 +1170,16 @@
                 }).addTo(map);
                 
             } else if (orderData.status === 'in_progress') {
-                // Клієнт в авто, їдуть до пункту призначення (від pickup до destination)
-                fromLat = orderData.pickup_lat;
-                fromLon = orderData.pickup_lon;
+                // Клієнт в авто, їдуть до пункту призначення (ВІД ВОДІЯ до destination)
+                // Маршрут прив'язаний до водія, а не до pickup
+                fromLat = driverLocation.lat;
+                fromLon = driverLocation.lon;
                 toLat = orderData.dest_lat;
                 toLon = orderData.dest_lon;
                 
-                // Додати маркери
-                pickupMarker = L.marker([fromLat, fromLon], {
-                    icon: createMarker('pickup')
+                // Додати маркери (водій + кінцева точка)
+                driverMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('driver')
                 }).addTo(map);
                 
                 destinationMarker = L.marker([toLat, toLon], {

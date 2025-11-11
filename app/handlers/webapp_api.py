@@ -1374,8 +1374,15 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                 
                 # 🔄 ПОВЕРНУТИ ВОДІЯ ДО ПАНЕЛІ (замінити Reply Keyboard)
                 from app.handlers.driver_panel import driver_panel_keyboard
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
                 
                 commission_percent_int = int(commission_percent * 100)
+                
+                # Кнопка для видалення повідомлення
+                dismiss_kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Зрозуміло", callback_data=f"dismiss_msg")]
+                ])
+                
                 await bot.send_message(
                     driver_obj.tg_user_id,
                     f"✅ <b>Поїздку завершено!</b>\n\n"
@@ -1383,9 +1390,17 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                     f"💸 Комісія ({commission_percent_int}%): {int(commission):.0f} грн\n"
                     f"💵 Чистий: {int(net_earnings):.0f} грн\n\n"
                     f"🌟 Дякуємо за роботу!",
-                    reply_markup=driver_panel_keyboard(),
+                    reply_markup=dismiss_kb,
                     parse_mode="HTML"
                 )
+                
+                # Відправити панель водія окремим повідомленням
+                await bot.send_message(
+                    driver_obj.tg_user_id,
+                    "Оберіть дію:",
+                    reply_markup=driver_panel_keyboard()
+                )
+                
                 logger.info(f"✅ Водій {driver_id} повернуто до панелі")
             
             new_status = "completed"

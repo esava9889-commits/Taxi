@@ -3155,6 +3155,15 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
     
+    @router.callback_query(F.data == "dismiss_msg")
+    async def dismiss_message_handler(call: CallbackQuery) -> None:
+        """Видалити повідомлення про завершення поїздки"""
+        await call.answer("✅")
+        try:
+            await call.message.delete()
+        except:
+            pass
+    
     @router.message(F.text == "💬 Підтримка")
     async def trip_support_button(message: Message) -> None:
         """Зв'язок з адміністрацією"""
