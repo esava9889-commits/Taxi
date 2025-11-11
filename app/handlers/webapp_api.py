@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+from datetime import datetime, timezone
 
 import json
 import aiohttp
@@ -1302,18 +1303,34 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
             distance_m = order.distance_m if order.distance_m else 0
             duration_s = 0  # TODO: розрахувати тривалість
             
-            # Завершити замовлення
+            # Завершити замовлення (ПРАВИЛЬНИЙ ПОРЯДОК ПАРАМЕТРІВ!)
+            # Сигнатура: complete_order(db_path, order_id, driver_id, fare_amount, distance_m, duration_s, commission)
             await complete_order(
                 config.database_path,
                 order_id,
                 driver_id,
-                distance_m,
-                duration_s,
-                float(fare),
-                float(commission)
+                float(fare),        # fare_amount на 4-й позиції!
+                distance_m,         # distance_m на 5-й позиції
+                duration_s,         # duration_s на 6-й позиції
+                float(commission)   # commission на 7-й позиції
             )
             
             logger.info(f"✅ Замовлення #{order_id} успішно завершено")
+            
+            # 💳 ЗБЕРЕГТИ ПЛАТІЖ В БД (КРИТИЧНО для нарахування комісії!)
+            from app.storage.db import Payment, insert_payment
+            payment = Payment(
+                id=None,
+                driver_id=driver_id,
+                order_id=order_id,
+                amount=fare,
+                commission=commission,
+                commission_paid=False,
+                payment_method=order.payment_method or 'cash',
+                created_at=datetime.now(timezone.utc)
+            )
+            await insert_payment(config.database_path, payment)
+            logger.info(f"💳 Payment створено: fare={fare:.0f}, commission={commission:.0f}, method={order.payment_method}")
             
             # 🛑 Зупинити всі менеджери для цього замовлення (як у driver_panel.py)
             from app.utils.live_location_manager import LiveLocationManager

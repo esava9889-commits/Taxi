@@ -1571,6 +1571,8 @@ def create_router(config: AppConfig) -> Router:
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
+                f"💰 <b>До сплати: {int(order.fare_amount):.0f} грн</b>\n"
+                f"{'💵 Готівка' if order.payment_method == 'cash' else '💳 Картка'}\n\n"
             )
             
             logger.info(f"📝 Сформовано базовий текст повідомлення для клієнта")
@@ -1791,6 +1793,8 @@ def create_router(config: AppConfig) -> Router:
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
+                f"💰 <b>До сплати: {int(order.fare_amount):.0f} грн</b>\n"
+                f"{'💵 Готівка' if order.payment_method == 'cash' else '💳 Картка'}\n\n"
                 "🚗 Водій їде до вас!"
             )
             
@@ -3595,12 +3599,19 @@ def create_router(config: AppConfig) -> Router:
             driver = await get_driver_by_id(config.database_path, order.driver_id)
             if driver:
                 try:
+                    # Кнопка для видалення повідомлення
+                    dismiss_kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Зрозуміло", callback_data=f"dismiss_msg")]
+                    ])
+                    
                     await call.bot.send_message(
                         driver.tg_user_id,
                         f"💳 <b>КЛІЄНТ ПІДТВЕРДИВ ОПЛАТУ!</b>\n\n"
                         f"Замовлення #{order_id}\n"
                         f"💰 Сума: {int(order.fare_amount):.0f} грн\n\n"
-                        f"⚠️ Перевірте надходження коштів на картку!"
+                        f"⚠️ Перевірте надходження коштів на картку!",
+                        reply_markup=dismiss_kb,
+                        parse_mode="HTML"
                     )
                 except:
                     pass
