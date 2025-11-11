@@ -725,6 +725,39 @@
         <div id="route-distance" style="margin-top: 10px; font-size: 14px; color: #FFA500;"></div>
     </div>
     
+    <!-- Real-time статус водія (швидкість та ETA) -->
+    <div id="driver-status-panel" style="
+        position: fixed;
+        top: 140px;
+        left: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(45, 45, 45, 0.95));
+        backdrop-filter: blur(10px);
+        border: 2px solid #4CAF50;
+        border-radius: 16px;
+        padding: 12px 15px;
+        z-index: 1000;
+        color: #4CAF50;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        display: none;
+        font-size: 14px;
+        line-height: 1.8;
+    ">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span style="color: #FFF;">🚗 Швидкість:</span>
+                <span id="driver-speed" style="font-weight: bold; color: #4CAF50;">0 км/год</span>
+            </div>
+            <div>
+                <span style="color: #FFF;">⏱️ ETA:</span>
+                <span id="driver-eta" style="font-weight: bold; color: #FFD700;">--:--</span>
+            </div>
+        </div>
+        <div style="margin-top: 5px; font-size: 12px; color: #AAA;" id="location-accuracy">
+            📡 Точність: -- м
+        </div>
+    </div>
+    
     <!-- Кнопка керування поїздкою (внизу) -->
     <button class="driver-control-btn" id="driver-action-btn" disabled>
         ⏳ Завантаження...
@@ -761,6 +794,11 @@
         let destinationMarker = null;
         let driverMarker = null;
         let routeLine = null;
+        let watchId = null; // ID для watchPosition
+        let lastRouteRebuild = 0; // Час останньої перебудови маршруту
+        let currentSpeed = 0; // Поточна швидкість км/год
+        let previousPosition = null; // Попередня позиція для розрахунку швидкості
+        let routeDistance = 0; // Відстань маршруту в км
         
         // Ініціалізація карти
         const map = L.map('map').setView([50.4501, 30.5234], 13); // За замовчуванням Київ
@@ -871,22 +909,105 @@
             infoPanel.style.display = 'block';
         }
         
-        // Отримати позицію водія через геолокацію
+        // Розрахувати відстань між двома точками (формула Haversine)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Радіус Землі в км
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; // Відстань в км
+        }
+        
+        // Оновити маркер водія з плавною анімацією
+        function updateDriverMarker(lat, lon) {
+            if (!driverMarker) {
+                // Створити новий маркер
+                driverMarker = L.marker([lat, lon], {
+                    icon: createMarker('driver')
+                }).addTo(map);
+            } else {
+                // Плавно перемістити маркер
+                const newLatLng = L.latLng(lat, lon);
+                driverMarker.setLatLng(newLatLng);
+            }
+        }
+        
+        // Розрахувати ETA (очікуваний час прибуття)
+        function calculateETA(distanceKm, speedKmh) {
+            if (speedKmh < 1) return '--:--'; // Якщо стоїмо на місці
+            
+            const timeHours = distanceKm / speedKmh;
+            const timeMinutes = Math.round(timeHours * 60);
+            
+            if (timeMinutes < 1) return '<1 хв';
+            if (timeMinutes < 60) return `${timeMinutes} хв`;
+            
+            const hours = Math.floor(timeMinutes / 60);
+            const minutes = timeMinutes % 60;
+            return `${hours}г ${minutes}хв`;
+        }
+        
+        // Оновити панель статусу (швидкість, ETA, точність)
+        function updateDriverStatus(speed, accuracy) {
+            const statusPanel = document.getElementById('driver-status-panel');
+            const speedEl = document.getElementById('driver-speed');
+            const etaEl = document.getElementById('driver-eta');
+            const accuracyEl = document.getElementById('location-accuracy');
+            
+            // Оновити швидкість
+            speedEl.textContent = `${Math.round(speed)} км/год`;
+            
+            // Розрахувати ETA до цільової точки
+            let targetLat, targetLon;
+            if (orderData.status === 'accepted') {
+                targetLat = orderData.pickup_lat;
+                targetLon = orderData.pickup_lon;
+            } else if (orderData.status === 'in_progress') {
+                targetLat = orderData.dest_lat;
+                targetLon = orderData.dest_lon;
+            }
+            
+            if (targetLat && targetLon && driverLocation) {
+                const distanceToTarget = calculateDistance(
+                    driverLocation.lat, driverLocation.lon,
+                    targetLat, targetLon
+                );
+                const eta = calculateETA(distanceToTarget, speed);
+                etaEl.textContent = eta;
+            }
+            
+            // Оновити точність
+            accuracyEl.textContent = `📡 Точність: ${Math.round(accuracy)} м`;
+            
+            // Показати панель
+            statusPanel.style.display = 'block';
+        }
+        
+        // Отримати початкову позицію водія та запустити real-time відстеження
         async function getDriverLocation() {
             return new Promise((resolve, reject) => {
                 if ('geolocation' in navigator) {
+                    // Спочатку отримати поточну позицію
                     navigator.geolocation.getCurrentPosition(
                         (position) => {
                             driverLocation = {
                                 lat: position.coords.latitude,
                                 lon: position.coords.longitude
                             };
-                            console.log('📍 Позиція водія:', driverLocation);
+                            console.log('📍 Початкова позиція водія:', driverLocation);
+                            
+                            // Запустити real-time відстеження
+                            startRealTimeTracking();
+                            
                             resolve(driverLocation);
                         },
                         (error) => {
                             console.error('❌ Помилка геолокації:', error);
-                            // Якщо не вдалося отримати геолокацію, використаємо pickup як fallback
+                            // Fallback на pickup
                             driverLocation = {
                                 lat: orderData.pickup_lat,
                                 lon: orderData.pickup_lon
@@ -910,6 +1031,93 @@
                     resolve(driverLocation);
                 }
             });
+        }
+        
+        // Запустити real-time відстеження позиції водія
+        function startRealTimeTracking() {
+            if (!('geolocation' in navigator)) {
+                console.warn('⚠️ Геолокація не підтримується');
+                return;
+            }
+            
+            console.log('🎯 Запуск real-time відстеження...');
+            
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const newLat = position.coords.latitude;
+                    const newLon = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    const speed = position.coords.speed; // м/с або null
+                    
+                    console.log(`📍 Оновлення позиції: ${newLat}, ${newLon} (точність: ${Math.round(accuracy)}м)`);
+                    
+                    // Розрахувати швидкість якщо не надається GPS
+                    if (previousPosition && speed === null) {
+                        const distance = calculateDistance(
+                            previousPosition.lat, previousPosition.lon,
+                            newLat, newLon
+                        );
+                        const timeDiff = (Date.now() - previousPosition.timestamp) / 1000; // секунди
+                        currentSpeed = (distance / timeDiff) * 3600; // км/год
+                    } else if (speed !== null) {
+                        currentSpeed = speed * 3.6; // конвертувати м/с в км/год
+                    }
+                    
+                    // Оновити позицію водія
+                    const oldLat = driverLocation.lat;
+                    const oldLon = driverLocation.lon;
+                    
+                    driverLocation = { lat: newLat, lon: newLon };
+                    previousPosition = { lat: newLat, lon: newLon, timestamp: Date.now() };
+                    
+                    // Оновити маркер на карті
+                    updateDriverMarker(newLat, newLon);
+                    
+                    // Оновити панель статусу
+                    updateDriverStatus(currentSpeed, accuracy);
+                    
+                    // Перевірити чи потрібно перебудувати маршрут
+                    checkRouteDeviation(newLat, newLon, oldLat, oldLon);
+                },
+                (error) => {
+                    console.error('❌ Помилка real-time відстеження:', error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 30000,
+                    maximumAge: 0
+                }
+            );
+        }
+        
+        // Перевірити відхилення від маршруту і перебудувати якщо потрібно
+        async function checkRouteDeviation(newLat, newLon, oldLat, oldLon) {
+            // Не перебудовувати якщо немає статусу accepted
+            if (orderData.status !== 'accepted') {
+                return;
+            }
+            
+            // Розрахувати відстань від попередньої точки
+            const movedDistance = calculateDistance(oldLat, oldLon, newLat, newLon) * 1000; // в метрах
+            
+            // Перебудувати тільки якщо рухаємось (>20м) і минуло >10 секунд з останньої перебудови
+            const now = Date.now();
+            const timeSinceRebuild = (now - lastRouteRebuild) / 1000; // секунди
+            
+            if (movedDistance > 20 && timeSinceRebuild > 10) {
+                console.log(`🔄 Відхилення: ${Math.round(movedDistance)}м, перебудовуємо маршрут...`);
+                lastRouteRebuild = now;
+                await buildRouteForDriver();
+            }
+        }
+        
+        // Зупинити real-time відстеження (при закритті вебаппа)
+        function stopRealTimeTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                console.log('⏹️ Real-time відстеження зупинено');
+            }
         }
         
         // Побудувати маршрут залежно від статусу замовлення
@@ -1099,6 +1307,7 @@
                 
                 // Якщо завершено - закрити вебапп через 2 секунди
                 if (action === 'complete') {
+                    stopRealTimeTracking(); // Зупинити відстеження
                     setTimeout(() => {
                         tg.close();
                     }, 2000);
@@ -1643,7 +1852,13 @@
         // Закриття WebApp
         tg.BackButton.show();
         tg.onEvent('backButtonClicked', () => {
+            stopRealTimeTracking(); // Зупинити відстеження перед закриттям
             tg.close();
+        });
+        
+        // Також зупинити при закритті браузера/вкладки
+        window.addEventListener('beforeunload', () => {
+            stopRealTimeTracking();
         });
     </script>
 </body>
