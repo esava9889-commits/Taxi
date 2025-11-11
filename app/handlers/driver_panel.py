@@ -1543,34 +1543,8 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id}")
         
-        # Відправити live location клієнту
+        # ОБОВ'ЯЗКОВО повідомити клієнта про водія (незалежно від live location)
         try:
-            logger.info(f"📍 Відправка live location клієнту {order.user_id} для замовлення #{order_id}")
-            
-            location_message = await message.bot.send_location(
-                chat_id=order.user_id,
-                latitude=lat,
-                longitude=lon,
-                live_period=900,  # 15 хвилин
-                disable_notification=False
-            )
-            
-            logger.info(f"✅ Live location відправлено! Message ID: {location_message.message_id}")
-            
-            # Запустити автоматичне оновлення геопозиції
-            from app.utils.live_location_manager import LiveLocationManager
-            await LiveLocationManager.start_tracking(
-                bot=message.bot,
-                order_id=order_id,
-                user_id=order.user_id,
-                driver_id=driver.id,
-                message_id=location_message.message_id,
-                db_path=config.database_path
-            )
-            
-            logger.info(f"✅ LiveLocationManager запущено для замовлення #{order_id}")
-            
-            # Повідомлення клієнту про прийняття замовлення + live location
             # Створити кнопки для клієнта
             client_buttons = []
             if order.payment_method == "card" and driver.card_number:
@@ -1580,23 +1554,68 @@ def create_router(config: AppConfig) -> Router:
             
             client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
             
-            await message.bot.send_message(
-                order.user_id,
+            # Базове повідомлення про водія
+            driver_info_text = (
                 "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
-                "📍 <b>Водій поділився геопозицією!</b>\n"
-                "Ви можете бачити його рух в реальному часі.\n"
-                "Геопозиція оновлюється кожні 20 секунд протягом 15 хвилин.\n\n"
-                "🚗 Водій їде до вас!",
-                reply_markup=client_kb
             )
             
-            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id}")
+            # Спробувати відправити live location
+            live_location_sent = False
+            try:
+                logger.info(f"📍 Відправка live location клієнту {order.user_id} для замовлення #{order_id}")
+                
+                location_message = await message.bot.send_location(
+                    chat_id=order.user_id,
+                    latitude=lat,
+                    longitude=lon,
+                    live_period=900,  # 15 хвилин
+                    disable_notification=False
+                )
+                
+                logger.info(f"✅ Live location відправлено! Message ID: {location_message.message_id}")
+                
+                # Запустити автоматичне оновлення геопозиції
+                from app.utils.live_location_manager import LiveLocationManager
+                await LiveLocationManager.start_tracking(
+                    bot=message.bot,
+                    order_id=order_id,
+                    user_id=order.user_id,
+                    driver_id=driver.id,
+                    message_id=location_message.message_id,
+                    db_path=config.database_path
+                )
+                
+                logger.info(f"✅ LiveLocationManager запущено для замовлення #{order_id}")
+                live_location_sent = True
+                
+                # Додати інформацію про live location до тексту
+                driver_info_text += (
+                    "📍 <b>Водій поділився геопозицією!</b>\n"
+                    "Ви можете бачити його рух в реальному часі.\n"
+                    "Геопозиція оновлюється кожні 20 секунд протягом 15 хвилин.\n\n"
+                )
+            except Exception as live_error:
+                logger.error(f"❌ Помилка відправки live location (але продовжуємо): {live_error}", exc_info=True)
+                # Продовжити без live location
+            
+            # Завершити текст
+            driver_info_text += "🚗 Водій їде до вас!"
+            
+            # Відправити повідомлення клієнту (ЗАВЖДИ, навіть якщо live location не працює)
+            await message.bot.send_message(
+                order.user_id,
+                driver_info_text,
+                reply_markup=client_kb,
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id} (live_location: {live_location_sent})")
             
         except Exception as e:
-            logger.error(f"❌ Помилка відправки live location: {e}", exc_info=True)
+            logger.error(f"❌ КРИТИЧНА ПОМИЛКА: не вдалося повідомити клієнта про водія: {e}", exc_info=True)
         
         # Видалити технічні повідомлення
         try:
@@ -1728,7 +1747,7 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id} БЕЗ live location")
         
-        # Повідомити клієнта (БЕЗ live location)
+        # ОБОВ'ЯЗКОВО повідомити клієнта про водія
         try:
             # Створити кнопки для клієнта
             client_buttons = []
@@ -1746,11 +1765,12 @@ def create_router(config: AppConfig) -> Router:
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
                 "🚗 Водій їде до вас!",
-                reply_markup=client_kb
+                reply_markup=client_kb,
+                parse_mode="HTML"
             )
-            logger.info(f"✅ Повідомлення клієнту відправлено (БЕЗ live location)")
+            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id} (БЕЗ live location)")
         except Exception as e:
-            logger.error(f"❌ Помилка відправки повідомлення клієнту: {e}")
+            logger.error(f"❌ КРИТИЧНА ПОМИЛКА: не вдалося повідомити клієнта про водія: {e}", exc_info=True)
         
         # Видалити технічні повідомлення
         try:
