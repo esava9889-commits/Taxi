@@ -1261,10 +1261,8 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error(f"Failed to notify client: {e}")
             
-            # Видалити кнопки водія з Telegram (синхронізація)
-            driver_obj = await get_drv(config.database_path, driver_id)
-            if driver_obj:
-                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
+            # ⚠️ НЕ видаляти кнопки - вони потрібні для наступної дії "Клієнт в авто"
+            # Кнопки будуть видалені тільки після завершення поїздки
             
             new_status = order.status  # Статус залишається "accepted"
             message = "Клієнт отримав повідомлення про ваше прибуття"
@@ -1284,10 +1282,8 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error(f"Failed to notify client: {e}")
             
-            # Видалити кнопки водія з Telegram (синхронізація)
-            driver_obj = await get_drv(config.database_path, driver_id)
-            if driver_obj:
-                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
+            # ⚠️ НЕ видаляти кнопки - вони потрібні для завершення поїздки
+            # Кнопки будуть видалені тільки після 'complete'
             
             new_status = "in_progress"
             message = "Поїздка почалася"
