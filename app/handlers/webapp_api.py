@@ -1258,8 +1258,11 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                 logger.error(f"Failed to notify client: {e}")
             
             # Видалити кнопки водія з Telegram (синхронізація)
-            from app.handlers.driver_panel import delete_order_messages
-            await delete_order_messages(bot, order_id)
+            from app.handlers.driver_panel import clear_order_messages
+            from app.storage.db import get_driver_by_id as get_drv
+            driver_obj = await get_drv(config.database_path, driver_id)
+            if driver_obj:
+                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
             
             new_status = order.status  # Статус залишається "accepted"
             message = "Клієнт отримав повідомлення про ваше прибуття"
@@ -1280,8 +1283,10 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                 logger.error(f"Failed to notify client: {e}")
             
             # Видалити кнопки водія з Telegram (синхронізація)
-            from app.handlers.driver_panel import delete_order_messages
-            await delete_order_messages(bot, order_id)
+            from app.handlers.driver_panel import clear_order_messages
+            driver_obj = await get_drv(config.database_path, driver_id)
+            if driver_obj:
+                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
             
             new_status = "in_progress"
             message = "Поїздка почалася"
@@ -1312,8 +1317,10 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
             )
             
             # Видалити кнопки водія з Telegram (синхронізація)
-            from app.handlers.driver_panel import delete_order_messages
-            await delete_order_messages(bot, order_id)
+            from app.handlers.driver_panel import clear_order_messages
+            driver_obj = await get_drv(config.database_path, driver_id)
+            if driver_obj:
+                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
             
             # Надіслати повідомлення клієнту
             try:
