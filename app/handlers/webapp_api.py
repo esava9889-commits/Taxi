@@ -1188,6 +1188,165 @@ async def webapp_get_driver_order_handler(request: web.Request) -> web.Response:
         }, status=500)
 
 
+async def webapp_driver_action_handler(request: web.Request) -> web.Response:
+    """
+    API endpoint для виконання дій водія через WebApp
+    
+    POST /api/webapp/driver-action
+    Body: {
+        "order_id": 123,
+        "driver_id": 456,
+        "action": "arrived" | "start" | "complete"
+    }
+    
+    Response: {
+        "success": True,
+        "new_status": "in_progress",
+        "message": "Статус оновлено"
+    }
+    """
+    try:
+        data = await request.json()
+        order_id = data.get('order_id')
+        driver_id = data.get('driver_id')
+        action = data.get('action')
+        
+        if not order_id or not driver_id or not action:
+            return web.json_response({
+                "success": False,
+                "error": "Missing required fields: order_id, driver_id, action"
+            }, status=400)
+        
+        if action not in ['arrived', 'start', 'complete']:
+            return web.json_response({
+                "success": False,
+                "error": f"Invalid action: {action}. Must be 'arrived', 'start', or 'complete'"
+            }, status=400)
+        
+        # Отримати замовлення з БД
+        from app.storage.db import get_order_by_id, start_order, complete_order, get_latest_tariff
+        order = await get_order_by_id(request.app['config'].database_path, order_id)
+        
+        if not order:
+            return web.json_response({
+                "success": False,
+                "error": "Order not found"
+            }, status=404)
+        
+        # Перевірити що водій має право на це замовлення
+        if order.driver_id != driver_id:
+            return web.json_response({
+                "success": False,
+                "error": "Access denied"
+            }, status=403)
+        
+        bot = request.app['bot']
+        config = request.app['config']
+        
+        # Виконати дію
+        if action == 'arrived':
+            # Водій прибув на місце - повідомити клієнта
+            logger.info(f"🚕 Driver {driver_id} arrived at pickup for order #{order_id}")
+            
+            try:
+                await bot.send_message(
+                    order.user_id,
+                    "🚗 <b>Водій вже на місці</b>",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify client: {e}")
+            
+            # Видалити кнопки водія з Telegram (синхронізація)
+            from app.handlers.driver_panel import delete_order_messages
+            await delete_order_messages(bot, order_id)
+            
+            new_status = order.status  # Статус залишається "accepted"
+            message = "Клієнт отримав повідомлення про ваше прибуття"
+            
+        elif action == 'start':
+            # Клієнт в авто - почати поїздку
+            logger.info(f"🚗 Driver {driver_id} started trip for order #{order_id}")
+            
+            await start_order(config.database_path, order_id, driver_id)
+            
+            try:
+                await bot.send_message(
+                    order.user_id,
+                    "🚗 <b>Гарної поїздки!</b> 🌟",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify client: {e}")
+            
+            # Видалити кнопки водія з Telegram (синхронізація)
+            from app.handlers.driver_panel import delete_order_messages
+            await delete_order_messages(bot, order_id)
+            
+            new_status = "in_progress"
+            message = "Поїздка почалася"
+            
+        elif action == 'complete':
+            # Завершити поїздку
+            logger.info(f"🏁 Driver {driver_id} completing trip for order #{order_id}")
+            
+            # Розрахунок комісії
+            fare = order.fare_amount if order.fare_amount else 100.0
+            tariff = await get_latest_tariff(config.database_path)
+            commission_percent = tariff.commission_percent if tariff else 0.02
+            commission = fare * commission_percent
+            net_earnings = fare - commission
+            
+            distance_m = order.distance_m if order.distance_m else 0
+            duration_s = 0  # TODO: розрахувати тривалість
+            
+            # Завершити замовлення
+            await complete_order(
+                config.database_path,
+                order_id,
+                driver_id,
+                distance_m,
+                duration_s,
+                float(fare),
+                float(commission)
+            )
+            
+            # Видалити кнопки водія з Telegram (синхронізація)
+            from app.handlers.driver_panel import delete_order_messages
+            await delete_order_messages(bot, order_id)
+            
+            # Надіслати повідомлення клієнту
+            try:
+                await bot.send_message(
+                    order.user_id,
+                    f"✅ <b>Поїздка завершена!</b>\n\n"
+                    f"💰 Вартість: {int(fare):.0f} грн\n"
+                    f"📏 Відстань: {distance_m/1000:.1f} км\n\n"
+                    f"Дякуємо що скористалися нашим сервісом! 🙏",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify client: {e}")
+            
+            new_status = "completed"
+            message = "Поїздка завершена"
+        
+        logger.info(f"✅ Driver action '{action}' processed for order #{order_id}")
+        
+        return web.json_response({
+            "success": True,
+            "new_status": new_status,
+            "message": message
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing driver action: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
     Налаштувати API endpoints для WebApp
@@ -1205,9 +1364,11 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     app.router.add_post('/api/webapp/calculate-price', webapp_calculate_price_handler)
     app.router.add_post('/api/webapp/get-user-city', webapp_get_user_city_handler)
     app.router.add_get('/api/webapp/get-driver-order', webapp_get_driver_order_handler)
+    app.router.add_post('/api/webapp/driver-action', webapp_driver_action_handler)
     
     logger.info("🌐 API endpoint registered: POST /api/webapp/order")
     logger.info("🌐 API endpoint registered: GET/POST /api/webapp/geocode")
     logger.info("🌐 API endpoint registered: POST /api/webapp/calculate-price")
     logger.info("🌐 API endpoint registered: POST /api/webapp/get-user-city")
     logger.info("🌐 API endpoint registered: GET /api/webapp/get-driver-order")
+    logger.info("🌐 API endpoint registered: POST /api/webapp/driver-action")

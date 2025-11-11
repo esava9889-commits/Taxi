@@ -739,14 +739,18 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
-        // Стан
-        let currentState = 'pickup';  // pickup → destination → confirm
-        let pickupCoords = null;
-        let destinationCoords = null;
+        // Отримати параметри з URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('order_id');
+        const driverId = urlParams.get('driver_id');
+        
+        // Глобальні змінні
+        let orderData = null;
+        let driverLocation = null;
         let pickupMarker = null;
         let destinationMarker = null;
+        let driverMarker = null;
         let routeLine = null;
-        let userCity = null;  // Місто клієнта для фільтрації пошуку
         
         // Ініціалізація карти
         const map = L.map('map').setView([50.4501, 30.5234], 13); // За замовчуванням Київ
@@ -755,88 +759,350 @@
             attribution: '© OpenStreetMap'
         }).addTo(map);
         
-        // Центрувати на місто користувача
-        (async () => {
+        // Завантажити дані замовлення після splash screen
+        setTimeout(async () => {
             try {
-                const userId = tg.initDataUnsafe?.user?.id;
-                if (userId) {
-                    const response = await fetch('/api/webapp/get-user-city', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user_id: userId })
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success && data.coordinates) {
-                            const { lat, lon } = data.coordinates;
-                            map.setView([lat, lon], 13);
-                            
-                            // Зберегти назву міста для фільтрації пошуку
-                            userCity = data.coordinates.city || data.city;
-                            console.log('🏙️ Місто клієнта:', userCity);
-                            
-                            // Показати назву міста на карті після завантаження splash screen
-                            if (userCity) {
-                                setTimeout(() => {
-                                    const cityMarker = L.marker([lat, lon], {
-                                        icon: L.divIcon({
-                                            className: 'city-marker',
-                                            html: `<div style="
-                                                background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(45, 45, 45, 0.95));
-                                                color: #FFD700;
-                                                padding: 10px 20px;
-                                                border-radius: 20px;
-                                                font-weight: 600;
-                                                font-size: 18px;
-                                                border: 2px solid rgba(255, 215, 0, 0.6);
-                                                box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3), 0 0 20px rgba(255, 215, 0, 0.2);
-                                                text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-                                                white-space: nowrap;
-                                                font-family: 'Segoe UI', Roboto, sans-serif;
-                                                backdrop-filter: blur(10px);
-                                                display: inline-block;
-                                            ">🏙️ ${userCity}</div>`,
-                                            iconSize: null,  // Автоматичний розмір
-                                            iconAnchor: null  // Автоматичне центрування
-                                        })
-                                    }).addTo(map);
-                                    
-                                    // Центрувати маркер після рендерингу
-                                    setTimeout(() => {
-                                        const markerElement = cityMarker.getElement();
-                                        if (markerElement) {
-                                            const width = markerElement.offsetWidth;
-                                            const height = markerElement.offsetHeight;
-                                            cityMarker.options.icon.options.iconAnchor = [width / 2, height / 2];
-                                            cityMarker.setIcon(cityMarker.options.icon);
-                                        }
-                                    }, 100);
-                                    
-                                    // Видалити маркер через 4 секунди
-                                    setTimeout(() => {
-                                        map.removeLayer(cityMarker);
-                                    }, 4000);
-                                }, 5000); // Показати після зникнення splash screen (4s анімація + 1s затримка)
-                            }
-                        }
-                    }
+                if (!orderId || !driverId) {
+                    alert('❌ Помилка: відсутні параметри order_id або driver_id');
+                    tg.close();
+                    return;
                 }
+                
+                // Показати loader
+                const loading = document.getElementById('loading');
+                loading.style.display = 'block';
+                
+                // Завантажити дані замовлення
+                const response = await fetch(`/api/webapp/get-driver-order?order_id=${orderId}&driver_id=${driverId}`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    alert('❌ ' + (data.error || 'Помилка завантаження замовлення'));
+                    loading.style.display = 'none';
+                    tg.close();
+                    return;
+                }
+                
+                orderData = data.order;
+                console.log('📦 Дані замовлення:', orderData);
+                
+                // Показати інформацію про клієнта
+                showClientInfo(orderData);
+                
+                // Отримати позицію водія
+                await getDriverLocation();
+                
+                // Побудувати маршрут
+                await buildRouteForDriver();
+                
+                // Показати кнопку керування
+                updateActionButton();
+                
+                loading.style.display = 'none';
+                
             } catch (e) {
-                // Помилка - залишаємо Київ
-                console.error('Помилка отримання міста:', e);
+                console.error('❌ Помилка завантаження:', e);
+                alert('❌ Помилка завантаження даних замовлення');
+                document.getElementById('loading').style.display = 'none';
+                tg.close();
             }
-        })();
+        }, 5000); // Після splash screen (4s анімація + 1s затримка)
         
         // Функція створення маркера
-        function createMarker(isPickup) {
-            const emoji = isPickup ? '📍' : '🏁';
+        function createMarker(type) {
+            let emoji, html;
+            
+            switch(type) {
+                case 'pickup':
+                    emoji = '📍';
+                    break;
+                case 'destination':
+                    emoji = '🏁';
+                    break;
+                case 'driver':
+                    emoji = '🚕';
+                    break;
+                default:
+                    emoji = '📍';
+            }
+            
             return L.divIcon({
                 className: 'marker-icon',
                 html: `<div style="font-size: 48px; line-height: 48px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));">${emoji}</div>`,
                 iconSize: [48, 48],
                 iconAnchor: [24, 46]
             });
+        }
+        
+        // Показати інформацію про клієнта та замовлення
+        function showClientInfo(order) {
+            const infoPanel = document.getElementById('driver-info-panel');
+            const clientInfo = document.getElementById('client-info');
+            const routeDistance = document.getElementById('route-distance');
+            
+            // Форматувати телефон
+            const phone = order.client_phone || 'Не вказано';
+            
+            // Інформація про клієнта
+            clientInfo.innerHTML = `
+                👤 <b>${order.client_name || 'Клієнт'}</b><br>
+                📱 <a href="tel:${phone}">${phone}</a><br>
+                📍 <b>Звідки:</b> ${order.pickup_address}<br>
+                🎯 <b>Куди:</b> ${order.destination_address}
+            `;
+            
+            // Інформація про маршрут
+            const paymentEmoji = order.payment_method === 'cash' ? '💵' : '💳';
+            routeDistance.innerHTML = `
+                📏 <b>${order.distance_km} км</b><br>
+                💰 <b>${Math.round(order.fare_amount)} грн</b> ${paymentEmoji}
+            `;
+            
+            infoPanel.style.display = 'block';
+        }
+        
+        // Отримати позицію водія через геолокацію
+        async function getDriverLocation() {
+            return new Promise((resolve, reject) => {
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            driverLocation = {
+                                lat: position.coords.latitude,
+                                lon: position.coords.longitude
+                            };
+                            console.log('📍 Позиція водія:', driverLocation);
+                            resolve(driverLocation);
+                        },
+                        (error) => {
+                            console.error('❌ Помилка геолокації:', error);
+                            // Якщо не вдалося отримати геолокацію, використаємо pickup як fallback
+                            driverLocation = {
+                                lat: orderData.pickup_lat,
+                                lon: orderData.pickup_lon
+                            };
+                            console.log('⚠️ Використовуємо pickup як позицію водія');
+                            resolve(driverLocation);
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        }
+                    );
+                } else {
+                    // Геолокація не підтримується
+                    driverLocation = {
+                        lat: orderData.pickup_lat,
+                        lon: orderData.pickup_lon
+                    };
+                    console.log('⚠️ Геолокація не підтримується, використовуємо pickup');
+                    resolve(driverLocation);
+                }
+            });
+        }
+        
+        // Побудувати маршрут залежно від статусу замовлення
+        async function buildRouteForDriver() {
+            if (!orderData || !driverLocation) {
+                console.error('❌ Відсутні дані для побудови маршруту');
+                return;
+            }
+            
+            let fromLat, fromLon, toLat, toLon;
+            
+            // Визначити точки маршруту залежно від статусу
+            if (orderData.status === 'accepted') {
+                // Водій їде до клієнта (від водія до pickup)
+                fromLat = driverLocation.lat;
+                fromLon = driverLocation.lon;
+                toLat = orderData.pickup_lat;
+                toLon = orderData.pickup_lon;
+                
+                // Додати маркери
+                driverMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('driver')
+                }).addTo(map);
+                
+                pickupMarker = L.marker([toLat, toLon], {
+                    icon: createMarker('pickup')
+                }).addTo(map);
+                
+            } else if (orderData.status === 'in_progress') {
+                // Клієнт в авто, їдуть до пункту призначення (від pickup до destination)
+                fromLat = orderData.pickup_lat;
+                fromLon = orderData.pickup_lon;
+                toLat = orderData.dest_lat;
+                toLon = orderData.dest_lon;
+                
+                // Додати маркери
+                pickupMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('pickup')
+                }).addTo(map);
+                
+                destinationMarker = L.marker([toLat, toLon], {
+                    icon: createMarker('destination')
+                }).addTo(map);
+                
+            } else {
+                // Інші статуси - показати обидві точки
+                fromLat = orderData.pickup_lat;
+                fromLon = orderData.pickup_lon;
+                toLat = orderData.dest_lat;
+                toLon = orderData.dest_lon;
+                
+                pickupMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('pickup')
+                }).addTo(map);
+                
+                destinationMarker = L.marker([toLat, toLon], {
+                    icon: createMarker('destination')
+                }).addTo(map);
+            }
+            
+            // Побудувати маршрут через OSRM
+            try {
+                const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                    
+                    if (routeLine) {
+                        map.removeLayer(routeLine);
+                    }
+                    
+                    routeLine = L.polyline(coords, {
+                        color: '#FFD700',
+                        weight: 6,
+                        opacity: 0.9,
+                        className: 'animated-route'
+                    }).addTo(map);
+                    
+                    // Анімація поступового прокладання маршруту
+                    setTimeout(() => {
+                        const pathElement = routeLine.getElement();
+                        if (pathElement) {
+                            const length = pathElement.getTotalLength();
+                            pathElement.style.strokeDasharray = length;
+                            pathElement.style.strokeDashoffset = length;
+                            pathElement.style.animation = `drawRoute 2s ease-in-out forwards`;
+                        }
+                    }, 100);
+                    
+                    // Центрувати карту на маршруті
+                    map.fitBounds(routeLine.getBounds(), { padding: [80, 80] });
+                    
+                    console.log('✅ Маршрут побудовано');
+                } else {
+                    console.error('❌ Не вдалося побудувати маршрут:', data);
+                }
+            } catch (e) {
+                console.error('❌ Помилка побудови маршруту:', e);
+            }
+        }
+        
+        // Оновити текст кнопки керування залежно від статусу
+        function updateActionButton() {
+            const button = document.getElementById('driver-action-btn');
+            
+            if (!orderData) {
+                button.textContent = '⏳ Завантаження...';
+                button.disabled = true;
+                return;
+            }
+            
+            button.disabled = false;
+            
+            switch(orderData.status) {
+                case 'accepted':
+                    button.textContent = '📍 Я на місці';
+                    button.onclick = () => handleDriverAction('arrived');
+                    break;
+                case 'in_progress':
+                    button.textContent = '✅ Завершити поїздку';
+                    button.onclick = () => handleDriverAction('complete');
+                    break;
+                case 'completed':
+                    button.textContent = '✔️ Поїздка завершена';
+                    button.disabled = true;
+                    break;
+                default:
+                    button.textContent = '⏳ Очікування...';
+                    button.disabled = true;
+            }
+        }
+        
+        // Обробник дій водія
+        async function handleDriverAction(action) {
+            console.log('🚗 Дія водія:', action);
+            
+            // Показати loader
+            const loading = document.getElementById('loading');
+            const button = document.getElementById('driver-action-btn');
+            
+            button.disabled = true;
+            loading.style.display = 'block';
+            
+            try {
+                // Відправити запит на сервер
+                const response = await fetch('/api/webapp/driver-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        order_id: parseInt(orderId),
+                        driver_id: parseInt(driverId),
+                        action: action
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    alert('❌ ' + (data.error || 'Помилка виконання дії'));
+                    button.disabled = false;
+                    loading.style.display = 'none';
+                    return;
+                }
+                
+                console.log('✅ Дія виконана:', data);
+                
+                // Оновити дані замовлення
+                orderData.status = data.new_status;
+                
+                // Оновити кнопку
+                updateActionButton();
+                
+                // Вібрація для зворотного зв'язку
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                }
+                
+                // Якщо завершено - закрити вебапп через 2 секунди
+                if (action === 'complete') {
+                    setTimeout(() => {
+                        tg.close();
+                    }, 2000);
+                } else if (action === 'arrived') {
+                    // Після "Я на місці" змінити кнопку на "Клієнт в авто"
+                    button.textContent = '✅ Клієнт в авто';
+                    button.onclick = () => handleDriverAction('start');
+                    button.disabled = false;
+                } else if (action === 'start') {
+                    // Після "Клієнт в авто" перебудувати маршрут до destination
+                    await buildRouteForDriver();
+                }
+                
+                loading.style.display = 'none';
+                
+            } catch (e) {
+                console.error('❌ Помилка виконання дії:', e);
+                alert('❌ Помилка виконання дії: ' + e.message);
+                button.disabled = false;
+                loading.style.display = 'none';
+            }
         }
         
         // Функція побудови маршруту
