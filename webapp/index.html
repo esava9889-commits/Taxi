@@ -357,24 +357,98 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 40px;
-            animation: fadeOut 1s ease-out 3s forwards;
+            gap: 20px;
+            animation: fadeOut 1s ease-out 4s forwards;
         }
         
-        /* Великий надпис Urban - як у loading екрані */
+        /* SVG контейнер для силуету міста */
+        .city-silhouette {
+            width: 90%;
+            max-width: 500px;
+            height: auto;
+        }
+        
+        /* Золотиста лінія що малює силует */
+        .city-path {
+            fill: none;
+            stroke: #FFD700;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.8));
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawCitySilhouette 2.5s ease-out forwards;
+        }
+        
+        /* Анімація малювання силуету міста */
+        @keyframes drawCitySilhouette {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        
+        /* Вікна у будівлях */
+        .city-window {
+            fill: #FFD700;
+            opacity: 0;
+            animation: windowAppear 0.3s ease-out forwards, windowBlink 2s ease-in-out infinite;
+        }
+        
+        /* Поява вікон після силуету (з різною затримкою) */
+        .city-window:nth-child(1) { animation-delay: 2.5s, 2.8s; }
+        .city-window:nth-child(2) { animation-delay: 2.6s, 2.9s; }
+        .city-window:nth-child(3) { animation-delay: 2.7s, 3.0s; }
+        .city-window:nth-child(4) { animation-delay: 2.5s, 3.1s; }
+        .city-window:nth-child(5) { animation-delay: 2.6s, 2.8s; }
+        .city-window:nth-child(6) { animation-delay: 2.7s, 2.9s; }
+        .city-window:nth-child(7) { animation-delay: 2.5s, 3.0s; }
+        .city-window:nth-child(8) { animation-delay: 2.6s, 3.1s; }
+        .city-window:nth-child(9) { animation-delay: 2.7s, 2.8s; }
+        .city-window:nth-child(10) { animation-delay: 2.5s, 2.9s; }
+        .city-window:nth-child(11) { animation-delay: 2.6s, 3.0s; }
+        .city-window:nth-child(12) { animation-delay: 2.7s, 3.1s; }
+        
+        @keyframes windowAppear {
+            to {
+                opacity: 1;
+            }
+        }
+        
+        @keyframes windowBlink {
+            0%, 100% {
+                opacity: 1;
+                filter: brightness(1);
+            }
+            50% {
+                opacity: 0.4;
+                filter: brightness(0.6);
+            }
+        }
+        
+        /* Надпис Urban під містом */
         .splash-title {
-            font-size: 64px;
+            font-size: 52px;
             font-weight: bold;
             color: #FFD700;
             font-family: 'Segoe UI', Roboto, sans-serif;
-            letter-spacing: 4px;
+            letter-spacing: 8px;
             text-align: center;
             padding: 0 20px;
-            overflow: hidden;
-            border-right: 4px solid #FFD700;
-            white-space: nowrap;
-            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-            animation: typing 1.5s steps(5) forwards, blinkCursor 0.75s step-end infinite;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+            opacity: 0;
+            animation: fadeInTitle 1s ease-out 2.8s forwards;
+        }
+        
+        @keyframes fadeInTitle {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         /* Назва міста - сховано, буде показано на карті */
@@ -473,11 +547,70 @@
 <body>
     <!-- 🎬 SPLASH SCREEN -->
     <div class="splash-screen" id="splash-screen">
+        <!-- SVG силует міста що малюється золотистою лінією -->
+        <svg class="city-silhouette" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+            <!-- Лінія що малює силует міста (зліва направо, знизу вгору) -->
+            <path class="city-path" d="
+                M 20 180
+                L 20 140
+                L 40 140
+                L 40 100
+                L 70 100
+                L 70 120
+                L 90 120
+                L 90 80
+                L 120 80
+                L 120 110
+                L 140 110
+                L 140 70
+                L 170 70
+                L 170 100
+                L 190 100
+                L 190 60
+                L 220 60
+                L 220 90
+                L 240 90
+                L 240 50
+                L 270 50
+                L 270 80
+                L 290 80
+                L 290 110
+                L 310 110
+                L 310 90
+                L 330 90
+                L 330 120
+                L 350 120
+                L 350 100
+                L 370 100
+                L 370 140
+                L 380 140
+                L 380 180
+                Z
+            "/>
+            
+            <!-- Вікна у будівлях (з'являються після малювання силуету) -->
+            <g class="windows">
+                <rect class="city-window" x="25" y="145" width="8" height="8" />
+                <rect class="city-window" x="25" y="160" width="8" height="8" />
+                <rect class="city-window" x="45" y="105" width="8" height="8" />
+                <rect class="city-window" x="45" y="120" width="8" height="8" />
+                <rect class="city-window" x="95" y="85" width="8" height="8" />
+                <rect class="city-window" x="95" y="100" width="8" height="8" />
+                <rect class="city-window" x="145" y="75" width="8" height="8" />
+                <rect class="city-window" x="145" y="90" width="8" height="8" />
+                <rect class="city-window" x="195" y="65" width="8" height="8" />
+                <rect class="city-window" x="195" y="80" width="8" height="8" />
+                <rect class="city-window" x="245" y="55" width="8" height="8" />
+                <rect class="city-window" x="245" y="70" width="8" height="8" />
+                <rect class="city-window" x="295" y="115" width="8" height="8" />
+                <rect class="city-window" x="295" y="130" width="8" height="8" />
+                <rect class="city-window" x="335" y="95" width="8" height="8" />
+                <rect class="city-window" x="335" y="110" width="8" height="8" />
+            </g>
+        </svg>
+        
+        <!-- Надпис Urban з fade-in ефектом -->
         <div class="splash-title">Urban</div>
-        <div class="splash-city" id="splash-city"></div>
-        <div class="splash-wheel-container">
-            <div class="splash-wheel"></div>
-        </div>
     </div>
     
     <div id="map"></div>
@@ -611,7 +744,7 @@
                                     setTimeout(() => {
                                         map.removeLayer(cityMarker);
                                     }, 4000);
-                                }, 3500); // Показати після зникнення splash screen
+                                }, 5000); // Показати після зникнення splash screen (4s анімація + 1s затримка)
                             }
                         }
                     }
