@@ -887,6 +887,13 @@
                             pathElement.style.strokeDasharray = length;
                             pathElement.style.strokeDashoffset = length;
                             pathElement.style.animation = `drawRoute 2s ease-in-out forwards`;
+                            
+                            // Видалити анімацію після завершення щоб лінія залишалась суцільною
+                            setTimeout(() => {
+                                pathElement.style.strokeDasharray = 'none';
+                                pathElement.style.strokeDashoffset = '0';
+                                pathElement.style.animation = 'none';
+                            }, 2100); // 2s анімація + 100ms запас
                         }
                     }, 100);
                     

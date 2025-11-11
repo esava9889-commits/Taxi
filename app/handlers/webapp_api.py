@@ -1317,23 +1317,80 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                 float(commission)
             )
             
-            # Видалити кнопки водія з Telegram (синхронізація)
-            driver_obj = await get_drv(config.database_path, driver_id)
-            if driver_obj:
-                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
+            logger.info(f"✅ Замовлення #{order_id} успішно завершено")
             
-            # Надіслати повідомлення клієнту
+            # 🛑 Зупинити всі менеджери для цього замовлення (як у driver_panel.py)
+            from app.utils.live_location_manager import LiveLocationManager
+            from app.utils.priority_order_manager import PriorityOrderManager
+            from app.utils.order_timeout import cancel_order_timeout
+            
+            await LiveLocationManager.stop_tracking(order_id)
+            PriorityOrderManager.cancel_priority_timer(order_id)
+            cancel_order_timeout(order_id)
+            logger.info(f"✅ Всі менеджери зупинено для замовлення #{order_id}")
+            
+            # Отримати водія для tg_user_id
+            driver_obj = await get_drv(config.database_path, driver_id)
+            
+            # 🌟 НАДІСЛАТИ КЛІЄНТУ ЗАПИТ НА ОЦІНКУ ВОДІЯ (як у driver_panel.py)
             try:
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+                
+                # Створити інлайн кнопки з зірками
+                rating_buttons = [
+                    [
+                        InlineKeyboardButton(text="⭐", callback_data=f"rate:driver:{driver_obj.tg_user_id}:1:{order_id}"),
+                        InlineKeyboardButton(text="⭐⭐", callback_data=f"rate:driver:{driver_obj.tg_user_id}:2:{order_id}"),
+                        InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate:driver:{driver_obj.tg_user_id}:3:{order_id}"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate:driver:{driver_obj.tg_user_id}:4:{order_id}"),
+                        InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate:driver:{driver_obj.tg_user_id}:5:{order_id}"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="⏩ Пропустити", callback_data=f"rate:skip:{order_id}")
+                    ]
+                ]
+                
+                rating_kb = InlineKeyboardMarkup(inline_keyboard=rating_buttons)
+                
+                # Відправити повідомлення клієнту
                 await bot.send_message(
-                    order.user_id,
-                    f"✅ <b>Поїздка завершена!</b>\n\n"
-                    f"💰 Вартість: {int(fare):.0f} грн\n"
-                    f"📏 Відстань: {distance_m/1000:.1f} км\n\n"
-                    f"Дякуємо що скористалися нашим сервісом! 🙏",
+                    chat_id=order.user_id,
+                    text=(
+                        "✅ <b>Поїздка завершена!</b>\n\n"
+                        f"💰 Вартість: {int(fare):.0f} грн\n"
+                        f"🚗 Спосіб оплати: {'💳 Картка' if order.payment_method == 'card' else '💵 Готівка'}\n\n"
+                        "⭐ <b>Будь ласка, оцініть водія:</b>\n"
+                        "Це допоможе покращити якість сервісу!"
+                    ),
+                    reply_markup=rating_kb,
                     parse_mode="HTML"
                 )
+                logger.info(f"✅ Надіслано запит на оцінку водія {driver_id} клієнту {order.user_id} для замовлення #{order_id}")
             except Exception as e:
-                logger.error(f"Failed to notify client: {e}")
+                logger.error(f"❌ Помилка відправки запиту на оцінку: {e}")
+            
+            # 🧹 ОЧИСТИТИ ЧАТ ВОДІЯ - видалити всі повідомлення про замовлення (як у driver_panel.py)
+            if driver_obj:
+                await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
+                logger.info(f"✅ Чат водія {driver_id} очищено від повідомлень замовлення #{order_id}")
+                
+                # 🔄 ПОВЕРНУТИ ВОДІЯ ДО ПАНЕЛІ (замінити Reply Keyboard)
+                from app.handlers.driver_panel import driver_panel_keyboard
+                
+                commission_percent_int = int(commission_percent * 100)
+                await bot.send_message(
+                    driver_obj.tg_user_id,
+                    f"✅ <b>Поїздку завершено!</b>\n\n"
+                    f"💰 Заробіток: {int(fare):.0f} грн\n"
+                    f"💸 Комісія ({commission_percent_int}%): {int(commission):.0f} грн\n"
+                    f"💵 Чистий: {int(net_earnings):.0f} грн\n\n"
+                    f"🌟 Дякуємо за роботу!",
+                    reply_markup=driver_panel_keyboard(),
+                    parse_mode="HTML"
+                )
+                logger.info(f"✅ Водій {driver_id} повернуто до панелі")
             
             new_status = "completed"
             message = "Поїздка завершена"

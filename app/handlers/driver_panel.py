@@ -1674,6 +1674,7 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=kb_webapp
         )
         add_order_message(order_id, sent_msg.message_id)
+        add_order_message(order_id, webapp_msg.message_id)  # Зберегти WebApp кнопку також
         
         # Очистити FSM стан
         await state.clear()
@@ -1825,6 +1826,7 @@ def create_router(config: AppConfig) -> Router:
             reply_markup=kb_webapp
         )
         add_order_message(order_id, sent_msg.message_id)
+        add_order_message(order_id, webapp_msg.message_id)  # Зберегти WebApp кнопку також
         
         # Очистити FSM стан
         await state.clear()
