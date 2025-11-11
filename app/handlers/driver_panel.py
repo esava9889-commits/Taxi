@@ -1686,7 +1686,7 @@ def create_router(config: AppConfig) -> Router:
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
         # Створити inline кнопку для WebApp карти
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+        from aiogram.types import WebAppInfo  # InlineKeyboardButton та InlineKeyboardMarkup вже імпортовані глобально
         # Використовуємо config.webapp_url як базу і додаємо шлях до driver_map.html
         base_url = config.webapp_url.replace('/index.html', '') if config.webapp_url else "https://your-app.onrender.com/webapp"
         webapp_url = f"{base_url}/driver_map.html?order_id={order_id}&driver_id={driver.id}"
@@ -1859,7 +1859,7 @@ def create_router(config: AppConfig) -> Router:
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
         # Створити inline кнопку для WebApp карти
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+        from aiogram.types import WebAppInfo  # InlineKeyboardButton та InlineKeyboardMarkup вже імпортовані глобально
         # Використовуємо config.webapp_url як базу і додаємо шлях до driver_map.html
         base_url = config.webapp_url.replace('/index.html', '') if config.webapp_url else "https://your-app.onrender.com/webapp"
         webapp_url = f"{base_url}/driver_map.html?order_id={order_id}&driver_id={driver.id}"
