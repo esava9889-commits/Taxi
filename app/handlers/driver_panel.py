@@ -1543,14 +1543,25 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id}")
         
-        # ОБОВ'ЯЗКОВО повідомити клієнта про водія (незалежно від live location)
+        # ⭐ ОБОВ'ЯЗКОВО повідомити клієнта про водія (незалежно від live location)
+        logger.info(f"📨 Починаю підготовку повідомлення для клієнта {order.user_id}")
+        
         try:
+            # Перевірка обов'язкових даних
+            if not order.user_id:
+                logger.error(f"❌ order.user_id відсутній для замовлення #{order_id}")
+                raise ValueError("order.user_id is None")
+            
+            logger.info(f"📋 Водій: {driver.full_name}, {driver.car_make} {driver.car_model}, тел: {driver.phone}")
+            logger.info(f"💳 Спосіб оплати: {order.payment_method}, картка водія: {'є' if driver.card_number else 'немає'}")
+            
             # Створити кнопки для клієнта
             client_buttons = []
             if order.payment_method == "card" and driver.card_number:
                 client_buttons.append([
                     InlineKeyboardButton(text="💳 Картка водія для оплати", callback_data=f"show_card:{order_id}")
                 ])
+                logger.info(f"💳 Додано кнопку оплати карткою для клієнта")
             
             client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
             
@@ -1561,6 +1572,8 @@ def create_router(config: AppConfig) -> Router:
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
             )
+            
+            logger.info(f"📝 Сформовано базовий текст повідомлення для клієнта")
             
             # Спробувати відправити live location
             live_location_sent = False
@@ -1604,15 +1617,19 @@ def create_router(config: AppConfig) -> Router:
             # Завершити текст
             driver_info_text += "🚗 Водій їде до вас!"
             
+            logger.info(f"📤 ВІДПРАВЛЯЮ повідомлення клієнту {order.user_id}...")
+            logger.info(f"📄 Текст ({len(driver_info_text)} символів): {driver_info_text[:100]}...")
+            
             # Відправити повідомлення клієнту (ЗАВЖДИ, навіть якщо live location не працює)
-            await message.bot.send_message(
+            sent_message = await message.bot.send_message(
                 order.user_id,
                 driver_info_text,
                 reply_markup=client_kb,
                 parse_mode="HTML"
             )
             
-            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id} (live_location: {live_location_sent})")
+            logger.info(f"✅✅✅ УСПІШНО! Повідомлення клієнту ВІДПРАВЛЕНО! Message ID: {sent_message.message_id}")
+            logger.info(f"📊 Деталі: order_id={order_id}, client_id={order.user_id}, live_location={live_location_sent}")
             
         except Exception as e:
             logger.error(f"❌ КРИТИЧНА ПОМИЛКА: не вдалося повідомити клієнта про водія: {e}", exc_info=True)
@@ -1747,28 +1764,48 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id} БЕЗ live location")
         
-        # ОБОВ'ЯЗКОВО повідомити клієнта про водія
+        # ⭐ ОБОВ'ЯЗКОВО повідомити клієнта про водія
+        logger.info(f"📨 Починаю підготовку повідомлення для клієнта {order.user_id} (БЕЗ ГЕОЛОКАЦІЇ)")
+        
         try:
+            # Перевірка обов'язкових даних
+            if not order.user_id:
+                logger.error(f"❌ order.user_id відсутній для замовлення #{order_id}")
+                raise ValueError("order.user_id is None")
+            
+            logger.info(f"📋 Водій: {driver.full_name}, {driver.car_make} {driver.car_model}, тел: {driver.phone}")
+            logger.info(f"💳 Спосіб оплати: {order.payment_method}, картка водія: {'є' if driver.card_number else 'немає'}")
+            
             # Створити кнопки для клієнта
             client_buttons = []
             if order.payment_method == "card" and driver.card_number:
                 client_buttons.append([
                     InlineKeyboardButton(text="💳 Картка водія для оплати", callback_data=f"show_card:{order_id}")
                 ])
+                logger.info(f"💳 Додано кнопку оплати карткою для клієнта")
             
             client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
             
-            await message.bot.send_message(
-                order.user_id,
+            driver_info_text = (
                 "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
-                "🚗 Водій їде до вас!",
+                "🚗 Водій їде до вас!"
+            )
+            
+            logger.info(f"📤 ВІДПРАВЛЯЮ повідомлення клієнту {order.user_id}...")
+            logger.info(f"📄 Текст ({len(driver_info_text)} символів): {driver_info_text[:100]}...")
+            
+            sent_message = await message.bot.send_message(
+                order.user_id,
+                driver_info_text,
                 reply_markup=client_kb,
                 parse_mode="HTML"
             )
-            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id} (БЕЗ live location)")
+            
+            logger.info(f"✅✅✅ УСПІШНО! Повідомлення клієнту ВІДПРАВЛЕНО! Message ID: {sent_message.message_id}")
+            logger.info(f"📊 Деталі: order_id={order_id}, client_id={order.user_id}, БЕЗ live location")
         except Exception as e:
             logger.error(f"❌ КРИТИЧНА ПОМИЛКА: не вдалося повідомити клієнта про водія: {e}", exc_info=True)
         
