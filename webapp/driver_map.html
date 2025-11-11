@@ -25,34 +25,7 @@
             height: 100vh;
         }
         
-        /* Центральний маркер */
-        .center-marker {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            z-index: 1001;
-            pointer-events: none;
-            transform: translate(-50%, -100%);
-            font-size: 48px;
-            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
-            animation: float 2s ease-in-out infinite;
-        }
-        
-        /* Анімація плавного "плавання" маркера */
-        @keyframes float {
-            0%, 100% {
-                transform: translate(-50%, -100%) translateY(0);
-            }
-            50% {
-                transform: translate(-50%, -100%) translateY(-8px);
-            }
-        }
-        
-        /* При перетягуванні карти - маркер трохи збільшується */
-        .center-marker.dragging {
-            font-size: 52px;
-            animation: none;
-        }
+        /* Центральний маркер - ВИДАЛЕНО для водія */
         
         /* Виправлення для маркерів Leaflet - прибрати квадратну обводку */
         .leaflet-marker-icon {
@@ -60,15 +33,39 @@
             border: none !important;
         }
         
-        /* Пошук внизу */
-        .search-container {
+        /* Кнопка керування поїздкою внизу */
+        .driver-control-btn {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 1000;
-            display: flex;
-            gap: 10px;
+            padding: 18px 40px;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #1a1a1a;
+            border: none;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 8px 24px rgba(255, 215, 0, 0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 280px;
+            text-align: center;
+        }
+        
+        .driver-control-btn:hover {
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 12px 32px rgba(255, 215, 0, 0.6);
+        }
+        
+        .driver-control-btn:active {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        .driver-control-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         
         .search-wrapper {
@@ -697,38 +694,31 @@
     </div>
     
     <div id="map"></div>
-    <div class="center-marker" id="center-marker">📍</div>
     
-    <div class="selected-addresses" id="selected-addresses">
-        <div class="address-line" id="pickup-address-line">
-            <span class="address-label">📍</span>
-            <span class="address-value" id="pickup-address-text">Не обрано</span>
-            <button class="edit-address-btn" id="edit-pickup-btn">⚙️</button>
-        </div>
-        <div class="address-line" id="dest-address-line" style="display: none;">
-            <span class="address-label">🏁</span>
-            <span class="address-value" id="dest-address-text">Не обрано</span>
-            <button class="edit-address-btn" id="edit-dest-btn">⚙️</button>
-        </div>
+    <!-- Панель інформації про клієнта (зверху) -->
+    <div class="driver-info-panel" id="driver-info-panel" style="
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        right: 20px;
+        background: rgba(26, 26, 26, 0.95);
+        backdrop-filter: blur(10px);
+        border: 2px solid #FFD700;
+        border-radius: 16px;
+        padding: 15px;
+        z-index: 1000;
+        color: #FFD700;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        display: none;
+    ">
+        <div id="client-info" style="font-size: 16px; line-height: 1.6;"></div>
+        <div id="route-distance" style="margin-top: 10px; font-size: 14px; color: #FFA500;"></div>
     </div>
     
-    <div class="autocomplete-results" id="autocomplete-results"></div>
-    
-    <button class="location-btn" id="location-btn">📍</button>
-    
-    <div class="search-container">
-        <div class="search-wrapper">
-            <input type="text" class="search-input" id="search" placeholder="📍 Звідки їдемо?" autocomplete="off">
-            <button class="search-btn" id="search-btn">🔍</button>
-        </div>
-        <button class="confirm-btn" id="confirm">✅</button>
-    </div>
-    
-    <div class="route-info" id="route-info" style="display: none;">
-        <strong>📏 Маршрут:</strong><br>
-        Відстань: 0 км<br>
-        Час: ~0 хв
-    </div>
+    <!-- Кнопка керування поїздкою (внизу) -->
+    <button class="driver-control-btn" id="driver-action-btn" disabled>
+        ⏳ Завантаження...
+    </button>
     
     <div class="loading" id="loading">
         <div class="loading-text" id="loading-text">Urban</div>
