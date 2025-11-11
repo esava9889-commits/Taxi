@@ -1243,6 +1243,10 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
         bot = request.app['bot']
         config = request.app['config']
         
+        # Імпорти для синхронізації (винесені на початок для доступу у всіх блоках)
+        from app.handlers.driver_panel import clear_order_messages
+        from app.storage.db import get_driver_by_id as get_drv
+        
         # Виконати дію
         if action == 'arrived':
             # Водій прибув на місце - повідомити клієнта
@@ -1258,8 +1262,6 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                 logger.error(f"Failed to notify client: {e}")
             
             # Видалити кнопки водія з Telegram (синхронізація)
-            from app.handlers.driver_panel import clear_order_messages
-            from app.storage.db import get_driver_by_id as get_drv
             driver_obj = await get_drv(config.database_path, driver_id)
             if driver_obj:
                 await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
@@ -1283,7 +1285,6 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
                 logger.error(f"Failed to notify client: {e}")
             
             # Видалити кнопки водія з Telegram (синхронізація)
-            from app.handlers.driver_panel import clear_order_messages
             driver_obj = await get_drv(config.database_path, driver_id)
             if driver_obj:
                 await clear_order_messages(bot, driver_obj.tg_user_id, order_id)
@@ -1317,7 +1318,6 @@ async def webapp_driver_action_handler(request: web.Request) -> web.Response:
             )
             
             # Видалити кнопки водія з Telegram (синхронізація)
-            from app.handlers.driver_panel import clear_order_messages
             driver_obj = await get_drv(config.database_path, driver_id)
             if driver_obj:
                 await clear_order_messages(bot, driver_obj.tg_user_id, order_id)

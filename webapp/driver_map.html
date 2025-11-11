@@ -1297,16 +1297,14 @@
                 // Оновити дані замовлення
                 orderData.status = data.new_status;
                 
-                // Оновити кнопку
-                updateActionButton();
-                
                 // Вібрація для зворотного зв'язку
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.notificationOccurred('success');
                 }
                 
-                // Якщо завершено - закрити вебапп через 2 секунди
+                // Обробка різних дій
                 if (action === 'complete') {
+                    // Завершено - закрити вебапп через 2 секунди
                     stopRealTimeTracking(); // Зупинити відстеження
                     setTimeout(() => {
                         tg.close();
@@ -1317,8 +1315,33 @@
                     button.onclick = () => handleDriverAction('start');
                     button.disabled = false;
                 } else if (action === 'start') {
-                    // Після "Клієнт в авто" перебудувати маршрут до destination
+                    // Після "Клієнт в авто" - ПЕРЕБУДУВАТИ маршрут до destination
+                    console.log('🔄 Перебудова маршруту після "Клієнт в авто"...');
+                    
+                    // Видалити старий маршрут та маркери
+                    if (routeLine) {
+                        map.removeLayer(routeLine);
+                        routeLine = null;
+                    }
+                    if (pickupMarker) {
+                        map.removeLayer(pickupMarker);
+                        pickupMarker = null;
+                    }
+                    if (driverMarker) {
+                        map.removeLayer(driverMarker);
+                        driverMarker = null;
+                    }
+                    
+                    // Перебудувати маршрут (зараз від pickup до destination)
                     await buildRouteForDriver();
+                    
+                    // Оновити кнопку
+                    updateActionButton();
+                }
+                
+                // Оновити кнопку якщо ще не оновлено
+                if (action !== 'start') {
+                    updateActionButton();
                 }
                 
                 loading.style.display = 'none';
