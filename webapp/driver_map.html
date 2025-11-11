@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Керування поїздкою</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        
+        #map {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Центральний маркер */
+        .center-marker {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            z-index: 1001;
+            pointer-events: none;
+            transform: translate(-50%, -100%);
+            font-size: 48px;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+            animation: float 2s ease-in-out infinite;
+        }
+        
+        /* Анімація плавного "плавання" маркера */
+        @keyframes float {
+            0%, 100% {
+                transform: translate(-50%, -100%) translateY(0);
+            }
+            50% {
+                transform: translate(-50%, -100%) translateY(-8px);
+            }
+        }
+        
+        /* При перетягуванні карти - маркер трохи збільшується */
+        .center-marker.dragging {
+            font-size: 52px;
+            animation: none;
+        }
+        
+        /* Виправлення для маркерів Leaflet - прибрати квадратну обводку */
+        .leaflet-marker-icon {
+            background: transparent !important;
+            border: none !important;
+        }
+        
+        /* Пошук внизу */
+        .search-container {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .search-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 14px 50px 14px 14px;
+            border: 2px solid #FFD700;
+            border-radius: 16px;
+            font-size: 16px;
+            background: rgba(26, 26, 26, 0.98);
+            color: #FFD700;
+            width: 100%;
+        }
+        
+        .search-input::placeholder {
+            color: rgba(255, 215, 0, 0.6);
+        }
+        
+        .search-btn {
+            position: absolute;
+            right: 8px;
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            border: none;
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
+            transition: all 0.2s ease;
+        }
+        
+        .search-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.6);
+        }
+        
+        .search-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* Автокомпліт */
+        .autocomplete-results {
+            position: fixed;
+            bottom: 90px;
+            left: 20px;
+            right: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: rgba(26, 26, 26, 0.98);
+            border: 2px solid #FFD700;
+            border-radius: 16px;
+            z-index: 999;
+            display: none;
+        }
+        
+        .autocomplete-item {
+            padding: 14px;
+            border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+            cursor: pointer;
+            color: #FFD700;
+            font-size: 14px;
+        }
+        
+        .autocomplete-item:hover {
+            background: rgba(255, 215, 0, 0.1);
+        }
+        
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        
+        .confirm-btn {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            border: none;
+            border-radius: 50%;
+            font-size: 28px;
+            cursor: pointer;
+        }
+        
+        .location-btn {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+        }
+        
+        /* Панель обраних адрес */
+        .selected-addresses {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(26, 26, 26, 0.95);
+            border: 2px solid #FFD700;
+            border-radius: 16px;
+            padding: 12px;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .address-line {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 8px;
+        }
+        
+        .address-line:last-child {
+            margin-bottom: 0;
+        }
+        
+        .address-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #FFD700;
+            white-space: nowrap;
+        }
+        
+        .address-value {
+            flex: 1;
+            font-size: 13px;
+            color: #FFF;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .edit-address-btn {
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 215, 0, 0.2);
+            border: 1px solid #FFD700;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .edit-address-btn:hover {
+            background: rgba(255, 215, 0, 0.3);
+        }
+        
+        /* Інфо про маршрут - ЧОРНО-ЗОЛОТИЙ */
+        .route-info {
+            position: fixed;
+            bottom: 80px;
+            left: 10px;
+            right: 10px;
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98));
+            padding: 14px 18px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.3);
+            z-index: 1000;
+            font-size: 14px;
+            color: rgba(255, 215, 0, 0.9);
+            display: none;
+            border: 2px solid #FFD700;
+            backdrop-filter: blur(10px);
+            animation: slideUp 0.3s ease-out;
+        }
+        
+        .route-info strong {
+            color: #FFD700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* 🚗 КАСТОМНИЙ LOADER "URBAN" - ТЕМНИЙ З ЖОВТИМ */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(45, 45, 45, 0.98));
+            color: #FFD700;
+            padding: 30px 40px;
+            border-radius: 20px;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 50px rgba(255, 215, 0, 0.4);
+            text-align: center;
+            border: 2px solid #FFD700;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* Typing text для "Urban" - ЖОВТИЙ */
+        .loading-text {
+            font-size: 32px;
+            font-weight: bold;
+            color: #FFD700;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            border-right: 3px solid #FFD700;
+            white-space: nowrap;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            animation: typing 1.5s steps(5) forwards, blinkCursor 0.75s step-end infinite;
+        }
+        
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+        
+        @keyframes blinkCursor {
+            from, to { border-color: transparent; }
+            50% { border-color: #FFD700; }
+        }
+        
+        /* 🚗 Колесо що крутиться - ЖОВТЕ */
+        .loading-wheel {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto;
+            position: relative;
+        }
+        
+        .wheel {
+            width: 60px;
+            height: 60px;
+            border: 6px solid #3a3a3a;
+            border-top: 6px solid #FFD700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.4);
+        }
+        
+        .wheel-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background: #FFD700;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 🎬 SPLASH SCREEN - Заставка при завантаженні */
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            animation: fadeOut 1s ease-out 4s forwards;
+        }
+        
+        /* SVG контейнер для силуету міста */
+        .city-silhouette {
+            width: 90%;
+            max-width: 500px;
+            height: auto;
+        }
+        
+        /* Золотиста лінія що малює силует */
+        .city-path {
+            fill: none;
+            stroke: #FFD700;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.8));
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawCitySilhouette 2.5s ease-out forwards;
+        }
+        
+        /* Анімація малювання силуету міста */
+        @keyframes drawCitySilhouette {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        
+        /* Вікна у будівлях */
+        .city-window {
+            fill: #FFD700;
+            opacity: 0;
+            animation: windowAppear 0.3s ease-out forwards, windowBlink 2s ease-in-out infinite;
+        }
+        
+        /* Поява вікон після силуету (з різною затримкою) */
+        .city-window:nth-child(1) { animation-delay: 2.5s, 2.8s; }
+        .city-window:nth-child(2) { animation-delay: 2.6s, 2.9s; }
+        .city-window:nth-child(3) { animation-delay: 2.7s, 3.0s; }
+        .city-window:nth-child(4) { animation-delay: 2.5s, 3.1s; }
+        .city-window:nth-child(5) { animation-delay: 2.6s, 2.8s; }
+        .city-window:nth-child(6) { animation-delay: 2.7s, 2.9s; }
+        .city-window:nth-child(7) { animation-delay: 2.5s, 3.0s; }
+        .city-window:nth-child(8) { animation-delay: 2.6s, 3.1s; }
+        .city-window:nth-child(9) { animation-delay: 2.7s, 2.8s; }
+        .city-window:nth-child(10) { animation-delay: 2.5s, 2.9s; }
+        .city-window:nth-child(11) { animation-delay: 2.6s, 3.0s; }
+        .city-window:nth-child(12) { animation-delay: 2.7s, 3.1s; }
+        
+        @keyframes windowAppear {
+            to {
+                opacity: 1;
+            }
+        }
+        
+        @keyframes windowBlink {
+            0%, 100% {
+                opacity: 1;
+                filter: brightness(1);
+            }
+            50% {
+                opacity: 0.4;
+                filter: brightness(0.6);
+            }
+        }
+        
+        /* Надпис Urban під містом */
+        .splash-title {
+            font-size: 52px;
+            font-weight: bold;
+            color: #FFD700;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            letter-spacing: 8px;
+            text-align: center;
+            padding: 0 20px;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+            opacity: 0;
+            animation: fadeInTitle 1s ease-out 2.8s forwards;
+        }
+        
+        @keyframes fadeInTitle {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* 🚕 Анімація таксі */
+        .taxi-group {
+            animation: taxiDrive 2.5s ease-in-out forwards;
+        }
+        
+        @keyframes taxiDrive {
+            0% {
+                transform: translateX(450px);
+            }
+            48% {
+                transform: translateX(200px);
+            }
+            58% {
+                transform: translateX(200px);
+            }
+            100% {
+                transform: translateX(-100px);
+            }
+        }
+        
+        /* Дим з-під коліс */
+        .smoke {
+            fill: rgba(255, 215, 0, 0.3);
+            animation: smokeMove 0.8s ease-out infinite;
+        }
+        
+        @keyframes smokeMove {
+            0% {
+                opacity: 0.3;
+                transform: scale(0.5) translateX(0);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(1.5) translateX(-15px);
+            }
+        }
+        
+        /* Пасажир (людина) */
+        .passenger {
+            fill: none;
+            stroke: #FFD700;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.6));
+            animation: passengerDisappear 0.3s ease-out 1.5s forwards;
+        }
+        
+        @keyframes passengerDisappear {
+            to {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+        }
+        
+        /* Назва міста - сховано, буде показано на карті */
+        .splash-city {
+            display: none;
+        }
+        
+        /* Колесо що котиться */
+        .splash-wheel-container {
+            position: absolute;
+            bottom: 100px;
+            width: 100%;
+            height: 80px;
+            overflow: hidden;
+        }
+        
+        .splash-wheel {
+            width: 80px;
+            height: 80px;
+            border: 8px solid #3a3a3a;
+            border-top: 8px solid #FFD700;
+            border-radius: 50%;
+            position: absolute;
+            left: -100px;
+            animation: wheelRoll 3s ease-in-out forwards;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.6);
+        }
+        
+        .splash-wheel::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 30px;
+            height: 30px;
+            background: #FFD700;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+        }
+        
+        /* Анімація ковзання колеса зліва направо з обертанням */
+        @keyframes wheelRoll {
+            0% {
+                left: -100px;
+                transform: rotate(0deg);
+            }
+            100% {
+                left: calc(100% + 100px);
+                transform: rotate(1080deg); /* 3 повних оберти */
+            }
+        }
+        
+        /* typing та blinkCursor вже визначені для .loading-text вище */
+        
+        /* Анімація появи назви міста */
+        @keyframes cityFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Анімація зникнення splash screen */
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                visibility: hidden;
+            }
+        }
+        
+        /* Сховати splash після анімації */
+        .splash-screen.hidden {
+            display: none;
+        }
+        
+        /* Анімація поступового прокладання маршруту */
+        @keyframes drawRoute {
+            from {
+                stroke-dashoffset: var(--route-length);
+            }
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        
+        .animated-route {
+            filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.6));
+        }
+    </style>
+</head>
+<body>
+    <!-- 🎬 SPLASH SCREEN -->
+    <div class="splash-screen" id="splash-screen">
+        <!-- SVG силует міста що малюється золотистою лінією -->
+        <svg class="city-silhouette" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+            <!-- Лінія що малює силует міста (зліва направо, знизу вгору) -->
+            <path class="city-path" d="
+                M 20 180
+                L 20 140
+                L 40 140
+                L 40 100
+                L 70 100
+                L 70 120
+                L 90 120
+                L 90 80
+                L 120 80
+                L 120 110
+                L 140 110
+                L 140 70
+                L 170 70
+                L 170 100
+                L 190 100
+                L 190 60
+                L 220 60
+                L 220 90
+                L 240 90
+                L 240 50
+                L 270 50
+                L 270 80
+                L 290 80
+                L 290 110
+                L 310 110
+                L 310 90
+                L 330 90
+                L 330 120
+                L 350 120
+                L 350 100
+                L 370 100
+                L 370 140
+                L 380 140
+                L 380 180
+                Z
+            "/>
+            
+            <!-- Вікна у будівлях (з'являються після малювання силуету) -->
+            <g class="windows">
+                <rect class="city-window" x="25" y="145" width="8" height="8" />
+                <rect class="city-window" x="25" y="160" width="8" height="8" />
+                <rect class="city-window" x="45" y="105" width="8" height="8" />
+                <rect class="city-window" x="45" y="120" width="8" height="8" />
+                <rect class="city-window" x="95" y="85" width="8" height="8" />
+                <rect class="city-window" x="95" y="100" width="8" height="8" />
+                <rect class="city-window" x="145" y="75" width="8" height="8" />
+                <rect class="city-window" x="145" y="90" width="8" height="8" />
+                <rect class="city-window" x="195" y="65" width="8" height="8" />
+                <rect class="city-window" x="195" y="80" width="8" height="8" />
+                <rect class="city-window" x="245" y="55" width="8" height="8" />
+                <rect class="city-window" x="245" y="70" width="8" height="8" />
+                <rect class="city-window" x="295" y="115" width="8" height="8" />
+                <rect class="city-window" x="295" y="130" width="8" height="8" />
+                <rect class="city-window" x="335" y="95" width="8" height="8" />
+                <rect class="city-window" x="335" y="110" width="8" height="8" />
+            </g>
+            
+            <!-- 👤 Пасажир (стоїть по центру, зникає коли таксі зупиняється) -->
+            <g class="passenger">
+                <!-- Голова -->
+                <circle cx="200" cy="150" r="4" />
+                <!-- Тіло -->
+                <line x1="200" y1="154" x2="200" y2="165" />
+                <!-- Руки -->
+                <line x1="200" y1="157" x2="195" y2="162" />
+                <line x1="200" y1="157" x2="205" y2="162" />
+                <!-- Ноги -->
+                <line x1="200" y1="165" x2="197" y2="173" />
+                <line x1="200" y1="165" x2="203" y2="173" />
+            </g>
+            
+            <!-- 🚕 Таксі (їде справа наліво, зупиняється біля пасажира) -->
+            <g class="taxi-group">
+                <!-- Дим з-під коліс (пульсує під час руху) -->
+                <circle class="smoke" cx="5" cy="176" r="3" style="animation-delay: 0s;" />
+                <circle class="smoke" cx="2" cy="176" r="2.5" style="animation-delay: 0.2s;" />
+                <circle class="smoke" cx="-1" cy="177" r="2" style="animation-delay: 0.4s;" />
+                <circle class="smoke" cx="28" cy="176" r="3" style="animation-delay: 0.1s;" />
+                <circle class="smoke" cx="25" cy="176" r="2.5" style="animation-delay: 0.3s;" />
+                <circle class="smoke" cx="22" cy="177" r="2" style="animation-delay: 0.5s;" />
+                
+                <!-- Емодзі таксі -->
+                <text x="0" y="175" font-size="35" filter="drop-shadow(0 0 8px rgba(255, 215, 0, 0.6))">🚕</text>
+            </g>
+        </svg>
+        
+        <!-- Надпис Urban з fade-in ефектом -->
+        <div class="splash-title">Urban</div>
+    </div>
+    
+    <div id="map"></div>
+    <div class="center-marker" id="center-marker">📍</div>
+    
+    <div class="selected-addresses" id="selected-addresses">
+        <div class="address-line" id="pickup-address-line">
+            <span class="address-label">📍</span>
+            <span class="address-value" id="pickup-address-text">Не обрано</span>
+            <button class="edit-address-btn" id="edit-pickup-btn">⚙️</button>
+        </div>
+        <div class="address-line" id="dest-address-line" style="display: none;">
+            <span class="address-label">🏁</span>
+            <span class="address-value" id="dest-address-text">Не обрано</span>
+            <button class="edit-address-btn" id="edit-dest-btn">⚙️</button>
+        </div>
+    </div>
+    
+    <div class="autocomplete-results" id="autocomplete-results"></div>
+    
+    <button class="location-btn" id="location-btn">📍</button>
+    
+    <div class="search-container">
+        <div class="search-wrapper">
+            <input type="text" class="search-input" id="search" placeholder="📍 Звідки їдемо?" autocomplete="off">
+            <button class="search-btn" id="search-btn">🔍</button>
+        </div>
+        <button class="confirm-btn" id="confirm">✅</button>
+    </div>
+    
+    <div class="route-info" id="route-info" style="display: none;">
+        <strong>📏 Маршрут:</strong><br>
+        Відстань: 0 км<br>
+        Час: ~0 хв
+    </div>
+    
+    <div class="loading" id="loading">
+        <div class="loading-text" id="loading-text">Urban</div>
+        <div class="loading-wheel">
+            <div class="wheel"></div>
+            <div class="wheel-center"></div>
+        </div>
+    </div>
+    
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        // Стан
+        let currentState = 'pickup';  // pickup → destination → confirm
+        let pickupCoords = null;
+        let destinationCoords = null;
+        let pickupMarker = null;
+        let destinationMarker = null;
+        let routeLine = null;
+        let userCity = null;  // Місто клієнта для фільтрації пошуку
+        
+        // Ініціалізація карти
+        const map = L.map('map').setView([50.4501, 30.5234], 13); // За замовчуванням Київ
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+        
+        // Центрувати на місто користувача
+        (async () => {
+            try {
+                const userId = tg.initDataUnsafe?.user?.id;
+                if (userId) {
+                    const response = await fetch('/api/webapp/get-user-city', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId })
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.coordinates) {
+                            const { lat, lon } = data.coordinates;
+                            map.setView([lat, lon], 13);
+                            
+                            // Зберегти назву міста для фільтрації пошуку
+                            userCity = data.coordinates.city || data.city;
+                            console.log('🏙️ Місто клієнта:', userCity);
+                            
+                            // Показати назву міста на карті після завантаження splash screen
+                            if (userCity) {
+                                setTimeout(() => {
+                                    const cityMarker = L.marker([lat, lon], {
+                                        icon: L.divIcon({
+                                            className: 'city-marker',
+                                            html: `<div style="
+                                                background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(45, 45, 45, 0.95));
+                                                color: #FFD700;
+                                                padding: 10px 20px;
+                                                border-radius: 20px;
+                                                font-weight: 600;
+                                                font-size: 18px;
+                                                border: 2px solid rgba(255, 215, 0, 0.6);
+                                                box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3), 0 0 20px rgba(255, 215, 0, 0.2);
+                                                text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+                                                white-space: nowrap;
+                                                font-family: 'Segoe UI', Roboto, sans-serif;
+                                                backdrop-filter: blur(10px);
+                                                display: inline-block;
+                                            ">🏙️ ${userCity}</div>`,
+                                            iconSize: null,  // Автоматичний розмір
+                                            iconAnchor: null  // Автоматичне центрування
+                                        })
+                                    }).addTo(map);
+                                    
+                                    // Центрувати маркер після рендерингу
+                                    setTimeout(() => {
+                                        const markerElement = cityMarker.getElement();
+                                        if (markerElement) {
+                                            const width = markerElement.offsetWidth;
+                                            const height = markerElement.offsetHeight;
+                                            cityMarker.options.icon.options.iconAnchor = [width / 2, height / 2];
+                                            cityMarker.setIcon(cityMarker.options.icon);
+                                        }
+                                    }, 100);
+                                    
+                                    // Видалити маркер через 4 секунди
+                                    setTimeout(() => {
+                                        map.removeLayer(cityMarker);
+                                    }, 4000);
+                                }, 5000); // Показати після зникнення splash screen (4s анімація + 1s затримка)
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Помилка - залишаємо Київ
+                console.error('Помилка отримання міста:', e);
+            }
+        })();
+        
+        // Функція створення маркера
+        function createMarker(isPickup) {
+            const emoji = isPickup ? '📍' : '🏁';
+            return L.divIcon({
+                className: 'marker-icon',
+                html: `<div style="font-size: 48px; line-height: 48px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));">${emoji}</div>`,
+                iconSize: [48, 48],
+                iconAnchor: [24, 46]
+            });
+        }
+        
+        // Функція побудови маршруту
+        async function buildRoute(fromLat, fromLon, toLat, toLon) {
+            const loading = document.getElementById('loading');
+            const loadingText = document.getElementById('loading-text');
+            loadingText.textContent = 'Urban';
+            loading.style.display = 'block';
+            
+            // Почекати поки анімація "Urban" завершиться (1.5s typing + 0.3s запас)
+            await new Promise(resolve => setTimeout(resolve, 1800));
+            
+            try {
+                const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                    
+                    if (routeLine) {
+                        map.removeLayer(routeLine);
+                    }
+                    
+                    routeLine = L.polyline(coords, {
+                        color: '#2196F3',
+                        weight: 6,
+                        opacity: 0.9,
+                        className: 'animated-route'
+                    }).addTo(map);
+                    
+                    // Анімація поступового прокладання маршруту
+                    setTimeout(() => {
+                        const pathElement = routeLine.getElement();
+                        if (pathElement) {
+                            const length = pathElement.getTotalLength();
+                            pathElement.style.strokeDasharray = length;
+                            pathElement.style.strokeDashoffset = length;
+                            pathElement.style.animation = `drawRoute 2s ease-in-out forwards`;
+                        }
+                    }, 100);
+                    
+                    map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+                    
+                    // Показати інформацію про маршрут
+                    const distance = (route.distance / 1000).toFixed(1);
+                    const duration = Math.round(route.duration / 60);
+                    
+                    // Спробувати отримати ціну
+                    try {
+                        const userId = tg.initDataUnsafe?.user?.id;
+                        if (userId) {
+                            const priceResponse = await fetch('/api/webapp/calculate-price', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    user_id: userId,
+                                    distance_km: parseFloat(distance),
+                                    duration_minutes: duration
+                                })
+                            });
+                            
+                            if (priceResponse.ok) {
+                                const priceData = await priceResponse.json();
+                                if (priceData.success) {
+                                    updateRouteInfo(distance, duration, priceData.price);
+                                } else {
+                                    updateRouteInfo(distance, duration);
+                                }
+                            } else {
+                                updateRouteInfo(distance, duration);
+                            }
+                        } else {
+                            updateRouteInfo(distance, duration);
+                        }
+                    } catch (priceError) {
+                        console.error('Помилка розрахунку ціни:', priceError);
+                        updateRouteInfo(distance, duration);
+                    }
+                }
+            } catch (e) {
+                alert('Помилка побудови маршруту');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+        
+        // Функція оновлення інформації про маршрут
+        function updateRouteInfo(distance, duration, price = null) {
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                let html = `
+                    <strong>📏 Маршрут:</strong><br>
+                    Відстань: ${distance} км<br>
+                    Час: ~${duration} хв
+                `;
+                
+                if (price !== null) {
+                    // Округлити до цілого числа (як у кнопках при створенні замовлення)
+                    const roundedPrice = Math.round(price);
+                    html += `<br><strong>💰 Ціна: ${roundedPrice} грн</strong>`;
+                }
+                
+                routeInfo.innerHTML = html;
+                routeInfo.style.display = 'block';
+            }
+        }
+        
+        // Оновлення панелі адрес
+        let lastNominatimCall = 0;
+        async function updateAddressPanel(type, lat, lng) {
+            try {
+                // Rate limiting для Nominatim (1 запит в секунду)
+                const now = Date.now();
+                const timeSinceLastCall = now - lastNominatimCall;
+                if (timeSinceLastCall < 1000) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastCall));
+                }
+                lastNominatimCall = Date.now();
+                
+                // Використовуємо Nominatim для reverse geocoding
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+                    {
+                        headers: {
+                            'User-Agent': 'TaxiBot WebApp/1.0'
+                        }
+                    }
+                );
+                const data = await response.json();
+                
+                let address = 'Завантаження...';
+                if (data && data.display_name) {
+                    // Коротка адреса: вулиця + будинок
+                    const parts = data.display_name.split(',');
+                    address = parts.slice(0, 2).join(',').trim();
+                }
+                
+                if (type === 'pickup') {
+                    document.getElementById('pickup-address-text').textContent = address;
+                    document.getElementById('selected-addresses').style.display = 'block';
+                } else if (type === 'destination') {
+                    document.getElementById('dest-address-text').textContent = address;
+                    document.getElementById('dest-address-line').style.display = 'flex';
+                }
+            } catch (e) {
+                console.error('Помилка отримання адреси:', e);
+                // Fallback на координати
+                const fallbackAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                if (type === 'pickup') {
+                    document.getElementById('pickup-address-text').textContent = fallbackAddress;
+                } else {
+                    document.getElementById('dest-address-text').textContent = fallbackAddress;
+                }
+            }
+        }
+        
+        // Кнопка підтвердження
+        document.getElementById('confirm').addEventListener('click', async () => {
+            const center = map.getCenter();
+            
+            if (currentState === 'pickup') {
+                // Зберігаємо pickup
+                pickupCoords = { lat: center.lat, lng: center.lng };
+                
+                if (pickupMarker) {
+                    map.removeLayer(pickupMarker);
+                }
+                
+                pickupMarker = L.marker([center.lat, center.lng], {
+                    icon: createMarker(true)
+                }).addTo(map);
+                
+                // Оновити панель
+                updateAddressPanel('pickup', center.lat, center.lng);
+                
+                // Переходимо до destination
+                currentState = 'destination';
+                document.getElementById('center-marker').textContent = '🏁';
+                document.getElementById('search').placeholder = '🎯 Куди їдемо?';
+                document.getElementById('search').value = '';  // Очистити поле вводу
+                autocompleteResults.style.display = 'none';  // Сховати підказки
+                autocompleteResults.innerHTML = '';  // Очистити підказки
+                
+            } else if (currentState === 'destination') {
+                // Зберігаємо destination
+                destinationCoords = { lat: center.lat, lng: center.lng };
+                
+                if (destinationMarker) {
+                    map.removeLayer(destinationMarker);
+                }
+                
+                destinationMarker = L.marker([center.lat, center.lng], {
+                    icon: createMarker(false)
+                }).addTo(map);
+                
+                // Оновити панель
+                updateAddressPanel('destination', center.lat, center.lng);
+                
+                // Будуємо маршрут
+                await buildRoute(
+                    pickupCoords.lat, pickupCoords.lng,
+                    destinationCoords.lat, destinationCoords.lng
+                );
+                
+                // Переходимо до confirm
+                currentState = 'confirm';
+                document.getElementById('center-marker').style.display = 'none';
+                document.getElementById('search').placeholder = '✅ Підтвердити замовлення';
+                document.getElementById('search').value = '';  // Очистити поле вводу
+                autocompleteResults.style.display = 'none';  // Сховати підказки
+                autocompleteResults.innerHTML = '';  // Очистити підказки
+                
+            } else if (currentState === 'confirm') {
+                // Відправляємо дані
+                const userId = tg.initDataUnsafe?.user?.id;
+                
+                if (!userId) {
+                    alert('Помилка: не вдалося отримати ID користувача');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/webapp/order', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: userId,
+                            pickup_lat: pickupCoords.lat,
+                            pickup_lon: pickupCoords.lng,
+                            dest_lat: destinationCoords.lat,
+                            dest_lon: destinationCoords.lng
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        if (tg.HapticFeedback) {
+                            tg.HapticFeedback.notificationOccurred('success');
+                        }
+                        setTimeout(() => tg.close(), 500);
+                    } else {
+                        alert('Помилка: ' + result.error);
+                    }
+                } catch (e) {
+                    alert('Помилка відправки: ' + e.message);
+                }
+            }
+        });
+        
+        // Анімація при перетягуванні карти
+        let isDragging = false;
+        map.on('movestart', () => {
+            isDragging = true;
+            document.getElementById('center-marker').classList.add('dragging');
+        });
+        
+        map.on('moveend', () => {
+            isDragging = false;
+            document.getElementById('center-marker').classList.remove('dragging');
+        });
+        
+        // Функція форматування адреси для підказки
+        function formatAddressShort(item) {
+            const address = item.address || {};
+            const parts = [];
+            
+            // Вулиця + номер будинку
+            if (address.road) {
+                let street = address.road;
+                if (address.house_number) {
+                    street += ', ' + address.house_number;
+                }
+                parts.push(street);
+            }
+            
+            // Район/мікрорайон
+            if (address.suburb) {
+                parts.push(address.suburb);
+            } else if (address.neighbourhood) {
+                parts.push(address.neighbourhood);
+            } else if (address.quarter) {
+                parts.push(address.quarter);
+            }
+            
+            // Якщо немає вулиці, додати основну інформацію
+            if (parts.length === 0) {
+                if (address.amenity || address.building || address.shop) {
+                    parts.push(address.amenity || address.building || address.shop);
+                }
+            }
+            
+            return parts.length > 0 ? parts.join(', ') : item.display_name.split(',')[0];
+        }
+        
+        // Функція фільтрації результатів по місту
+        function filterByUserCity(results) {
+            if (!userCity) return results;
+            
+            const cityLower = userCity.toLowerCase();
+            return results.filter(item => {
+                const address = item.address || {};
+                const displayName = (item.display_name || '').toLowerCase();
+                
+                // Перевірити чи адреса з міста клієнта
+                const isFromUserCity = 
+                    displayName.includes(cityLower) ||
+                    (address.city && address.city.toLowerCase() === cityLower) ||
+                    (address.town && address.town.toLowerCase() === cityLower) ||
+                    (address.municipality && address.municipality.toLowerCase() === cityLower);
+                
+                return isFromUserCity;
+            });
+        }
+        
+        // Пошук адрес
+        const searchInput = document.getElementById('search');
+        const autocompleteResults = document.getElementById('autocomplete-results');
+        let searchTimeout;
+        
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            
+            if (query.length < 3) {
+                autocompleteResults.style.display = 'none';
+                autocompleteResults.innerHTML = '';
+                return;
+            }
+            
+            searchTimeout = setTimeout(async () => {
+                try {
+                    // Додати user_id для server-side фільтрації
+                    const userId = tg.initDataUnsafe?.user?.id;
+                    let url = `/api/webapp/geocode?q=${encodeURIComponent(query)}`;
+                    if (userId) {
+                        url += `&user_id=${userId}`;
+                    }
+                    
+                    const response = await fetch(url);
+                    let data = await response.json();
+                    
+                    // Фільтрувати результати по місту клієнта (client-side)
+                    if (userCity) {
+                        data = filterByUserCity(data);
+                        console.log(`🔍 Фільтрація: з ${data.length} результатів залишилось для міста ${userCity}`);
+                    }
+                    
+                    if (data.length === 0) {
+                        autocompleteResults.innerHTML = '<div class="autocomplete-item">🔍 Нічого не знайдено в вашому місті</div>';
+                        autocompleteResults.style.display = 'block';
+                        return;
+                    }
+                    
+                    autocompleteResults.innerHTML = '';
+                    data.slice(0, 5).forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'autocomplete-item';
+                        
+                        // Коротка адреса: вулиця, номер, район
+                        const shortAddress = formatAddressShort(item);
+                        div.textContent = shortAddress;
+                        
+                        div.addEventListener('click', () => {
+                            map.setView([item.lat, item.lon], 16);
+                            searchInput.value = shortAddress;
+                            autocompleteResults.style.display = 'none';
+                        });
+                        autocompleteResults.appendChild(div);
+                    });
+                    
+                    autocompleteResults.style.display = 'block';
+                } catch (e) {
+                    console.error('Помилка пошуку:', e);
+                }
+            }, 500);
+        });
+        
+        // Закрити autocomplete при кліку поза ним
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !autocompleteResults.contains(e.target)) {
+                autocompleteResults.style.display = 'none';
+                autocompleteResults.innerHTML = '';  // Також очистити вміст
+            }
+        });
+        
+        // Кнопка геолокації
+        document.getElementById('location-btn').addEventListener('click', () => {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+            
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        map.setView([lat, lon], 16);
+                        loading.style.display = 'none';
+                        
+                        if (tg.HapticFeedback) {
+                            tg.HapticFeedback.notificationOccurred('success');
+                        }
+                    },
+                    (error) => {
+                        loading.style.display = 'none';
+                        alert('❌ Не вдалося отримати геолокацію');
+                        console.error('Geolocation error:', error);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                loading.style.display = 'none';
+                alert('❌ Геолокація не підтримується');
+            }
+        });
+        
+        // Кнопки редагування адрес
+        document.getElementById('edit-pickup-btn').addEventListener('click', () => {
+            // Повернутися до вибору pickup
+            currentState = 'pickup';
+            document.getElementById('center-marker').style.display = 'block';
+            document.getElementById('center-marker').textContent = '📍';
+            document.getElementById('search').placeholder = '📍 Звідки їдемо?';
+            
+            // Видалити маркер pickup
+            if (pickupMarker) {
+                map.removeLayer(pickupMarker);
+                pickupMarker = null;
+            }
+            
+            // Якщо є destination - видалити і його
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+                destinationMarker = null;
+            }
+            
+            // Видалити маршрут
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            }
+            
+            // Сховати панель з відстанню і ціною
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                routeInfo.style.display = 'none';
+            }
+            
+            // Сховати destination line
+            document.getElementById('dest-address-line').style.display = 'none';
+            document.getElementById('pickup-address-text').textContent = 'Не обрано';
+            
+            // Центрувати на pickup координатах якщо були
+            if (pickupCoords) {
+                map.setView([pickupCoords.lat, pickupCoords.lng], 15);
+            }
+            
+            pickupCoords = null;
+            destinationCoords = null;
+            
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        });
+        
+        document.getElementById('edit-dest-btn').addEventListener('click', () => {
+            // Повернутися до вибору destination
+            currentState = 'destination';
+            document.getElementById('center-marker').style.display = 'block';
+            document.getElementById('center-marker').textContent = '🏁';
+            document.getElementById('search').placeholder = '🎯 Куди їдемо?';
+            
+            // Видалити маркер destination
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+                destinationMarker = null;
+            }
+            
+            // Видалити маршрут
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            }
+            
+            // Сховати панель з відстанню і ціною
+            const routeInfo = document.getElementById('route-info');
+            if (routeInfo) {
+                routeInfo.style.display = 'none';
+            }
+            
+            // Оновити текст
+            document.getElementById('dest-address-text').textContent = 'Не обрано';
+            
+            // Центрувати на destination координатах якщо були
+            if (destinationCoords) {
+                map.setView([destinationCoords.lat, destinationCoords.lng], 15);
+            }
+            
+            destinationCoords = null;
+            
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        });
+        
+        // Кнопка пошуку в полі вводу
+        document.getElementById('search-btn').addEventListener('click', () => {
+            const query = searchInput.value.trim();
+            if (query.length >= 3) {
+                // Тригерити пошук
+                searchInput.dispatchEvent(new Event('input'));
+            }
+        });
+        
+        // Закриття WebApp
+        tg.BackButton.show();
+        tg.onEvent('backButtonClicked', () => {
+            tg.close();
+        });
+    </script>
+</body>
+</html>
