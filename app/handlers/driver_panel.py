@@ -1649,6 +1649,13 @@ def create_router(config: AppConfig) -> Router:
         
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
+        # Створити inline кнопку для WebApp карти
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+        webapp_url = f"https://your-render-url.onrender.com/driver-map?order_id={order_id}&driver_id={driver.id}"
+        kb_webapp = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺️ Керувати поїздкою 🚕", web_app=WebAppInfo(url=webapp_url))]
+        ])
+        
         # Відправити підтвердження водію з клавіатурою і зберегти message_id
         sent_msg = await message.answer(
             f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
@@ -1656,10 +1663,13 @@ def create_router(config: AppConfig) -> Router:
             f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
             f"🎯 <b>Куди:</b> {clean_destination}{destination_link}{distance_text}\n\n"
             f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n\n"
-            "✅ <b>Live location активовано!</b>\n"
-            "Клієнт бачить ваш рух в реальному часі.\n\n"
             "🚗 Використовуйте кнопки для керування поїздкою:",
             reply_markup=kb_trip
+        )
+        # Відправити кнопку WebApp окремим повідомленням
+        webapp_msg = await message.answer(
+            "📲 <b>Або керуйте поїздкою через карту:</b>",
+            reply_markup=kb_webapp
         )
         add_order_message(order_id, sent_msg.message_id)
         
@@ -1788,6 +1798,13 @@ def create_router(config: AppConfig) -> Router:
         
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
+        # Створити inline кнопку для WebApp карти
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+        webapp_url = f"https://your-render-url.onrender.com/driver-map?order_id={order_id}&driver_id={driver.id}"
+        kb_webapp = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺️ Керувати поїздкою 🚕", web_app=WebAppInfo(url=webapp_url))]
+        ])
+        
         # Відправити підтвердження водію з клавіатурою і зберегти message_id
         sent_msg = await message.answer(
             f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
@@ -1795,10 +1812,13 @@ def create_router(config: AppConfig) -> Router:
             f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
             f"🎯 <b>Куди:</b> {clean_destination}{destination_link}{distance_text}\n\n"
             f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n\n"
-            "⚠️ <b>Live location НЕ активовано</b>\n"
-            "Клієнт не бачить ваше переміщення.\n\n"
             "🚗 Використовуйте кнопки для керування поїздкою:",
             reply_markup=kb_trip
+        )
+        # Відправити кнопку WebApp окремим повідомленням
+        webapp_msg = await message.answer(
+            "📲 <b>Або керуйте поїздкою через карту:</b>",
+            reply_markup=kb_webapp
         )
         add_order_message(order_id, sent_msg.message_id)
         
