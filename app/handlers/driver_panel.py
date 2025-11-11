@@ -1651,7 +1651,9 @@ def create_router(config: AppConfig) -> Router:
         
         # Створити inline кнопку для WebApp карти
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-        webapp_url = f"https://your-render-url.onrender.com/driver-map?order_id={order_id}&driver_id={driver.id}"
+        # Використовуємо config.webapp_url як базу і додаємо шлях до driver_map.html
+        base_url = config.webapp_url.replace('/index.html', '') if config.webapp_url else "https://your-app.onrender.com/webapp"
+        webapp_url = f"{base_url}/driver_map.html?order_id={order_id}&driver_id={driver.id}"
         kb_webapp = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗺️ Керувати поїздкою 🚕", web_app=WebAppInfo(url=webapp_url))]
         ])
@@ -1800,7 +1802,9 @@ def create_router(config: AppConfig) -> Router:
         
         # Створити inline кнопку для WebApp карти
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-        webapp_url = f"https://your-render-url.onrender.com/driver-map?order_id={order_id}&driver_id={driver.id}"
+        # Використовуємо config.webapp_url як базу і додаємо шлях до driver_map.html
+        base_url = config.webapp_url.replace('/index.html', '') if config.webapp_url else "https://your-app.onrender.com/webapp"
+        webapp_url = f"{base_url}/driver_map.html?order_id={order_id}&driver_id={driver.id}"
         kb_webapp = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗺️ Керувати поїздкою 🚕", web_app=WebAppInfo(url=webapp_url))]
         ])

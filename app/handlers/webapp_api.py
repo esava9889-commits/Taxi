@@ -1102,6 +1102,92 @@ async def webapp_get_user_city_handler(request: web.Request) -> web.Response:
         }, status=500)
 
 
+async def webapp_get_driver_order_handler(request: web.Request) -> web.Response:
+    """
+    API endpoint для отримання даних замовлення водієм
+    
+    GET /api/webapp/get-driver-order?order_id=123&driver_id=456
+    
+    Response: {
+        "success": True,
+        "order": {
+            "id": 123,
+            "status": "accepted",
+            "client_name": "Іван",
+            "client_phone": "380501234567",
+            "pickup_address": "вул. Хрещатик, 1",
+            "pickup_lat": 50.4501,
+            "pickup_lon": 30.5234,
+            "destination_address": "вул. Перемоги, 10",
+            "dest_lat": 50.4601,
+            "dest_lon": 30.5334,
+            "fare_amount": 150,
+            "distance_km": 5.2
+        }
+    }
+    """
+    try:
+        order_id = request.rel_url.query.get('order_id')
+        driver_id = request.rel_url.query.get('driver_id')
+        
+        if not order_id or not driver_id:
+            return web.json_response({
+                "success": False,
+                "error": "Missing order_id or driver_id"
+            }, status=400)
+        
+        order_id = int(order_id)
+        driver_id = int(driver_id)
+        
+        # Отримати замовлення з БД
+        from app.storage.db import get_order_by_id
+        order = await get_order_by_id(request.app['config'].database_path, order_id)
+        
+        if not order:
+            return web.json_response({
+                "success": False,
+                "error": "Order not found"
+            }, status=404)
+        
+        # Перевірити що водій має право на це замовлення
+        if order.driver_id != driver_id:
+            return web.json_response({
+                "success": False,
+                "error": "Access denied"
+            }, status=403)
+        
+        # Розрахувати відстань у км
+        distance_km = order.distance_m / 1000.0 if order.distance_m else 0
+        
+        logger.info(f"📱 Driver {driver_id} opened map for order #{order_id} (status: {order.status})")
+        
+        return web.json_response({
+            "success": True,
+            "order": {
+                "id": order.id,
+                "status": order.status,
+                "client_name": order.name,
+                "client_phone": order.phone,
+                "pickup_address": order.pickup_address,
+                "pickup_lat": order.pickup_lat,
+                "pickup_lon": order.pickup_lon,
+                "destination_address": order.destination_address,
+                "dest_lat": order.dest_lat,
+                "dest_lon": order.dest_lon,
+                "fare_amount": float(order.fare_amount),
+                "distance_km": round(distance_km, 1),
+                "payment_method": order.payment_method
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting driver order: {e}", exc_info=True)
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage) -> None:
     """
     Налаштувати API endpoints для WebApp
@@ -1118,8 +1204,10 @@ def setup_webapp_api(app: web.Application, bot: Bot, config: AppConfig, storage)
     app.router.add_post('/api/webapp/geocode', webapp_geocode_proxy)
     app.router.add_post('/api/webapp/calculate-price', webapp_calculate_price_handler)
     app.router.add_post('/api/webapp/get-user-city', webapp_get_user_city_handler)
+    app.router.add_get('/api/webapp/get-driver-order', webapp_get_driver_order_handler)
     
     logger.info("🌐 API endpoint registered: POST /api/webapp/order")
     logger.info("🌐 API endpoint registered: GET/POST /api/webapp/geocode")
     logger.info("🌐 API endpoint registered: POST /api/webapp/calculate-price")
     logger.info("🌐 API endpoint registered: POST /api/webapp/get-user-city")
+    logger.info("🌐 API endpoint registered: GET /api/webapp/get-driver-order")
