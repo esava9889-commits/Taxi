@@ -1,8 +1,5 @@
-"""Helper функції для роботи з SQLite та PostgreSQL"""
-import os
-
+"""Helper функції для роботи тільки з SQLite"""
 
 def is_postgres() -> bool:
-    """Перевірити чи використовується PostgreSQL"""
-    database_url = os.getenv("DATABASE_URL", "")
-    return database_url.startswith("postgres")
+    """Завжди False, бо використовується лише SQLite"""
+    return False
