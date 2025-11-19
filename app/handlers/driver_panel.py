@@ -1543,60 +1543,98 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id}")
         
-        # Відправити live location клієнту
+        # ⭐ ОБОВ'ЯЗКОВО повідомити клієнта про водія (незалежно від live location)
+        logger.info(f"📨 Починаю підготовку повідомлення для клієнта {order.user_id}")
+        
         try:
-            logger.info(f"📍 Відправка live location клієнту {order.user_id} для замовлення #{order_id}")
+            # Перевірка обов'язкових даних
+            if not order.user_id:
+                logger.error(f"❌ order.user_id відсутній для замовлення #{order_id}")
+                raise ValueError("order.user_id is None")
             
-            location_message = await message.bot.send_location(
-                chat_id=order.user_id,
-                latitude=lat,
-                longitude=lon,
-                live_period=900,  # 15 хвилин
-                disable_notification=False
-            )
+            logger.info(f"📋 Водій: {driver.full_name}, {driver.car_make} {driver.car_model}, тел: {driver.phone}")
+            logger.info(f"💳 Спосіб оплати: {order.payment_method}, картка водія: {'є' if driver.card_number else 'немає'}")
             
-            logger.info(f"✅ Live location відправлено! Message ID: {location_message.message_id}")
-            
-            # Запустити автоматичне оновлення геопозиції
-            from app.utils.live_location_manager import LiveLocationManager
-            await LiveLocationManager.start_tracking(
-                bot=message.bot,
-                order_id=order_id,
-                user_id=order.user_id,
-                driver_id=driver.id,
-                message_id=location_message.message_id,
-                db_path=config.database_path
-            )
-            
-            logger.info(f"✅ LiveLocationManager запущено для замовлення #{order_id}")
-            
-            # Повідомлення клієнту про прийняття замовлення + live location
             # Створити кнопки для клієнта
             client_buttons = []
             if order.payment_method == "card" and driver.card_number:
                 client_buttons.append([
                     InlineKeyboardButton(text="💳 Картка водія для оплати", callback_data=f"show_card:{order_id}")
                 ])
+                logger.info(f"💳 Додано кнопку оплати карткою для клієнта")
             
             client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
             
-            await message.bot.send_message(
-                order.user_id,
+            # Базове повідомлення про водія
+            driver_info_text = (
                 "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
-                "📍 <b>Водій поділився геопозицією!</b>\n"
-                "Ви можете бачити його рух в реальному часі.\n"
-                "Геопозиція оновлюється кожні 20 секунд протягом 15 хвилин.\n\n"
-                "🚗 Водій їде до вас!",
-                reply_markup=client_kb
+                f"💰 <b>До сплати: {int(order.fare_amount):.0f} грн</b>\n"
+                f"{'💵 Готівка' if order.payment_method == 'cash' else '💳 Картка'}\n\n"
             )
             
-            logger.info(f"✅ Повідомлення клієнту відправлено для замовлення #{order_id}")
+            logger.info(f"📝 Сформовано базовий текст повідомлення для клієнта")
+            
+            # Спробувати відправити live location
+            live_location_sent = False
+            try:
+                logger.info(f"📍 Відправка live location клієнту {order.user_id} для замовлення #{order_id}")
+                
+                location_message = await message.bot.send_location(
+                    chat_id=order.user_id,
+                    latitude=lat,
+                    longitude=lon,
+                    live_period=900,  # 15 хвилин
+                    disable_notification=False
+                )
+                
+                logger.info(f"✅ Live location відправлено! Message ID: {location_message.message_id}")
+                
+                # Запустити автоматичне оновлення геопозиції
+                from app.utils.live_location_manager import LiveLocationManager
+                await LiveLocationManager.start_tracking(
+                    bot=message.bot,
+                    order_id=order_id,
+                    user_id=order.user_id,
+                    driver_id=driver.id,
+                    message_id=location_message.message_id,
+                    db_path=config.database_path
+                )
+                
+                logger.info(f"✅ LiveLocationManager запущено для замовлення #{order_id}")
+                live_location_sent = True
+                
+                # Додати інформацію про live location до тексту
+                driver_info_text += (
+                    "📍 <b>Водій поділився геопозицією!</b>\n"
+                    "Ви можете бачити його рух в реальному часі.\n"
+                    "Геопозиція оновлюється кожні 20 секунд протягом 15 хвилин.\n\n"
+                )
+            except Exception as live_error:
+                logger.error(f"❌ Помилка відправки live location (але продовжуємо): {live_error}", exc_info=True)
+                # Продовжити без live location
+            
+            # Завершити текст
+            driver_info_text += "🚗 Водій їде до вас!"
+            
+            logger.info(f"📤 ВІДПРАВЛЯЮ повідомлення клієнту {order.user_id}...")
+            logger.info(f"📄 Текст ({len(driver_info_text)} символів): {driver_info_text[:100]}...")
+            
+            # Відправити повідомлення клієнту (ЗАВЖДИ, навіть якщо live location не працює)
+            sent_message = await message.bot.send_message(
+                order.user_id,
+                driver_info_text,
+                reply_markup=client_kb,
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"✅✅✅ УСПІШНО! Повідомлення клієнту ВІДПРАВЛЕНО! Message ID: {sent_message.message_id}")
+            logger.info(f"📊 Деталі: order_id={order_id}, client_id={order.user_id}, live_location={live_location_sent}")
             
         except Exception as e:
-            logger.error(f"❌ Помилка відправки live location: {e}", exc_info=True)
+            logger.error(f"❌ КРИТИЧНА ПОМИЛКА: не вдалося повідомити клієнта про водія: {e}", exc_info=True)
         
         # Видалити технічні повідомлення
         try:
@@ -1649,6 +1687,15 @@ def create_router(config: AppConfig) -> Router:
         
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
+        # Створити inline кнопку для WebApp карти
+        from aiogram.types import WebAppInfo  # InlineKeyboardButton та InlineKeyboardMarkup вже імпортовані глобально
+        # Використовуємо config.webapp_url як базу і додаємо шлях до driver_map.html
+        base_url = config.webapp_url.replace('/index.html', '') if config.webapp_url else "https://your-app.onrender.com/webapp"
+        webapp_url = f"{base_url}/driver_map.html?order_id={order_id}&driver_id={driver.id}"
+        kb_webapp = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺️ Керувати поїздкою 🚕", web_app=WebAppInfo(url=webapp_url))]
+        ])
+        
         # Відправити підтвердження водію з клавіатурою і зберегти message_id
         sent_msg = await message.answer(
             f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
@@ -1656,12 +1703,16 @@ def create_router(config: AppConfig) -> Router:
             f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
             f"🎯 <b>Куди:</b> {clean_destination}{destination_link}{distance_text}\n\n"
             f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n\n"
-            "✅ <b>Live location активовано!</b>\n"
-            "Клієнт бачить ваш рух в реальному часі.\n\n"
             "🚗 Використовуйте кнопки для керування поїздкою:",
             reply_markup=kb_trip
         )
+        # Відправити кнопку WebApp окремим повідомленням
+        webapp_msg = await message.answer(
+            "📲 <b>Або керуйте поїздкою через карту:</b>",
+            reply_markup=kb_webapp
+        )
         add_order_message(order_id, sent_msg.message_id)
+        add_order_message(order_id, webapp_msg.message_id)  # Зберегти WebApp кнопку також
         
         # Очистити FSM стан
         await state.clear()
@@ -1715,29 +1766,52 @@ def create_router(config: AppConfig) -> Router:
         
         logger.info(f"✅ Замовлення #{order_id} прийнято водієм {driver.id} БЕЗ live location")
         
-        # Повідомити клієнта (БЕЗ live location)
+        # ⭐ ОБОВ'ЯЗКОВО повідомити клієнта про водія
+        logger.info(f"📨 Починаю підготовку повідомлення для клієнта {order.user_id} (БЕЗ ГЕОЛОКАЦІЇ)")
+        
         try:
+            # Перевірка обов'язкових даних
+            if not order.user_id:
+                logger.error(f"❌ order.user_id відсутній для замовлення #{order_id}")
+                raise ValueError("order.user_id is None")
+            
+            logger.info(f"📋 Водій: {driver.full_name}, {driver.car_make} {driver.car_model}, тел: {driver.phone}")
+            logger.info(f"💳 Спосіб оплати: {order.payment_method}, картка водія: {'є' if driver.card_number else 'немає'}")
+            
             # Створити кнопки для клієнта
             client_buttons = []
             if order.payment_method == "card" and driver.card_number:
                 client_buttons.append([
                     InlineKeyboardButton(text="💳 Картка водія для оплати", callback_data=f"show_card:{order_id}")
                 ])
+                logger.info(f"💳 Додано кнопку оплати карткою для клієнта")
             
             client_kb = InlineKeyboardMarkup(inline_keyboard=client_buttons) if client_buttons else None
             
-            await message.bot.send_message(
-                order.user_id,
+            driver_info_text = (
                 "✅ <b>Водій прийняв ваше замовлення!</b>\n\n"
                 f"🚗 {driver.full_name}\n"
                 f"🚙 {driver.car_make} {driver.car_model} ({driver.car_plate})\n"
                 f"📱 {driver.phone}\n\n"
-                "🚗 Водій їде до вас!",
-                reply_markup=client_kb
+                f"💰 <b>До сплати: {int(order.fare_amount):.0f} грн</b>\n"
+                f"{'💵 Готівка' if order.payment_method == 'cash' else '💳 Картка'}\n\n"
+                "🚗 Водій їде до вас!"
             )
-            logger.info(f"✅ Повідомлення клієнту відправлено (БЕЗ live location)")
+            
+            logger.info(f"📤 ВІДПРАВЛЯЮ повідомлення клієнту {order.user_id}...")
+            logger.info(f"📄 Текст ({len(driver_info_text)} символів): {driver_info_text[:100]}...")
+            
+            sent_message = await message.bot.send_message(
+                order.user_id,
+                driver_info_text,
+                reply_markup=client_kb,
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"✅✅✅ УСПІШНО! Повідомлення клієнту ВІДПРАВЛЕНО! Message ID: {sent_message.message_id}")
+            logger.info(f"📊 Деталі: order_id={order_id}, client_id={order.user_id}, БЕЗ live location")
         except Exception as e:
-            logger.error(f"❌ Помилка відправки повідомлення клієнту: {e}")
+            logger.error(f"❌ КРИТИЧНА ПОМИЛКА: не вдалося повідомити клієнта про водія: {e}", exc_info=True)
         
         # Видалити технічні повідомлення
         try:
@@ -1788,6 +1862,15 @@ def create_router(config: AppConfig) -> Router:
         
         payment_emoji = "💵" if order.payment_method == "cash" else "💳"
         
+        # Створити inline кнопку для WebApp карти
+        from aiogram.types import WebAppInfo  # InlineKeyboardButton та InlineKeyboardMarkup вже імпортовані глобально
+        # Використовуємо config.webapp_url як базу і додаємо шлях до driver_map.html
+        base_url = config.webapp_url.replace('/index.html', '') if config.webapp_url else "https://your-app.onrender.com/webapp"
+        webapp_url = f"{base_url}/driver_map.html?order_id={order_id}&driver_id={driver.id}"
+        kb_webapp = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺️ Керувати поїздкою 🚕", web_app=WebAppInfo(url=webapp_url))]
+        ])
+        
         # Відправити підтвердження водію з клавіатурою і зберегти message_id
         sent_msg = await message.answer(
             f"✅ <b>ЗАМОВЛЕННЯ #{order_id} ПРИЙНЯТО</b>\n\n"
@@ -1795,12 +1878,16 @@ def create_router(config: AppConfig) -> Router:
             f"📍 <b>Звідки:</b> {clean_pickup}{pickup_link}\n\n"
             f"🎯 <b>Куди:</b> {clean_destination}{destination_link}{distance_text}\n\n"
             f"💰 <b>{int(order.fare_amount):.0f} грн</b> {payment_emoji}\n\n"
-            "⚠️ <b>Live location НЕ активовано</b>\n"
-            "Клієнт не бачить ваше переміщення.\n\n"
             "🚗 Використовуйте кнопки для керування поїздкою:",
             reply_markup=kb_trip
         )
+        # Відправити кнопку WebApp окремим повідомленням
+        webapp_msg = await message.answer(
+            "📲 <b>Або керуйте поїздкою через карту:</b>",
+            reply_markup=kb_webapp
+        )
         add_order_message(order_id, sent_msg.message_id)
+        add_order_message(order_id, webapp_msg.message_id)  # Зберегти WebApp кнопку також
         
         # Очистити FSM стан
         await state.clear()
@@ -3129,6 +3216,15 @@ def create_router(config: AppConfig) -> Router:
         except:
             pass
     
+    @router.callback_query(F.data == "dismiss_msg")
+    async def dismiss_message_handler(call: CallbackQuery) -> None:
+        """Видалити повідомлення про завершення поїздки"""
+        await call.answer("✅")
+        try:
+            await call.message.delete()
+        except:
+            pass
+    
     @router.message(F.text == "💬 Підтримка")
     async def trip_support_button(message: Message) -> None:
         """Зв'язок з адміністрацією"""
@@ -3503,12 +3599,19 @@ def create_router(config: AppConfig) -> Router:
             driver = await get_driver_by_id(config.database_path, order.driver_id)
             if driver:
                 try:
+                    # Кнопка для видалення повідомлення
+                    dismiss_kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Зрозуміло", callback_data=f"dismiss_msg")]
+                    ])
+                    
                     await call.bot.send_message(
                         driver.tg_user_id,
                         f"💳 <b>КЛІЄНТ ПІДТВЕРДИВ ОПЛАТУ!</b>\n\n"
                         f"Замовлення #{order_id}\n"
                         f"💰 Сума: {int(order.fare_amount):.0f} грн\n\n"
-                        f"⚠️ Перевірте надходження коштів на картку!"
+                        f"⚠️ Перевірте надходження коштів на картку!",
+                        reply_markup=dismiss_kb,
+                        parse_mode="HTML"
                     )
                 except:
                     pass

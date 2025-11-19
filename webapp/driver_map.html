@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Оберіть місце на карті</title>
+    <title>Керування поїздкою</title>
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -25,34 +25,7 @@
             height: 100vh;
         }
         
-        /* Центральний маркер */
-        .center-marker {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            z-index: 1001;
-            pointer-events: none;
-            transform: translate(-50%, -100%);
-            font-size: 48px;
-            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
-            animation: float 2s ease-in-out infinite;
-        }
-        
-        /* Анімація плавного "плавання" маркера */
-        @keyframes float {
-            0%, 100% {
-                transform: translate(-50%, -100%) translateY(0);
-            }
-            50% {
-                transform: translate(-50%, -100%) translateY(-8px);
-            }
-        }
-        
-        /* При перетягуванні карти - маркер трохи збільшується */
-        .center-marker.dragging {
-            font-size: 52px;
-            animation: none;
-        }
+        /* Центральний маркер - ВИДАЛЕНО для водія */
         
         /* Виправлення для маркерів Leaflet - прибрати квадратну обводку */
         .leaflet-marker-icon {
@@ -60,15 +33,39 @@
             border: none !important;
         }
         
-        /* Пошук внизу */
-        .search-container {
+        /* Кнопка керування поїздкою внизу */
+        .driver-control-btn {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 1000;
-            display: flex;
-            gap: 10px;
+            padding: 18px 40px;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #1a1a1a;
+            border: none;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 8px 24px rgba(255, 215, 0, 0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 280px;
+            text-align: center;
+        }
+        
+        .driver-control-btn:hover {
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 12px 32px rgba(255, 215, 0, 0.6);
+        }
+        
+        .driver-control-btn:active {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        .driver-control-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         
         .search-wrapper {
@@ -595,7 +592,17 @@
         }
         
         .animated-route {
-            filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.6));
+            filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6));
+            z-index: 400 !important;
+        }
+        
+        /* Leaflet path - забезпечити що маршрут завжди суцільний */
+        .leaflet-overlay-pane svg {
+            pointer-events: none;
+        }
+        
+        .leaflet-overlay-pane path {
+            pointer-events: visiblePainted;
         }
     </style>
 </head>
@@ -697,38 +704,56 @@
     </div>
     
     <div id="map"></div>
-    <div class="center-marker" id="center-marker">📍</div>
     
-    <div class="selected-addresses" id="selected-addresses">
-        <div class="address-line" id="pickup-address-line">
-            <span class="address-label">📍</span>
-            <span class="address-value" id="pickup-address-text">Не обрано</span>
-            <button class="edit-address-btn" id="edit-pickup-btn">⚙️</button>
+    <!-- Панель інформації про клієнта (зверху) -->
+    <div class="driver-info-panel" id="driver-info-panel" style="
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        right: 20px;
+        background: rgba(26, 26, 26, 0.95);
+        backdrop-filter: blur(10px);
+        border: 2px solid #FFD700;
+        border-radius: 16px;
+        padding: 15px;
+        z-index: 1000;
+        color: #FFD700;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        display: none;
+        transition: all 0.3s ease;
+    ">
+        <!-- Кнопка згортання -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="font-weight: bold; font-size: 18px;">📋 Інформація</div>
+            <button id="toggle-info-btn" onclick="toggleInfoPanel()" style="
+                background: rgba(255, 215, 0, 0.2);
+                border: 1px solid #FFD700;
+                border-radius: 50%;
+                width: 32px;
+                height: 32px;
+                color: #FFD700;
+                font-size: 18px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s ease;
+            ">▼</button>
         </div>
-        <div class="address-line" id="dest-address-line" style="display: none;">
-            <span class="address-label">🏁</span>
-            <span class="address-value" id="dest-address-text">Не обрано</span>
-            <button class="edit-address-btn" id="edit-dest-btn">⚙️</button>
+        
+        <!-- Контент який згортається -->
+        <div id="info-content" style="transition: all 0.3s ease;">
+            <div id="client-info" style="font-size: 16px; line-height: 1.6;"></div>
+            <div id="route-distance" style="margin-top: 10px; font-size: 14px; color: #FFA500;"></div>
         </div>
     </div>
     
-    <div class="autocomplete-results" id="autocomplete-results"></div>
+    <!-- Real-time статус водія ВИДАЛЕНО (швидкість та ETA не потрібні) -->
     
-    <button class="location-btn" id="location-btn">📍</button>
-    
-    <div class="search-container">
-        <div class="search-wrapper">
-            <input type="text" class="search-input" id="search" placeholder="📍 Звідки їдемо?" autocomplete="off">
-            <button class="search-btn" id="search-btn">🔍</button>
-        </div>
-        <button class="confirm-btn" id="confirm">✅</button>
-    </div>
-    
-    <div class="route-info" id="route-info" style="display: none;">
-        <strong>📏 Маршрут:</strong><br>
-        Відстань: 0 км<br>
-        Час: ~0 хв
-    </div>
+    <!-- Кнопка керування поїздкою (внизу) -->
+    <button class="driver-control-btn" id="driver-action-btn" disabled>
+        ⏳ Завантаження...
+    </button>
     
     <div class="loading" id="loading">
         <div class="loading-text" id="loading-text">Urban</div>
@@ -749,14 +774,23 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         
-        // Стан
-        let currentState = 'pickup';  // pickup → destination → confirm
-        let pickupCoords = null;
-        let destinationCoords = null;
+        // Отримати параметри з URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('order_id');
+        const driverId = urlParams.get('driver_id');
+        
+        // Глобальні змінні
+        let orderData = null;
+        let driverLocation = null;
         let pickupMarker = null;
         let destinationMarker = null;
+        let driverMarker = null;
         let routeLine = null;
-        let userCity = null;  // Місто клієнта для фільтрації пошуку
+        let watchId = null; // ID для watchPosition
+        let lastRouteRebuild = 0; // Час останньої перебудови маршруту
+        let currentSpeed = 0; // Поточна швидкість км/год
+        let previousPosition = null; // Попередня позиція для розрахунку швидкості
+        let routeDistance = 0; // Відстань маршруту в км
         
         // Ініціалізація карти
         const map = L.map('map').setView([50.4501, 30.5234], 13); // За замовчуванням Київ
@@ -765,88 +799,580 @@
             attribution: '© OpenStreetMap'
         }).addTo(map);
         
-        // Центрувати на місто користувача
-        (async () => {
+        // Завантажити дані замовлення після splash screen
+        setTimeout(async () => {
             try {
-                const userId = tg.initDataUnsafe?.user?.id;
-                if (userId) {
-                    const response = await fetch('/api/webapp/get-user-city', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user_id: userId })
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success && data.coordinates) {
-                            const { lat, lon } = data.coordinates;
-                            map.setView([lat, lon], 13);
-                            
-                            // Зберегти назву міста для фільтрації пошуку
-                            userCity = data.coordinates.city || data.city;
-                            console.log('🏙️ Місто клієнта:', userCity);
-                            
-                            // Показати назву міста на карті після завантаження splash screen
-                            if (userCity) {
-                                setTimeout(() => {
-                                    const cityMarker = L.marker([lat, lon], {
-                                        icon: L.divIcon({
-                                            className: 'city-marker',
-                                            html: `<div style="
-                                                background: linear-gradient(135deg, rgba(26, 26, 26, 0.95), rgba(45, 45, 45, 0.95));
-                                                color: #FFD700;
-                                                padding: 10px 20px;
-                                                border-radius: 20px;
-                                                font-weight: 600;
-                                                font-size: 18px;
-                                                border: 2px solid rgba(255, 215, 0, 0.6);
-                                                box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3), 0 0 20px rgba(255, 215, 0, 0.2);
-                                                text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-                                                white-space: nowrap;
-                                                font-family: 'Segoe UI', Roboto, sans-serif;
-                                                backdrop-filter: blur(10px);
-                                                display: inline-block;
-                                            ">🏙️ ${userCity}</div>`,
-                                            iconSize: null,  // Автоматичний розмір
-                                            iconAnchor: null  // Автоматичне центрування
-                                        })
-                                    }).addTo(map);
-                                    
-                                    // Центрувати маркер після рендерингу
-                                    setTimeout(() => {
-                                        const markerElement = cityMarker.getElement();
-                                        if (markerElement) {
-                                            const width = markerElement.offsetWidth;
-                                            const height = markerElement.offsetHeight;
-                                            cityMarker.options.icon.options.iconAnchor = [width / 2, height / 2];
-                                            cityMarker.setIcon(cityMarker.options.icon);
-                                        }
-                                    }, 100);
-                                    
-                                    // Видалити маркер через 4 секунди
-                                    setTimeout(() => {
-                                        map.removeLayer(cityMarker);
-                                    }, 4000);
-                                }, 5000); // Показати після зникнення splash screen (4s анімація + 1s затримка)
-                            }
-                        }
-                    }
+                if (!orderId || !driverId) {
+                    alert('❌ Помилка: відсутні параметри order_id або driver_id');
+                    tg.close();
+                    return;
                 }
+                
+                // Показати loader
+                const loading = document.getElementById('loading');
+                loading.style.display = 'block';
+                
+                // Завантажити дані замовлення
+                const response = await fetch(`/api/webapp/get-driver-order?order_id=${orderId}&driver_id=${driverId}`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    alert('❌ ' + (data.error || 'Помилка завантаження замовлення'));
+                    loading.style.display = 'none';
+                    tg.close();
+                    return;
+                }
+                
+                orderData = data.order;
+                console.log('📦 Дані замовлення:', orderData);
+                
+                // Показати інформацію про клієнта
+                showClientInfo(orderData);
+                
+                // Отримати позицію водія
+                await getDriverLocation();
+                
+                // Побудувати маршрут
+                await buildRouteForDriver();
+                
+                // Показати кнопку керування
+                updateActionButton();
+                
+                loading.style.display = 'none';
+                
             } catch (e) {
-                // Помилка - залишаємо Київ
-                console.error('Помилка отримання міста:', e);
+                console.error('❌ Помилка завантаження:', e);
+                alert('❌ Помилка завантаження даних замовлення');
+                document.getElementById('loading').style.display = 'none';
+                tg.close();
             }
-        })();
+        }, 5000); // Після splash screen (4s анімація + 1s затримка)
         
         // Функція створення маркера
-        function createMarker(isPickup) {
-            const emoji = isPickup ? '📍' : '🏁';
+        function createMarker(type) {
+            let emoji, html;
+            
+            switch(type) {
+                case 'pickup':
+                    emoji = '📍';
+                    break;
+                case 'destination':
+                    emoji = '🏁';
+                    break;
+                case 'driver':
+                    emoji = '🚕';
+                    break;
+                default:
+                    emoji = '📍';
+            }
+            
             return L.divIcon({
                 className: 'marker-icon',
                 html: `<div style="font-size: 48px; line-height: 48px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));">${emoji}</div>`,
                 iconSize: [48, 48],
                 iconAnchor: [24, 46]
             });
+        }
+        
+        // Показати інформацію про клієнта та замовлення
+        function showClientInfo(order) {
+            const infoPanel = document.getElementById('driver-info-panel');
+            const clientInfo = document.getElementById('client-info');
+            const routeDistance = document.getElementById('route-distance');
+            
+            // Форматувати телефон
+            const phone = order.client_phone || 'Не вказано';
+            
+            // Інформація про клієнта
+            clientInfo.innerHTML = `
+                👤 <b>${order.client_name || 'Клієнт'}</b><br>
+                📱 <a href="tel:${phone}">${phone}</a><br>
+                📍 <b>Звідки:</b> ${order.pickup_address}<br>
+                🎯 <b>Куди:</b> ${order.destination_address}
+            `;
+            
+            // Інформація про маршрут
+            const paymentEmoji = order.payment_method === 'cash' ? '💵' : '💳';
+            routeDistance.innerHTML = `
+                📏 <b>${order.distance_km} км</b><br>
+                💰 <b>${Math.round(order.fare_amount)} грн</b> ${paymentEmoji}
+            `;
+            
+            infoPanel.style.display = 'block';
+        }
+        
+        // Згорнути/розгорнути інформаційну панель
+        let isInfoCollapsed = false;
+        function toggleInfoPanel() {
+            const content = document.getElementById('info-content');
+            const button = document.getElementById('toggle-info-btn');
+            
+            if (isInfoCollapsed) {
+                // Розгорнути
+                content.style.display = 'block';
+                content.style.opacity = '1';
+                content.style.maxHeight = '500px';
+                button.textContent = '▼';
+                isInfoCollapsed = false;
+            } else {
+                // Згорнути
+                content.style.display = 'none';
+                content.style.opacity = '0';
+                content.style.maxHeight = '0';
+                button.textContent = '▲';
+                isInfoCollapsed = true;
+            }
+            
+            // Вібрація
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        }
+        
+        // Розрахувати відстань між двома точками (формула Haversine)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Радіус Землі в км
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; // Відстань в км
+        }
+        
+        // Оновити маркер водія з плавною анімацією
+        function updateDriverMarker(lat, lon) {
+            if (!driverMarker) {
+                // Створити новий маркер
+                driverMarker = L.marker([lat, lon], {
+                    icon: createMarker('driver')
+                }).addTo(map);
+            } else {
+                // Плавно перемістити маркер
+                const newLatLng = L.latLng(lat, lon);
+                driverMarker.setLatLng(newLatLng);
+            }
+        }
+        
+        // Розрахувати ETA (очікуваний час прибуття)
+        function calculateETA(distanceKm, speedKmh) {
+            if (speedKmh < 1) return '--:--'; // Якщо стоїмо на місці
+            
+            const timeHours = distanceKm / speedKmh;
+            const timeMinutes = Math.round(timeHours * 60);
+            
+            if (timeMinutes < 1) return '<1 хв';
+            if (timeMinutes < 60) return `${timeMinutes} хв`;
+            
+            const hours = Math.floor(timeMinutes / 60);
+            const minutes = timeMinutes % 60;
+            return `${hours}г ${minutes}хв`;
+        }
+        
+        // Оновити панель статусу (швидкість, ETA, точність)
+        function updateDriverStatus(speed, accuracy) {
+            const statusPanel = document.getElementById('driver-status-panel');
+            const speedEl = document.getElementById('driver-speed');
+            const etaEl = document.getElementById('driver-eta');
+            const accuracyEl = document.getElementById('location-accuracy');
+            
+            // Оновити швидкість
+            speedEl.textContent = `${Math.round(speed)} км/год`;
+            
+            // Розрахувати ETA до цільової точки
+            let targetLat, targetLon;
+            if (orderData.status === 'accepted') {
+                targetLat = orderData.pickup_lat;
+                targetLon = orderData.pickup_lon;
+            } else if (orderData.status === 'in_progress') {
+                targetLat = orderData.dest_lat;
+                targetLon = orderData.dest_lon;
+            }
+            
+            if (targetLat && targetLon && driverLocation) {
+                const distanceToTarget = calculateDistance(
+                    driverLocation.lat, driverLocation.lon,
+                    targetLat, targetLon
+                );
+                const eta = calculateETA(distanceToTarget, speed);
+                etaEl.textContent = eta;
+            }
+            
+            // Оновити точність
+            accuracyEl.textContent = `📡 Точність: ${Math.round(accuracy)} м`;
+            
+            // Показати панель
+            statusPanel.style.display = 'block';
+        }
+        
+        // Отримати початкову позицію водія та запустити real-time відстеження
+        async function getDriverLocation() {
+            return new Promise((resolve, reject) => {
+                if ('geolocation' in navigator) {
+                    // Спочатку отримати поточну позицію
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            driverLocation = {
+                                lat: position.coords.latitude,
+                                lon: position.coords.longitude
+                            };
+                            console.log('📍 Початкова позиція водія:', driverLocation);
+                            
+                            // Запустити real-time відстеження
+                            startRealTimeTracking();
+                            
+                            resolve(driverLocation);
+                        },
+                        (error) => {
+                            console.error('❌ Помилка геолокації:', error);
+                            // Fallback на pickup
+                            driverLocation = {
+                                lat: orderData.pickup_lat,
+                                lon: orderData.pickup_lon
+                            };
+                            console.log('⚠️ Використовуємо pickup як позицію водія');
+                            resolve(driverLocation);
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        }
+                    );
+                } else {
+                    // Геолокація не підтримується
+                    driverLocation = {
+                        lat: orderData.pickup_lat,
+                        lon: orderData.pickup_lon
+                    };
+                    console.log('⚠️ Геолокація не підтримується, використовуємо pickup');
+                    resolve(driverLocation);
+                }
+            });
+        }
+        
+        // Запустити real-time відстеження позиції водія
+        function startRealTimeTracking() {
+            if (!('geolocation' in navigator)) {
+                console.warn('⚠️ Геолокація не підтримується');
+                return;
+            }
+            
+            console.log('🎯 Запуск real-time відстеження...');
+            
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const newLat = position.coords.latitude;
+                    const newLon = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    const speed = position.coords.speed; // м/с або null
+                    
+                    console.log(`📍 Оновлення позиції: ${newLat}, ${newLon} (точність: ${Math.round(accuracy)}м)`);
+                    
+                    // Розрахувати швидкість якщо не надається GPS
+                    if (previousPosition && speed === null) {
+                        const distance = calculateDistance(
+                            previousPosition.lat, previousPosition.lon,
+                            newLat, newLon
+                        );
+                        const timeDiff = (Date.now() - previousPosition.timestamp) / 1000; // секунди
+                        currentSpeed = (distance / timeDiff) * 3600; // км/год
+                    } else if (speed !== null) {
+                        currentSpeed = speed * 3.6; // конвертувати м/с в км/год
+                    }
+                    
+                    // Оновити позицію водія
+                    const oldLat = driverLocation.lat;
+                    const oldLon = driverLocation.lon;
+                    
+                    driverLocation = { lat: newLat, lon: newLon };
+                    previousPosition = { lat: newLat, lon: newLon, timestamp: Date.now() };
+                    
+                    // Оновити маркер на карті
+                    updateDriverMarker(newLat, newLon);
+                    
+                    // Оновити панель статусу - ВИДАЛЕНО (панель не потрібна)
+                    // updateDriverStatus(currentSpeed, accuracy);
+                    
+                    // Перевірити чи потрібно перебудувати маршрут
+                    checkRouteDeviation(newLat, newLon, oldLat, oldLon);
+                },
+                (error) => {
+                    console.error('❌ Помилка real-time відстеження:', error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 30000,
+                    maximumAge: 0
+                }
+            );
+        }
+        
+        // Перевірити відхилення від маршруту і перебудувати якщо потрібно
+        // ЦЕ ТАКОЖ ЗАБЕЗПЕЧУЄ "ЗНИКНЕННЯ" ЛІНІЇ - маршрут перебудовується від поточної позиції водія
+        async function checkRouteDeviation(newLat, newLon, oldLat, oldLon) {
+            // Перебудовувати для accepted (їде до клієнта) та in_progress (везе клієнта)
+            if (orderData.status !== 'accepted' && orderData.status !== 'in_progress') {
+                return;
+            }
+            
+            // Розрахувати відстань від попередньої точки
+            const movedDistance = calculateDistance(oldLat, oldLon, newLat, newLon) * 1000; // в метрах
+            
+            // Перебудувати маршрут частіше для ефекту "зникнення" пройденої частини
+            // Тільки якщо рухаємось (>15м) і минуло >8 секунд
+            const now = Date.now();
+            const timeSinceRebuild = (now - lastRouteRebuild) / 1000; // секунди
+            
+            if (movedDistance > 15 && timeSinceRebuild > 8) {
+                console.log(`🔄 Оновлення маршруту: ${Math.round(movedDistance)}м, пройдено частину шляху`);
+                lastRouteRebuild = now;
+                // Маршрут буде побудований від НОВОЇ позиції водія → стара частина зникне
+                await buildRouteForDriver();
+            }
+        }
+        
+        // Зупинити real-time відстеження (при закритті вебаппа)
+        function stopRealTimeTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                console.log('⏹️ Real-time відстеження зупинено');
+            }
+        }
+        
+        // Побудувати маршрут залежно від статусу замовлення
+        async function buildRouteForDriver() {
+            if (!orderData || !driverLocation) {
+                console.error('❌ Відсутні дані для побудови маршруту');
+                return;
+            }
+            
+            let fromLat, fromLon, toLat, toLon;
+            
+            // Визначити точки маршруту залежно від статусу
+            if (orderData.status === 'accepted') {
+                // Водій їде до клієнта (від водія до pickup)
+                fromLat = driverLocation.lat;
+                fromLon = driverLocation.lon;
+                toLat = orderData.pickup_lat;
+                toLon = orderData.pickup_lon;
+                
+                // Додати маркери
+                driverMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('driver')
+                }).addTo(map);
+                
+                pickupMarker = L.marker([toLat, toLon], {
+                    icon: createMarker('pickup')
+                }).addTo(map);
+                
+            } else if (orderData.status === 'in_progress') {
+                // Клієнт в авто, їдуть до пункту призначення (ВІД ВОДІЯ до destination)
+                // Маршрут прив'язаний до водія, а не до pickup
+                fromLat = driverLocation.lat;
+                fromLon = driverLocation.lon;
+                toLat = orderData.dest_lat;
+                toLon = orderData.dest_lon;
+                
+                // Додати маркери (водій + кінцева точка)
+                driverMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('driver')
+                }).addTo(map);
+                
+                destinationMarker = L.marker([toLat, toLon], {
+                    icon: createMarker('destination')
+                }).addTo(map);
+                
+            } else {
+                // Інші статуси - показати обидві точки
+                fromLat = orderData.pickup_lat;
+                fromLon = orderData.pickup_lon;
+                toLat = orderData.dest_lat;
+                toLon = orderData.dest_lon;
+                
+                pickupMarker = L.marker([fromLat, fromLon], {
+                    icon: createMarker('pickup')
+                }).addTo(map);
+                
+                destinationMarker = L.marker([toLat, toLon], {
+                    icon: createMarker('destination')
+                }).addTo(map);
+            }
+            
+            // Побудувати маршрут через OSRM
+            try {
+                const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                    
+                    if (routeLine) {
+                        map.removeLayer(routeLine);
+                    }
+                    
+                    routeLine = L.polyline(coords, {
+                        color: '#2196F3',
+                        weight: 6,
+                        opacity: 0.9,
+                        className: 'animated-route'
+                    }).addTo(map);
+                    
+                    // Анімація поступового прокладання маршруту
+                    setTimeout(() => {
+                        const pathElement = routeLine.getElement();
+                        if (pathElement) {
+                            const length = pathElement.getTotalLength();
+                            pathElement.style.strokeDasharray = length;
+                            pathElement.style.strokeDashoffset = length;
+                            pathElement.style.animation = `drawRoute 2s ease-in-out forwards`;
+                            
+                            // Видалити анімацію після завершення щоб лінія залишалась суцільною
+                            setTimeout(() => {
+                                pathElement.style.strokeDasharray = 'none';
+                                pathElement.style.strokeDashoffset = '0';
+                                pathElement.style.animation = 'none';
+                            }, 2100); // 2s анімація + 100ms запас
+                        }
+                    }, 100);
+                    
+                    // Центрувати карту на маршруті
+                    map.fitBounds(routeLine.getBounds(), { padding: [80, 80] });
+                    
+                    console.log('✅ Маршрут побудовано');
+                } else {
+                    console.error('❌ Не вдалося побудувати маршрут:', data);
+                }
+            } catch (e) {
+                console.error('❌ Помилка побудови маршруту:', e);
+            }
+        }
+        
+        // Оновити текст кнопки керування залежно від статусу
+        function updateActionButton() {
+            const button = document.getElementById('driver-action-btn');
+            
+            if (!orderData) {
+                button.textContent = '⏳ Завантаження...';
+                button.disabled = true;
+                return;
+            }
+            
+            button.disabled = false;
+            
+            switch(orderData.status) {
+                case 'accepted':
+                    button.textContent = '📍 Я на місці';
+                    button.onclick = () => handleDriverAction('arrived');
+                    break;
+                case 'in_progress':
+                    button.textContent = '✅ Завершити поїздку';
+                    button.onclick = () => handleDriverAction('complete');
+                    break;
+                case 'completed':
+                    button.textContent = '✔️ Поїздка завершена';
+                    button.disabled = true;
+                    break;
+                default:
+                    button.textContent = '⏳ Очікування...';
+                    button.disabled = true;
+            }
+        }
+        
+        // Обробник дій водія
+        async function handleDriverAction(action) {
+            console.log('🚗 Дія водія:', action);
+            
+            // Показати loader
+            const loading = document.getElementById('loading');
+            const button = document.getElementById('driver-action-btn');
+            
+            button.disabled = true;
+            loading.style.display = 'block';
+            
+            try {
+                // Відправити запит на сервер
+                const response = await fetch('/api/webapp/driver-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        order_id: parseInt(orderId),
+                        driver_id: parseInt(driverId),
+                        action: action
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    alert('❌ ' + (data.error || 'Помилка виконання дії'));
+                    button.disabled = false;
+                    loading.style.display = 'none';
+                    return;
+                }
+                
+                console.log('✅ Дія виконана:', data);
+                
+                // Оновити дані замовлення
+                orderData.status = data.new_status;
+                
+                // Вібрація для зворотного зв'язку
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                }
+                
+                // Обробка різних дій
+                if (action === 'complete') {
+                    // Завершено - закрити вебапп через 2 секунди
+                    stopRealTimeTracking(); // Зупинити відстеження
+                    setTimeout(() => {
+                        tg.close();
+                    }, 2000);
+                } else if (action === 'arrived') {
+                    // Після "Я на місці" НЕ викликати updateActionButton бо статус не змінився
+                    // Вручну змінити кнопку на "Клієнт в авто"
+                    button.textContent = '🚗 Клієнт в авто';
+                    button.onclick = () => handleDriverAction('start');
+                    button.disabled = false;
+                    console.log('✅ Кнопка змінена на "Клієнт в авто"');
+                } else if (action === 'start') {
+                    // Після "Клієнт в авто" - ПЕРЕБУДУВАТИ маршрут до destination
+                    console.log('🔄 Перебудова маршруту після "Клієнт в авто"...');
+                    
+                    // Видалити старий маршрут та маркери
+                    if (routeLine) {
+                        map.removeLayer(routeLine);
+                        routeLine = null;
+                    }
+                    if (pickupMarker) {
+                        map.removeLayer(pickupMarker);
+                        pickupMarker = null;
+                    }
+                    if (driverMarker) {
+                        map.removeLayer(driverMarker);
+                        driverMarker = null;
+                    }
+                    
+                    // Перебудувати маршрут (зараз від pickup до destination)
+                    await buildRouteForDriver();
+                    
+                    // Оновити кнопку
+                    updateActionButton();
+                }
+                
+                loading.style.display = 'none';
+                
+            } catch (e) {
+                console.error('❌ Помилка виконання дії:', e);
+                alert('❌ Помилка виконання дії: ' + e.message);
+                button.disabled = false;
+                loading.style.display = 'none';
+            }
         }
         
         // Функція побудови маршруту
@@ -887,13 +1413,6 @@
                             pathElement.style.strokeDasharray = length;
                             pathElement.style.strokeDashoffset = length;
                             pathElement.style.animation = `drawRoute 2s ease-in-out forwards`;
-                            
-                            // Видалити анімацію після завершення щоб лінія залишалась суцільною
-                            setTimeout(() => {
-                                pathElement.style.strokeDasharray = 'none';
-                                pathElement.style.strokeDashoffset = '0';
-                                pathElement.style.animation = 'none';
-                            }, 2100); // 2s анімація + 100ms запас
                         }
                     }, 100);
                     
@@ -1377,7 +1896,13 @@
         // Закриття WebApp
         tg.BackButton.show();
         tg.onEvent('backButtonClicked', () => {
+            stopRealTimeTracking(); // Зупинити відстеження перед закриттям
             tg.close();
+        });
+        
+        // Також зупинити при закритті браузера/вкладки
+        window.addEventListener('beforeunload', () => {
+            stopRealTimeTracking();
         });
     </script>
 </body>

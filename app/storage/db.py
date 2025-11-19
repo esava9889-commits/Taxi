@@ -2786,3 +2786,67 @@ async def upsert_pricing_settings(db_path: str, settings: PricingSettings) -> bo
         except Exception as e:
             logger.error(f"❌ Помилка збереження pricing_settings: {e}")
             return False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# METRICS HELPERS (для моніторингу)
+# ════════════════════════════════════════════════════════════════════════════
+
+async def count_users(db_path: str) -> int:
+    """Підрахувати загальну кількість користувачів"""
+    async with db_manager.connect(db_path) as db:
+        async with db.execute("SELECT COUNT(*) FROM users") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+async def count_drivers(db_path: str) -> int:
+    """Підрахувати загальну кількість водіїв (approved)"""
+    async with db_manager.connect(db_path) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM drivers WHERE status = ?", ("approved",)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+async def count_online_drivers(db_path: str) -> int:
+    """Підрахувати кількість онлайн водіїв"""
+    async with db_manager.connect(db_path) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM drivers WHERE online = ? AND status = ?",
+            (True, "approved")
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+async def count_orders(db_path: str) -> int:
+    """Підрахувати загальну кількість замовлень"""
+    async with db_manager.connect(db_path) as db:
+        async with db.execute("SELECT COUNT(*) FROM orders") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+async def count_orders_by_status(db_path: str, statuses: list) -> int:
+    """
+    Підрахувати кількість замовлень за статусами
+    
+    Args:
+        db_path: Шлях до БД
+        statuses: Список статусів (наприклад, ["pending", "accepted"])
+    
+    Returns:
+        Кількість замовлень
+    """
+    if not statuses:
+        return 0
+    
+    async with db_manager.connect(db_path) as db:
+        placeholders = ",".join(["?" for _ in statuses])
+        query = f"SELECT COUNT(*) FROM orders WHERE status IN ({placeholders})"
+        
+        async with db.execute(query, tuple(statuses)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0

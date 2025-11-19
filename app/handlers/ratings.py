@@ -26,6 +26,15 @@ from app.handlers.keyboards import main_menu_keyboard
 def create_router(config: AppConfig) -> Router:
     router = Router(name="ratings")
 
+    @router.callback_query(F.data == "dismiss_msg")
+    async def dismiss_message_handler(call: CallbackQuery) -> None:
+        """Видалити повідомлення"""
+        await call.answer("✅")
+        try:
+            await call.message.delete()
+        except:
+            pass
+    
     @router.callback_query(F.data.startswith("rate:skip:"))
     async def skip_rating(call: CallbackQuery) -> None:
         """Пропустити оцінювання"""
@@ -178,11 +187,25 @@ def create_router(config: AppConfig) -> Router:
             )
             
             stars = "⭐" * rating_value
+            
+            # Кнопка для видалення повідомлення
+            from aiogram.types import InlineKeyboardButton
+            dismiss_kb_inline = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Зрозуміло", callback_data="dismiss_msg")]
+            ])
+            
             await call.bot.send_message(
                 call.from_user.id,
                 f"✅ <b>Дякуємо за оцінку!</b>\n\n"
                 f"Ви оцінили водія: {stars}\n\n"
                 "🚖 Оберіть дію з меню:",
+                reply_markup=dismiss_kb_inline
+            )
+            
+            # Окремо надіслати reply keyboard
+            await call.bot.send_message(
+                call.from_user.id,
+                "Оберіть дію:",
                 reply_markup=kb
             )
         except Exception as e:

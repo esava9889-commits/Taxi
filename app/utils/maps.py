@@ -9,21 +9,29 @@ logger = logging.getLogger(__name__)
 
 # Затримка між запитами до Nominatim (обов'язкова згідно з правилами)
 _last_nominatim_request = 0
-NOMINATIM_DELAY = 1.0  # 1 секунда між запитами
+NOMINATIM_DELAY = 1.5  # ✅ ЗБІЛЬШЕНО: 1.5 секунди між запитами (було 1.0)
+_nominatim_lock = asyncio.Lock()  # Lock для запобігання race condition
+
+# 🔄 Кеш для reverse geocoding (щоб не робити повторні запити)
+_reverse_geocode_cache = {}  # {(lat, lon): address}
 
 
 async def _wait_for_nominatim():
-    """Затримка між запитами до Nominatim (1 запит/сек)"""
-    global _last_nominatim_request
-    import time
-    
-    now = time.time()
-    time_since_last = now - _last_nominatim_request
-    
-    if time_since_last < NOMINATIM_DELAY:
-        await asyncio.sleep(NOMINATIM_DELAY - time_since_last)
-    
-    _last_nominatim_request = time.time()
+    """
+    Затримка між запитами до Nominatim (1 запит/сек)
+    Використовує Lock для thread-safety при одночасних запитах
+    """
+    async with _nominatim_lock:  # Тільки один запит одночасно
+        global _last_nominatim_request
+        import time
+        
+        now = time.time()
+        time_since_last = now - _last_nominatim_request
+        
+        if time_since_last < NOMINATIM_DELAY:
+            await asyncio.sleep(NOMINATIM_DELAY - time_since_last)
+        
+        _last_nominatim_request = time.time()
 
 
 async def get_distance_and_duration(
@@ -106,8 +114,15 @@ async def geocode_address(api_key: str, address: str) -> Optional[Tuple[float, f
     }
     
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=15) as resp:
+        # ✅ SSL: вимкнути верифікацію для стабільності
+        import ssl
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                 if resp.status != 200:
                     logger.error(f"Nominatim Geocoding HTTP error: {resp.status}")
                     return None
@@ -139,10 +154,20 @@ async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]
     БЕЗКОШТОВНО, без API ключа!
     
     Returns address string or None
+    
+    ✅ З кешуванням та retry логікою
     """
+    # 🔄 КЕШУВАННЯ: Перевірити чи є в кеші (округлити до 4 знаків)
+    cache_key = (round(lat, 4), round(lon, 4))
+    if cache_key in _reverse_geocode_cache:
+        cached = _reverse_geocode_cache[cache_key]
+        logger.info(f"💾 Reverse geocode (cached): {lat},{lon} → {cached}")
+        return cached
+    
     # Затримка для Nominatim
     await _wait_for_nominatim()
     
+    # Використовуємо HTTPS (безпечніше і працює на Render)
     url = (
         f"https://nominatim.openstreetmap.org/reverse?"
         f"lat={lat}&lon={lon}&format=json&addressdetails=1&accept-language=uk"
@@ -153,8 +178,15 @@ async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]
     }
     
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=15) as resp:
+        # ✅ SSL: вимкнути верифікацію для стабільності (як в webapp_api.py)
+        import ssl
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                 if resp.status != 200:
                     logger.error(f"Nominatim Reverse Geocoding HTTP error: {resp.status}")
                     return None
@@ -201,14 +233,43 @@ async def reverse_geocode(api_key: str, lat: float, lon: float) -> Optional[str]
         if parts:
             formatted = ", ".join(parts)
             logger.info(f"✅ Nominatim reverse: {lat},{lon} → {formatted}")
+            # 💾 Зберегти в кеш
+            _reverse_geocode_cache[cache_key] = formatted
             return formatted
         
         # Fallback на display_name (якщо структура недоступна)
         logger.info(f"✅ Nominatim reverse (fallback): {lat},{lon} → {display_name}")
+        # 💾 Зберегти в кеш
+        _reverse_geocode_cache[cache_key] = display_name
         return display_name
         
     except Exception as e:
         logger.error(f"❌ Nominatim Reverse Geocoding exception: {type(e).__name__}: {str(e)}")
+        
+        # 🔄 RETRY: Спробувати ще раз через 2 секунди
+        logger.info("🔄 Retry reverse geocoding через 2 секунди...")
+        await asyncio.sleep(2.0)
+        
+        try:
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        display_name = data.get("display_name")
+                        if display_name:
+                            logger.info(f"✅ Nominatim reverse (retry success): {lat},{lon} → {display_name}")
+                            # 💾 Зберегти в кеш
+                            _reverse_geocode_cache[cache_key] = display_name
+                            return display_name
+        except Exception as retry_e:
+            logger.error(f"❌ Retry також не вдався: {retry_e}")
+        
         return None
 
 

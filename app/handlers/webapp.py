@@ -36,25 +36,6 @@ def create_router(config: AppConfig) -> Router:
     logger.info(f"🔧 Config webapp_url: {config.webapp_url}")
     logger.info("=" * 80)
     
-    # ⭐⭐⭐ ТЕСТОВИЙ ОБРОБНИК - спіймає ВСІ повідомлення в webapp router
-    @router.message()
-    async def test_catch_all(message: Message, state: FSMContext) -> None:
-        """Діагностичний обробник - ловить ВСЕ"""
-        logger.info("=" * 80)
-        logger.info("🚨 WEBAPP ROUTER: Caught a message (any type)!")
-        logger.info(f"  User: {message.from_user.id}")
-        logger.info(f"  Content type: {message.content_type}")
-        logger.info(f"  Has web_app_data attr: {hasattr(message, 'web_app_data')}")
-        
-        if hasattr(message, 'web_app_data') and message.web_app_data:
-            logger.info(f"  ✅ web_app_data IS PRESENT!")
-            logger.info(f"  web_app_data.data: {message.web_app_data.data}")
-        else:
-            logger.info(f"  ❌ web_app_data is None or missing")
-            
-        logger.info(f"  Message model_dump keys: {list(message.model_dump().keys())}")
-        logger.info("=" * 80)
-    
     @router.message(F.web_app_data)
     async def handle_webapp_data(message: Message, state: FSMContext) -> None:
         """
@@ -228,9 +209,19 @@ def create_router(config: AppConfig) -> Router:
                             logger.info(f"✅ Відстань: {distance_km:.1f} км, час: {duration_minutes:.0f} хв")
                     
                     if not distance_km:
-                        distance_km = 5.0
-                        duration_minutes = 15
-                        await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
+                        # КРИТИЧНА ПОМИЛКА: не вдалося розрахувати відстань
+                        logger.error(f"❌ Не вдалося розрахувати відстань для user {user_id}")
+                        await bot.send_message(
+                            user_id,
+                            "❌ <b>Не вдалося розрахувати відстань</b>\n\n"
+                            "⚠️ Будь ласка, спробуйте:\n"
+                            "• Обрати інші точки на карті\n"
+                            "• Ввести адреси текстом\n"
+                            "• Звернутися до підтримки\n\n"
+                            "Натисніть /order щоб спробувати знову",
+                            parse_mode="HTML"
+                        )
+                        return
                     
                     # Отримати тариф
                     tariff = await get_latest_tariff(config.database_path)
@@ -238,11 +229,9 @@ def create_router(config: AppConfig) -> Router:
                         await message.answer("❌ Помилка: тариф не налаштований. Зверніться до адміністратора.")
                         return
                     
-                    # Базовий тариф
-                    base_fare = max(
-                        tariff.minimum,
-                        tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-                    )
+                    # Базовий тариф (використовуємо helper функцію)
+                    from app.handlers.car_classes import calculate_base_fare
+                    base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
                     
                     # Отримати налаштування ціноутворення
                     pricing = await get_pricing_settings(config.database_path)

@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.storage.db import Tariff
 
 # Класи авто та їх коефіцієнти до тарифу
 CAR_CLASSES = {
@@ -69,6 +72,27 @@ def get_car_class_multiplier(car_class: str) -> float:
         return 1.0
     
     return CAR_CLASSES[car_class]["multiplier"]
+
+
+def calculate_base_fare(tariff, distance_km: float, duration_minutes: float) -> float:
+    """
+    Розрахувати базову ціну з урахуванням мінімуму
+    
+    Args:
+        tariff: Об'єкт тарифу з БД
+        distance_km: Відстань в кілометрах
+        duration_minutes: Час у хвилинах
+    
+    Returns:
+        Базова ціна (не менше мінімуму)
+    
+    Example:
+        >>> tariff = Tariff(base_fare=50, per_km=10, per_minute=2, minimum=100)
+        >>> calculate_base_fare(tariff, 3, 10)
+        100.0  # мінімум, бо 50 + 3*10 + 10*2 = 100
+    """
+    fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
+    return max(fare, tariff.minimum)
 
 
 def calculate_fare_with_class(base_fare: float, car_class: str, custom_multipliers: dict = None) -> float:

@@ -1,0 +1,51 @@
+# Конфігурація coverage (покриття коду тестами)
+
+[run]
+# Включити контекст (який тест запустив який код)
+dynamic_context = test_function
+
+# Включити паралельний режим
+parallel = True
+
+# Файли для аналізу
+source = app
+
+# Виключити з аналізу
+omit =
+    # Тести
+    tests/*
+    # Міграції
+    **/migration*.py
+    **/recreate_db.py
+    **/init_*.py
+    # Конфіг
+    **/config.py
+    # Main (важко тестувати)
+    **/main.py
+
+[report]
+# Показати відсутні рядки
+show_missing = True
+
+# Точність відсотків
+precision = 2
+
+# Виключити рядки з coverage
+exclude_lines =
+    # Стандартні виключення
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    # Type checking
+    if TYPE_CHECKING:
+    @abstractmethod
+    # Debug code
+    if settings.DEBUG
+    # Pass statements
+    pass
+
+[html]
+# Директорія для HTML звіту
+directory = htmlcov

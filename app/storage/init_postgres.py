@@ -186,51 +186,7 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції tariffs: {e}")
         
-        # Міграція 5: Система карми - додати karma, total_orders, rejected_orders до drivers
-        try:
-            has_driver_karma = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'drivers' AND column_name = 'karma'
-                )
-            """)
-            
-            if not has_driver_karma:
-                logger.info("🔄 Міграція drivers: додавання karma...")
-                await conn.execute("ALTER TABLE drivers ADD COLUMN karma INTEGER DEFAULT 100")
-                await conn.execute("UPDATE drivers SET karma = 100 WHERE karma IS NULL")
-                await conn.execute("ALTER TABLE drivers ALTER COLUMN karma SET NOT NULL")
-                logger.info("✅ Колонка drivers.karma додана")
-            
-            has_driver_total = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'drivers' AND column_name = 'total_orders'
-                )
-            """)
-            
-            if not has_driver_total:
-                logger.info("🔄 Міграція drivers: додавання total_orders...")
-                await conn.execute("ALTER TABLE drivers ADD COLUMN total_orders INTEGER DEFAULT 0")
-                await conn.execute("UPDATE drivers SET total_orders = 0 WHERE total_orders IS NULL")
-                await conn.execute("ALTER TABLE drivers ALTER COLUMN total_orders SET NOT NULL")
-                logger.info("✅ Колонка drivers.total_orders додана")
-            
-            has_driver_rejected = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'drivers' AND column_name = 'rejected_orders'
-                )
-            """)
-            
-            if not has_driver_rejected:
-                logger.info("🔄 Міграція drivers: додавання rejected_orders...")
-                await conn.execute("ALTER TABLE drivers ADD COLUMN rejected_orders INTEGER DEFAULT 0")
-                await conn.execute("UPDATE drivers SET rejected_orders = 0 WHERE rejected_orders IS NULL")
-                await conn.execute("ALTER TABLE drivers ALTER COLUMN rejected_orders SET NOT NULL")
-                logger.info("✅ Колонка drivers.rejected_orders додана")
-        except Exception as e:
-            logger.warning(f"⚠️ Помилка міграції drivers (karma): {e}")
+        # Міграція 5: Система карми - видалено, колонки вже в CREATE TABLE
         
         # Міграція 6: Додати car_color до drivers
         try:
@@ -264,87 +220,9 @@ async def init_postgres_db(database_url: str) -> None:
         except Exception as e:
             logger.warning(f"⚠️ Помилка міграції drivers (priority): {e}")
         
-        # Міграція 7: Система карми - додати karma, total_orders, cancelled_orders до users
-        try:
-            has_user_karma = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'karma'
-                )
-            """)
-            
-            if not has_user_karma:
-                logger.info("🔄 Міграція users: додавання karma...")
-                await conn.execute("ALTER TABLE users ADD COLUMN karma INTEGER DEFAULT 100")
-                await conn.execute("UPDATE users SET karma = 100 WHERE karma IS NULL")
-                await conn.execute("ALTER TABLE users ALTER COLUMN karma SET NOT NULL")
-                logger.info("✅ Колонка users.karma додана")
-            
-            has_user_total = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'total_orders'
-                )
-            """)
-            
-            if not has_user_total:
-                logger.info("🔄 Міграція users: додавання total_orders...")
-                await conn.execute("ALTER TABLE users ADD COLUMN total_orders INTEGER DEFAULT 0")
-                await conn.execute("UPDATE users SET total_orders = 0 WHERE total_orders IS NULL")
-                await conn.execute("ALTER TABLE users ALTER COLUMN total_orders SET NOT NULL")
-                logger.info("✅ Колонка users.total_orders додана")
-            
-            has_user_cancelled = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'cancelled_orders'
-                )
-            """)
-            
-            if not has_user_cancelled:
-                logger.info("🔄 Міграція users: додавання cancelled_orders...")
-                await conn.execute("ALTER TABLE users ADD COLUMN cancelled_orders INTEGER DEFAULT 0")
-                await conn.execute("UPDATE users SET cancelled_orders = 0 WHERE cancelled_orders IS NULL")
-                await conn.execute("ALTER TABLE users ALTER COLUMN cancelled_orders SET NOT NULL")
-                logger.info("✅ Колонка users.cancelled_orders додана")
-        except Exception as e:
-            logger.warning(f"⚠️ Помилка міграції users (karma): {e}")
+        # Міграція 7: Система карми - видалено, колонки вже в CREATE TABLE
         
-        # Міграція 8: Система блокування клієнтів - додати is_blocked до users
-        try:
-            has_user_blocked = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'is_blocked'
-                )
-            """)
-            
-            if not has_user_blocked:
-                logger.info("🔄 Міграція users: додавання is_blocked...")
-                await conn.execute("ALTER TABLE users ADD COLUMN is_blocked BOOLEAN DEFAULT FALSE")
-                await conn.execute("UPDATE users SET is_blocked = FALSE WHERE is_blocked IS NULL")
-                await conn.execute("ALTER TABLE users ALTER COLUMN is_blocked SET NOT NULL")
-                logger.info("✅ Колонка users.is_blocked додана")
-        except Exception as e:
-            logger.warning(f"⚠️ Помилка міграції users (is_blocked): {e}")
-        
-        # Міграція 9: Бонусні поїздки - додати bonus_rides_available до users
-        try:
-            has_bonus_rides = await conn.fetchval("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'bonus_rides_available'
-                )
-            """)
-            
-            if not has_bonus_rides:
-                logger.info("🔄 Міграція users: додавання bonus_rides_available...")
-                await conn.execute("ALTER TABLE users ADD COLUMN bonus_rides_available INTEGER DEFAULT 0")
-                await conn.execute("UPDATE users SET bonus_rides_available = 0 WHERE bonus_rides_available IS NULL")
-                await conn.execute("ALTER TABLE users ALTER COLUMN bonus_rides_available SET NOT NULL")
-                logger.info("✅ Колонка users.bonus_rides_available додана")
-        except Exception as e:
-            logger.warning(f"⚠️ Помилка міграції users (bonus_rides_available): {e}")
+        # Міграції 8-9: Видалено, колонки вже в CREATE TABLE
         
         logger.info("✅ Міграції завершено!")
         
@@ -440,6 +318,29 @@ async def init_postgres_db(database_url: str) -> None:
             )
         """)
         
+        # Додати відсутні колонки до orders якщо їх немає
+        try:
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_lat DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_lon DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS dest_lat DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS dest_lon DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id INTEGER")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS distance_m INTEGER")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS duration_s INTEGER")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS fare_amount DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP WITH TIME ZONE")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS group_message_id BIGINT")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS car_class TEXT DEFAULT 'economy'")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip_amount DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cash'")
+            await conn.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT")
+            logger.info("✅ Перевірено колонки orders")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка перевірки колонок orders: {e}")
+        
         # Тарифи
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS tariffs (
@@ -464,9 +365,27 @@ async def init_postgres_db(database_url: str) -> None:
                 role TEXT NOT NULL,
                 city TEXT,
                 language TEXT NOT NULL DEFAULT 'uk',
-                created_at TIMESTAMP WITH TIME ZONE NOT NULL
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+                karma INTEGER NOT NULL DEFAULT 100,
+                total_orders INTEGER NOT NULL DEFAULT 0,
+                cancelled_orders INTEGER NOT NULL DEFAULT 0,
+                bonus_rides_available INTEGER NOT NULL DEFAULT 0
             )
         """)
+        
+        # Додати відсутні колонки до users якщо їх немає
+        try:
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'uk'")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS karma INTEGER DEFAULT 100")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS total_orders INTEGER DEFAULT 0")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS cancelled_orders INTEGER DEFAULT 0")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_rides_available INTEGER DEFAULT 0")
+            logger.info("✅ Перевірено колонки users")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка перевірки колонок users: {e}")
         
         # Водії
         await conn.execute("""
@@ -490,9 +409,29 @@ async def init_postgres_db(database_url: str) -> None:
                 car_class TEXT NOT NULL DEFAULT 'economy',
                 card_number TEXT,
                 car_color TEXT,
-                priority INTEGER NOT NULL DEFAULT 0
+                priority INTEGER NOT NULL DEFAULT 0,
+                karma INTEGER NOT NULL DEFAULT 100,
+                total_orders INTEGER NOT NULL DEFAULT 0,
+                rejected_orders INTEGER NOT NULL DEFAULT 0
             )
         """)
+        
+        # Додати відсутні колонки до drivers якщо їх немає
+        try:
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS online INTEGER DEFAULT 0")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_lat DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_lon DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS car_class TEXT DEFAULT 'economy'")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS card_number TEXT")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS car_color TEXT")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS karma INTEGER DEFAULT 100")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS total_orders INTEGER DEFAULT 0")
+            await conn.execute("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS rejected_orders INTEGER DEFAULT 0")
+            logger.info("✅ Перевірено колонки drivers")
+        except Exception as e:
+            logger.warning(f"⚠️ Помилка перевірки колонок drivers: {e}")
         
         # Відхилені водії для замовлення
         await conn.execute("""

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from aiogram import F, Router
@@ -137,12 +137,20 @@ def create_router(config: AppConfig) -> Router:
             else:
                 logger.warning("⚠️ Не вдалося розрахувати відстань через Google Maps API")
         
-        # Якщо не вдалося розрахувати - беремо приблизну відстань
+        # Якщо не вдалося розрахувати - ПОМИЛКА (не використовуємо fallback!)
         if distance_km is None:
-            distance_km = 5.0  # Приблизна відстань за замовчуванням
-            duration_minutes = 15
-            await state.update_data(distance_km=distance_km, duration_minutes=duration_minutes)
-            logger.warning(f"⚠️ Використовую приблизну відстань: {distance_km} км")
+            logger.error(f"❌ Не вдалося розрахувати відстань для user {call.from_user.id if call.from_user else 'unknown'}")
+            await call.message.answer(
+                "❌ <b>Не вдалося розрахувати відстань</b>\n\n"
+                "⚠️ Будь ласка, спробуйте:\n"
+                "• Обрати інші точки\n"
+                "• Ввести адреси текстом\n"
+                "• Звернутися до підтримки\n\n"
+                "Натисніть /order щоб спробувати знову",
+                parse_mode="HTML"
+            )
+            await state.clear()
+            return
         
         # Отримати тариф
         tariff = await get_latest_tariff(config.database_path)
@@ -151,19 +159,21 @@ def create_router(config: AppConfig) -> Router:
             await state.clear()
             return
         
-        # Розрахувати базову ціну (для економ класу)
-        base_fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-        if base_fare < tariff.minimum:
-            base_fare = tariff.minimum
+        # Розрахувати базову ціну (використовуємо helper функцію)
+        from app.handlers.car_classes import calculate_base_fare
+        base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
         
         # Розрахувати ЦІНУ З УРАХУВАННЯМ ДИНАМІКИ для КОЖНОГО класу
         car_class_prices = {}
         car_class_explanations = {}
         from app.handlers.dynamic_pricing import calculate_dynamic_price, get_surge_emoji
-        from app.storage.db import get_online_drivers_count, get_pricing_settings
+        from app.storage.db import get_online_drivers_count, get_pricing_settings, get_pending_orders
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
-        pending_orders_estimate = 5
+        
+        # Отримати РЕАЛЬНУ кількість pending orders
+        pending_orders = await get_pending_orders(config.database_path, city)
+        pending_orders_estimate = len(pending_orders)
         
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
@@ -344,21 +354,47 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db import get_user_saved_addresses
         saved_addresses = await get_user_saved_addresses(config.database_path, message.from_user.id)
         
-        kb_buttons = [
-            [InlineKeyboardButton(text="📍 Надіслати мою геолокацію", callback_data="order:pickup:send_location")],
-            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:pickup:text")],
-        ]
+        # 🗺️ СПРОЩЕНІ КНОПКИ: карта + збережені + скасувати
+        kb_buttons = []
         
+        # 1. Кнопка карти (НОВА ЛОГІКА: обирає обидві точки в одній сесії)
+        if config.webapp_url:
+            from aiogram.types import WebAppInfo
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺 Обрати на інтерактивній карті",
+                    web_app=WebAppInfo(url=config.webapp_url)
+                )
+            ])
+        
+        # 2. Збережені адреси (якщо є)
         if saved_addresses:
-            kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:pickup:saved")])
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="📌 Вибрати зі збережених", 
+                    callback_data="order:pickup:saved"
+                )
+            ])
         
-        kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
+        # 3. Скасувати замовлення
+        kb_buttons.append([
+            InlineKeyboardButton(
+                text="❌ Скасувати замовлення", 
+                callback_data="cancel_order"
+            )
+        ])
         
         kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
         
         msg = await message.answer(
             "🚖 <b>Замовлення таксі</b>\n\n"
-            "📍 <b>Звідки вас забрати?</b>\n\n"
+            "📍 <b>Як бажаєте обрати адреси?</b>\n\n"
+            "🗺 <b>Інтерактивна карта</b>\n"
+            "   • Оберіть місце посадки\n"
+            "   • Оберіть місце призначення\n"
+            "   • Побачите маршрут\n"
+            "   • Все в одному вікні!\n\n"
+            "📌 <b>Збережені адреси</b> - швидкий вибір\n\n"
             "💡 Оберіть спосіб:",
             reply_markup=kb
         )
@@ -384,7 +420,7 @@ def create_router(config: AppConfig) -> Router:
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на інтерактивній карті",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=pickup")
                 )
             ])
         
@@ -429,7 +465,7 @@ def create_router(config: AppConfig) -> Router:
         # Видалити попереднє повідомлення
         try:
             await call.message.delete()
-        except:
+        except Exception as e:
             pass
         
         # Показати нове з ReplyKeyboard
@@ -525,14 +561,32 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db import get_user_saved_addresses
         saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
         
-        kb_buttons = [
-            [InlineKeyboardButton(text="📍 Надіслати геолокацію", callback_data="order:dest:send_location")],
-            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:dest:text")],
-        ]
+        # 🗺️ СПРОЩЕНІ КНОПКИ для destination
+        kb_buttons = []
         
+        # 1. Кнопка карти з передачею pickup координат
+        if config.webapp_url:
+            from aiogram.types import WebAppInfo
+            await state.update_data(waiting_for='destination')
+            # Передати pickup координати для відображення маршруту
+            data = await state.get_data()
+            pickup_lat = data.get('pickup_lat')
+            pickup_lon = data.get('pickup_lon')
+            url = f"{config.webapp_url}?type=destination"
+            if pickup_lat and pickup_lon:
+                url += f"&pickup_lat={pickup_lat}&pickup_lon={pickup_lon}"
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺 Обрати на карті (з пошуком)",
+                    web_app=WebAppInfo(url=url)
+                )
+            ])
+        
+        # 2. Збережені адреси
         if saved_addresses:
             kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:dest:saved")])
         
+        # 3. Назад + Скасувати
         kb_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="order:back:pickup")])
         kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_order")])
         
@@ -542,6 +596,8 @@ def create_router(config: AppConfig) -> Router:
             f"✅ <b>Місце подачі:</b> {address.emoji} {address.name}\n"
             f"   {address.address}\n\n"
             "📍 <b>Куди їдемо?</b>\n\n"
+            "🗺 <b>Карта з пошуком</b> - знайдіть або оберіть точку\n"
+            "📌 <b>Збережені</b> - швидкий вибір\n\n"
             "💡 Оберіть спосіб:",
             reply_markup=kb
         )
@@ -554,14 +610,25 @@ def create_router(config: AppConfig) -> Router:
         from app.storage.db import get_user_saved_addresses
         saved_addresses = await get_user_saved_addresses(config.database_path, call.from_user.id)
         
-        kb_buttons = [
-            [InlineKeyboardButton(text="📍 Надіслати мою геолокацію", callback_data="order:pickup:send_location")],
-            [InlineKeyboardButton(text="✏️ Ввести адресу текстом", callback_data="order:pickup:text")],
-        ]
+        # 🗺️ СПРОЩЕНІ КНОПКИ для pickup
+        kb_buttons = []
         
+        # 1. Кнопка карти
+        if config.webapp_url:
+            from aiogram.types import WebAppInfo
+            await state.update_data(waiting_for='pickup')
+            kb_buttons.append([
+                InlineKeyboardButton(
+                    text="🗺 Обрати на карті (з пошуком)",
+                    web_app=WebAppInfo(url=f"{config.webapp_url}?type=pickup")
+                )
+            ])
+        
+        # 2. Збережені адреси
         if saved_addresses:
             kb_buttons.append([InlineKeyboardButton(text="📌 Вибрати зі збережених", callback_data="order:pickup:saved")])
         
+        # 3. Скасувати
         kb_buttons.append([InlineKeyboardButton(text="❌ Скасувати замовлення", callback_data="cancel_order")])
         
         kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
@@ -618,13 +685,20 @@ def create_router(config: AppConfig) -> Router:
         # Створити інлайн кнопки з вибором
         kb_buttons = []
         
-        # Додати кнопку карти, якщо WEBAPP_URL налаштовано
+        # Додати кнопку карти з pickup координатами
         if config.webapp_url:
             from aiogram.types import WebAppInfo
+            # Передати pickup координати для відображення маршруту
+            data = await state.get_data()
+            pickup_lat = data.get('pickup_lat')
+            pickup_lon = data.get('pickup_lon')
+            url = f"{config.webapp_url}?type=destination"
+            if pickup_lat and pickup_lon:
+                url += f"&pickup_lat={pickup_lat}&pickup_lon={pickup_lon}"
             kb_buttons.append([
                 InlineKeyboardButton(
                     text="🗺 Обрати на інтерактивній карті",
-                    web_app=WebAppInfo(url=config.webapp_url)
+                    web_app=WebAppInfo(url=url)
                 )
             ])
         
@@ -672,7 +746,7 @@ def create_router(config: AppConfig) -> Router:
         
         try:
             await call.message.delete()
-        except:
+        except Exception as e:
             pass
         
         msg = await call.message.answer(
@@ -834,7 +908,7 @@ def create_router(config: AppConfig) -> Router:
                 "💡 Оберіть спосіб:",
                 reply_markup=kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 "📍 <b>Куди їдемо?</b>\n\n"
                 "Надішліть адресу призначення текстом\n"
@@ -881,7 +955,7 @@ def create_router(config: AppConfig) -> Router:
                 "Або натисніть '⏩ Без коментаря'",
                 reply_markup=comment_kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 f"✅ <b>Обрано:</b> {class_name}\n"
                 f"💰 <b>Вартість:</b> {estimated_fare:.0f} грн\n\n"
@@ -894,9 +968,9 @@ def create_router(config: AppConfig) -> Router:
                 reply_markup=comment_kb
             )
     
-    @router.callback_query(F.data.startswith("select_car_class:"))
+    @router.callback_query(F.data.startswith("select_car_class:") | F.data.startswith("select_class:"))
     async def select_car_class_handler(call: CallbackQuery, state: FSMContext) -> None:
-        """Вибір класу авто після перегляду цін"""
+        """Вибір класу авто після перегляду цін (обробляє select_car_class: та select_class:)"""
         car_class = call.data.split(":", 1)[1]
         await state.update_data(car_class=car_class)
         await call.answer()
@@ -909,13 +983,17 @@ def create_router(config: AppConfig) -> Router:
         tariff = await get_latest_tariff(config.database_path)
         distance_km = data.get("distance_km", 5.0)
         duration_minutes = data.get("duration_minutes", 15.0)
-        base_fare = tariff.base_fare + (distance_km * tariff.per_km) + (duration_minutes * tariff.per_minute)
-        if base_fare < tariff.minimum:
-            base_fare = tariff.minimum
+        # Використовуємо helper функцію
+        from app.handlers.car_classes import calculate_base_fare
+        base_fare = calculate_base_fare(tariff, distance_km, duration_minutes)
         from app.handlers.dynamic_pricing import calculate_dynamic_price
-        from app.storage.db import get_online_drivers_count, get_pricing_settings
+        from app.storage.db import get_online_drivers_count, get_pricing_settings, get_pending_orders
         city = data.get('city', 'Київ') or 'Київ'
         online_count = await get_online_drivers_count(config.database_path, city)
+        
+        # Отримати кількість pending orders для розрахунку попиту (РЕАЛЬНЕ значення!)
+        pending_orders = await get_pending_orders(config.database_path, city)
+        pending_count = len(pending_orders)
         
         # Отримати всі налаштування ціноутворення з БД
         pricing = await get_pricing_settings(config.database_path)
@@ -934,7 +1012,7 @@ def create_router(config: AppConfig) -> Router:
         
         class_fare = calculate_fare_with_class(base_fare, car_class, custom_multipliers)
         final_price, explanation, total_mult = await calculate_dynamic_price(
-            class_fare, city, online_count, 5,
+            class_fare, city, online_count, pending_count,  # <-- РЕАЛЬНЕ значення!
             pricing.night_percent, pricing.weather_percent,
             pricing.peak_hours_percent, pricing.weekend_percent,
             pricing.monday_morning_percent, pricing.no_drivers_percent,
@@ -967,7 +1045,7 @@ def create_router(config: AppConfig) -> Router:
                 "Або натисніть '⏩ Без коментаря'",
                 reply_markup=comment_kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 f"✅ <b>Обрано:</b> {class_name}\n"
                 f"💰 <b>Вартість:</b> {final_price:.0f} грн\n\n"
@@ -1196,7 +1274,7 @@ def create_router(config: AppConfig) -> Router:
                 "💳 <b>Картка</b> - переказ на картку водія (реквізити одразу після прийняття)",
                 reply_markup=kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 "💰 <b>Оберіть спосіб оплати:</b>\n\n"
                 "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
@@ -1292,7 +1370,7 @@ def create_router(config: AppConfig) -> Router:
         
         try:
             await call.message.edit_text(payment_text)
-        except:
+        except Exception as e:
             pass
         
         # Перейти до підтвердження
@@ -1373,26 +1451,43 @@ def create_router(config: AppConfig) -> Router:
         dest_lon = data.get('dest_lon')
         
         if pickup_lat and pickup_lon:
-            # Перевірити чи це координати (містить числа з крапкою)
-            if '.' in str(pickup_display) and any(char.isdigit() for char in str(pickup_display)):
+            # Перевірити чи pickup_display містить координати замість адреси
+            # Формат координат: "📍 12.345678, 67.890123" або просто числа з комою
+            pickup_str = str(pickup_display)
+            is_coordinates = (
+                '📍 Координати:' in pickup_str or 
+                (pickup_str.count('.') >= 2 and pickup_str.count(',') == 1 and len(pickup_str) < 40)
+            )
+            
+            if is_coordinates:
                 logger.info(f"🔄 Координати виявлені в pickup, геокодую: {pickup_display}")
                 try:
                     readable_address = await reverse_geocode("", float(pickup_lat), float(pickup_lon))
                     if readable_address:
                         pickup_display = readable_address
-                        logger.info(f"✅ Pickup геокодовано: {pickup_display}")
+                        # ЗБЕРЕГТИ В STATE!
+                        await state.update_data(pickup=readable_address)
+                        logger.info(f"✅ Pickup геокодовано і збережено: {pickup_display}")
                 except Exception as e:
                     logger.error(f"❌ Помилка геокодування pickup: {e}")
         
         if dest_lat and dest_lon:
-            # Перевірити чи це координати
-            if '.' in str(destination_display) and any(char.isdigit() for char in str(destination_display)):
+            # Перевірити чи destination_display містить координати замість адреси
+            dest_str = str(destination_display)
+            is_coordinates = (
+                '📍 Координати:' in dest_str or 
+                (dest_str.count('.') >= 2 and dest_str.count(',') == 1 and len(dest_str) < 40)
+            )
+            
+            if is_coordinates:
                 logger.info(f"🔄 Координати виявлені в destination, геокодую: {destination_display}")
                 try:
                     readable_address = await reverse_geocode("", float(dest_lat), float(dest_lon))
                     if readable_address:
                         destination_display = readable_address
-                        logger.info(f"✅ Destination геокодовано: {destination_display}")
+                        # ЗБЕРЕГТИ В STATE!
+                        await state.update_data(destination=readable_address)
+                        logger.info(f"✅ Destination геокодовано і збережено: {destination_display}")
                 except Exception as e:
                     logger.error(f"❌ Помилка геокодування destination: {e}")
         
@@ -1451,7 +1546,7 @@ def create_router(config: AppConfig) -> Router:
                 "💳 <b>Картка</b> - переказ на картку водія",
                 reply_markup=kb
             )
-        except:
+        except Exception as e:
             await call.message.answer(
                 "💰 <b>Оберіть спосіб оплати:</b>\n\n"
                 "💵 <b>Готівка</b> - розрахунок з водієм після поїздки\n"
@@ -1599,11 +1694,9 @@ def create_router(config: AppConfig) -> Router:
                     # Розрахунок з ТІЄЮ Ж ЛОГІКОЮ що і для клієнта
                     tariff = await get_latest_tariff(config.database_path)
                     if tariff:
-                        # Базовий тариф
-                        base_fare = max(
-                            tariff.minimum,
-                            tariff.base_fare + (km * tariff.per_km) + (minutes * tariff.per_minute)
-                        )
+                        # Базовий тариф (використовуємо helper функцію)
+                        from app.handlers.car_classes import calculate_base_fare
+                        base_fare = calculate_base_fare(tariff, km, minutes)
                         
                         # Застосувати клас авто (ТАК ЯК ДЛЯ КЛІЄНТА!)
                         from app.handlers.car_classes import calculate_fare_with_class, get_car_class_name
@@ -1783,7 +1876,7 @@ def create_router(config: AppConfig) -> Router:
                             f"🔴 {clean_destination}{route_link}\n\n"
                             f"👤 {data.get('name')} • 📱 <code>{masked_phone}</code> 🔒\n"
                             f"💬 {data.get('comment') or 'Без коментарів'}\n\n"
-                            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
+                            f"⏰ {(datetime.now(timezone.utc) + timedelta(hours=2)).strftime('%H:%M')} • 🏙 {client_city or data.get('city') or '—'}\n\n"
                             f"ℹ️ <i>Повний номер після прийняття</i>"
                         )
                         
@@ -1817,7 +1910,7 @@ def create_router(config: AppConfig) -> Router:
                                         f"• Перевірте ID групи в ENV змінних",
                                         parse_mode="HTML"
                                     )
-                                except:
+                                except Exception as e:
                                     pass
                             
                             # Спробувати fallback якщо чат не знайдено/бот не має доступу
@@ -1843,7 +1936,7 @@ def create_router(config: AppConfig) -> Router:
                                                 f"🆔 ID: <code>{config.driver_group_chat_id}</code>",
                                                 parse_mode="HTML"
                                             )
-                                        except:
+                                        except Exception as e:
                                             pass
                                 except Exception as e2:
                                     logger.error(f"❌ Fallback також не вдався: {e2}")
@@ -1860,7 +1953,7 @@ def create_router(config: AppConfig) -> Router:
                                                 f"⚠️ ТЕРМІНОВО перевірте /check_groups",
                                                 parse_mode="HTML"
                                             )
-                                        except:
+                                        except Exception as e:
                                             pass
                         
                         if not successfully_sent:
@@ -2000,7 +2093,7 @@ def create_router(config: AppConfig) -> Router:
                 "Ви можете створити нове замовлення будь-коли.",
                 reply_markup=None
             )
-        except:
+        except Exception as e:
             pass
         
         await call.message.answer(
@@ -2162,7 +2255,7 @@ def create_router(config: AppConfig) -> Router:
             # Видалити повідомлення з пропозицією
             try:
                 await call.message.delete()
-            except:
+            except Exception as e:
                 pass
             return
         
@@ -2285,7 +2378,7 @@ def create_router(config: AppConfig) -> Router:
                             f"🔴 {clean_destination}{route_link}\n\n"
                             f"👤 {order.name} • 📱 <code>{masked_phone}</code> 🔒\n"
                             f"💬 {order.comment or 'Без коментарів'}\n\n"
-                            f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} • 🏙 {client_city or 'Не вказано'}\n\n"
+                            f"⏰ {(datetime.now(timezone.utc) + timedelta(hours=2)).strftime('%H:%M')} • 🏙 {client_city or 'Не вказано'}\n\n"
                             f"⚠️ <b>Клієнт готовий платити більше!</b>\n"
                             f"ℹ️ <i>Повний номер після прийняття</i>"
                         ),
@@ -2351,7 +2444,7 @@ def create_router(config: AppConfig) -> Router:
             # Видалити повідомлення з пропозицією
             try:
                 await call.message.delete()
-            except:
+            except Exception as e:
                 pass
             
             # Повідомити в групу
@@ -2447,7 +2540,7 @@ def create_router(config: AppConfig) -> Router:
             await call.answer("✅ Водій вже прийняв замовлення!", show_alert=True)
             try:
                 await call.message.delete()
-            except:
+            except Exception as e:
                 pass
             return
         
